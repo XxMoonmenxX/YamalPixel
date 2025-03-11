@@ -1,0 +1,252 @@
+[00:30:42] [main/INFO]: Loading Minecraft 1.18.2 with Fabric Loader 0.16.10
+[00:30:43] [main/INFO]: Loading 82 mods:
+	- architectury 4.9.83
+	- autoconfig1u 3.4.0
+	- betterdroppeditems 1.3.2-1.18.2
+	- cloth-config 6.3.81
+	   \-- cloth-basic-math 0.6.1
+	- fabric-api 0.77.0+1.18.2
+	   |-- fabric-api-base 0.4.5+64b7c69360
+	   |-- fabric-api-lookup-api-v1 1.6.3+2373a54560
+	   |-- fabric-biome-api-v1 8.0.7+e83becad60
+	   |-- fabric-block-api-v1 1.0.0+ee3621fc60
+	   |-- fabric-blockrenderlayer-v1 1.1.13+3ac43d9560
+	   |-- fabric-command-api-v1 1.1.10+d7c144a860
+	   |-- fabric-commands-v0 0.2.9+b4f4f6cd60
+	   |-- fabric-containers-v0 0.1.24+d7c144a860
+	   |-- fabric-content-registries-v0 3.1.3+c85f2e3860
+	   |-- fabric-convention-tags-v1 1.1.0+43ce63a460
+	   |-- fabric-crash-report-info-v1 0.2.1+ee261a3e60
+	   |-- fabric-data-generation-api-v1 3.1.0+6c70b68e60
+	   |-- fabric-dimensions-v1 2.1.21+489d6f8260
+	   |-- fabric-entity-events-v1 1.4.9+d7c144a860
+	   |-- fabric-events-interaction-v0 0.4.20+d7c144a860
+	   |-- fabric-events-lifecycle-v0 0.2.22+d7c144a860
+	   |-- fabric-game-rule-api-v1 1.0.13+d7c144a860
+	   |-- fabric-item-api-v1 1.6.2+8165403660
+	   |-- fabric-item-groups-v0 0.3.16+91896a4960
+	   |-- fabric-key-binding-api-v1 1.0.12+54e5b2ec60
+	   |-- fabric-keybindings-v0 0.2.10+b4f4f6cd60
+	   |-- fabric-lifecycle-events-v1 2.1.1+cc71601c60
+	   |-- fabric-loot-api-v2 1.1.2+1997ad1260
+	   |-- fabric-loot-tables-v1 1.1.4+e747827960
+	   |-- fabric-mining-level-api-v1 2.1.6+cc71601c60
+	   |-- fabric-models-v0 0.3.7+d7c144a860
+	   |-- fabric-networking-api-v1 1.0.24+2d30af4b60
+	   |-- fabric-networking-v0 0.3.11+b4f4f6cd60
+	   |-- fabric-object-builder-api-v1 2.1.5+032c981d60
+	   |-- fabric-particles-v1 0.2.13+526dc1ac60
+	   |-- fabric-registry-sync-v0 0.9.12+bb2e047760
+	   |-- fabric-renderer-api-v1 0.5.0+bf48649860
+	   |-- fabric-renderer-indigo 0.6.1+03e2b68760
+	   |-- fabric-renderer-registries-v1 3.2.13+b4f4f6cd60
+	   |-- fabric-rendering-data-attachment-v1 0.3.9+ee3621fc60
+	   |-- fabric-rendering-fluids-v1 2.0.3+54e5b2ec60
+	   |-- fabric-rendering-v0 1.1.15+b4f4f6cd60
+	   |-- fabric-rendering-v1 1.11.0+b7f3cf3460
+	   |-- fabric-resource-conditions-api-v1 2.0.3+91b7aa6660
+	   |-- fabric-resource-loader-v0 0.5.3+047a5ecb60
+	   |-- fabric-screen-api-v1 1.0.11+d882b91560
+	   |-- fabric-screen-handler-api-v1 1.2.3+1f6558e860
+	   |-- fabric-textures-v0 1.0.13+3ac43d9560
+	   |-- fabric-transfer-api-v1 1.6.4+f4563ac860
+	   \-- fabric-transitive-access-wideners-v1 1.1.0+e747827960
+	- fabric-language-kotlin 1.7.3+kotlin.1.6.20
+	   |-- org_jetbrains_kotlin_kotlin-reflect 1.6.20
+	   |-- org_jetbrains_kotlin_kotlin-stdlib 1.6.20
+	   |-- org_jetbrains_kotlin_kotlin-stdlib-jdk7 1.6.20
+	   |-- org_jetbrains_kotlin_kotlin-stdlib-jdk8 1.6.20
+	   |-- org_jetbrains_kotlinx_kotlinx-coroutines-core-jvm 1.6.1
+	   |-- org_jetbrains_kotlinx_kotlinx-coroutines-jdk8 1.6.1
+	   |-- org_jetbrains_kotlinx_kotlinx-serialization-cbor-jvm 1.3.2
+	   |-- org_jetbrains_kotlinx_kotlinx-serialization-core-jvm 1.3.2
+	   \-- org_jetbrains_kotlinx_kotlinx-serialization-json-jvm 1.3.2
+	- fabricloader 0.16.10
+	   \-- mixinextras 0.4.1
+	- indium 1.0.7+mc1.18.2
+	- iris 1.3.1
+	   \-- org_anarres_jcpp 1.4.14
+	- java 17
+	- jei 10.2.1.283
+	- lithium 0.7.10
+	- minecraft 1.18.2
+	- modmenu 3.2.5
+	- noindium 1.0.2+1.18.2
+	- omega-config 1.2.3-1.18.1
+	- patchouli 1.18.2-66-FABRIC
+	   \-- fiber 0.23.0-2
+	- playerabilitylib 1.5.0
+	- reborncore 5.2.0
+	   \-- team_reborn_energy 2.2.0
+	- sodium 0.4.1+build.15
+	   \-- org_joml_joml 1.10.2
+	- techreborn 5.2.0
+	   \-- team_reborn_energy 2.2.0
+	- xaerominimap 22.14.1
+[00:30:43] [main/WARN]: Found 1 non-fabric mod:
+	- supplementaries-1.18.2-1.4.11.jar
+[00:30:43] [main/INFO]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=file:/C:/Users/%d0%a2%d0%be%d0%bb%d0%b8%d0%ba-%d0%b5%d0%b1%d0%be%d0%bb%d0%b8%d0%ba/YamalPixel/libraries/net/fabricmc/sponge-mixin/0.15.4+mixin.0.8.7/sponge-mixin-0.15.4+mixin.0.8.7.jar Service=Knot/Fabric Env=CLIENT
+[00:30:43] [main/INFO]: Compatibility level set to JAVA_16
+[00:30:43] [main/INFO]: Compatibility level set to JAVA_17
+[00:30:43] [main/INFO]: Loaded configuration file for Lithium: 102 options available, 0 override(s) found
+[00:30:44] [main/INFO]: Loaded configuration file for Sodium: 29 options available, 1 override(s) found
+[00:30:44] [main/WARN]: Force-disabling mixin 'features.sky.MixinWorldRenderer' as rule 'mixin.features.sky' (added by mods [iris]) disables it and children
+[00:30:45] [main/INFO]: Trying to switch memory allocators to work around memory leaks present with Jemalloc 5.0.0 through 5.2.0 on Windows
+[00:30:45] [main/INFO]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.4.1).
+[00:30:45] [main/WARN]: COM exception: Invalid Class Win32_Processor
+[00:30:45] [main/WARN]: COM exception: Invalid Class Win32_VideoController
+[00:30:45] [main/WARN]: COM exception: Invalid Class Win32_PhysicalMemory
+[00:30:53] [Render thread/WARN]: Method overwrite conflict for method_22920 in sodium.mixins.json:features.buffer_builder.intrinsics.MixinBufferBuilder from mod sodium, previously written by net.coderbot.iris.mixin.vertices.block_rendering.MixinBufferBuilder_SeparateAo. Skipping method.
+[00:30:54] [Render thread/INFO]: Environment: authHost='https://authserver.mojang.com', accountsHost='https://api.mojang.com', sessionHost='https://sessionserver.mojang.com', servicesHost='https://api.minecraftservices.com', name='PROD'
+[00:30:56] [Render thread/ERROR]: Failed to verify authentication
+com.mojang.authlib.exceptions.InvalidCredentialsException: Status: 401
+	at com.mojang.authlib.exceptions.MinecraftClientHttpException.toAuthenticationException(MinecraftClientHttpException.java:56) ~[authlib-3.3.39.jar:?]
+	at com.mojang.authlib.yggdrasil.YggdrasilUserApiService.fetchProperties(YggdrasilUserApiService.java:132) ~[authlib-3.3.39.jar:?]
+	at com.mojang.authlib.yggdrasil.YggdrasilUserApiService.<init>(YggdrasilUserApiService.java:44) ~[authlib-3.3.39.jar:?]
+	at com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService.createUserApiService(YggdrasilAuthenticationService.java:153) ~[authlib-3.3.39.jar:?]
+	at net.minecraft.class_310.method_31382(class_310.java:680) [client-intermediary.jar:?]
+	at net.minecraft.class_310.<init>(class_310.java:424) [client-intermediary.jar:?]
+	at net.minecraft.client.main.Main.main(Main.java:197) [client-intermediary.jar:?]
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.16.10.jar:?]
+Caused by: com.mojang.authlib.exceptions.MinecraftClientHttpException: Status: 401
+	at com.mojang.authlib.minecraft.client.MinecraftClient.readInputStream(MinecraftClient.java:78) ~[authlib-3.3.39.jar:?]
+	at com.mojang.authlib.minecraft.client.MinecraftClient.get(MinecraftClient.java:48) ~[authlib-3.3.39.jar:?]
+	at com.mojang.authlib.yggdrasil.YggdrasilUserApiService.fetchProperties(YggdrasilUserApiService.java:113) ~[authlib-3.3.39.jar:?]
+	... 8 more
+[00:30:56] [Render thread/INFO]: Setting user: Moonmen
+[00:31:01] [Render thread/INFO]: TechReborn setup done!
+[00:31:01] [Render thread/INFO]: Registering S2C receiver with id architectury:spawn_entity_packet
+[00:31:01] [Render thread/INFO]: [Indigo] Different rendering plugin detected; not applying Indigo.
+[00:31:03] [Render thread/INFO]: Loading Xaero's Minimap - Stage 1/2
+[00:31:05] [ForkJoinPool.commonPool-worker-1/WARN]: [Iris Update Check] Cached update file detected, using that!
+[00:31:05] [ForkJoinPool.commonPool-worker-1/WARN]: [Iris Update Check] New update detected, showing update message!
+[00:31:05] [Render thread/INFO]: Backend library: LWJGL version 3.2.2 build 10
+[00:31:07] [Render thread/WARN]: COM exception: Invalid Class Win32_Processor
+[00:31:07] [Render thread/INFO]: Debug functionality is disabled.
+[00:31:07] [Render thread/INFO]: Shaders are disabled because no valid shaderpack is selected
+[00:31:07] [Render thread/INFO]: Shaders are disabled
+[00:31:08] [Render thread/INFO]: Hardware information:
+[00:31:08] [Render thread/INFO]: CPU: 20x Intel(R) Xeon(R) CPU E5-2690 v2 @ 3.00GHz
+[00:31:08] [Render thread/INFO]: GPU: NVIDIA GeForce RTX 3070/PCIe/SSE2 (Supports OpenGL 3.2.0 NVIDIA 566.36)
+[00:31:08] [Render thread/INFO]: OS: Windows 10 (10.0)
+[00:31:09] [Render thread/INFO]: Narrator library for x64 successfully loaded
+[00:31:10] [Render thread/INFO]: Reloading ResourceManager: Default, Fabric Mods (Auto Config v1 Updated, Better Dropped Items, Cloth Config v6, Fabric API, Fabric API Base, Fabric API Lookup API (v1), Fabric Biome API (v1), Fabric BlockRenderLayer Registration (v1), Fabric Command API (v1), Fabric Commands (v0), Fabric Containers (v0), Fabric Content Registries (v0), Fabric Convention Tags, Fabric Crash Report Info (v1), Fabric Data Generation API (v1), Fabric Dimensions API (v1), Fabric Entity Events (v1), Fabric Events Interaction (v0), Fabric Events Lifecycle (v0), Fabric Game Rule API (v1), Fabric Item API (v1), Fabric Item Groups (v0), Fabric Key Binding API (v1), Fabric Key Bindings (v0), Fabric Language Kotlin, Fabric Lifecycle Events (v1), Fabric Loot API (v2), Fabric Loot Tables (v1), Fabric Mining Level API (v1), Fabric Models (v0), Fabric Networking API (v1), Fabric Networking (v0), Fabric Object Builder API (v1), Fabric Particles (v1), Fabric Registry Sync (v0), Fabric Renderer API (v1), Fabric Renderer - Indigo, Fabric Renderer Registries (v1), Fabric Rendering Data Attachment (v1), Fabric Rendering Fluids (v1), Fabric Rendering (v0), Fabric Rendering (v1), Fabric Resource Conditions API (v1), Fabric Resource Loader (v0), Fabric Screen API (v1), Fabric Screen Handler API (v1), Fabric Textures (v0), Fabric Transfer API (v1), Fabric Transitive Access Wideners (v1), Fabric Loader, Indium, Iris, Just Enough Items, Lithium, Mod Menu, No Indium?, OmegaConfig, Patchouli, Pal, Reborn Core, Sodium, Energy, Tech Reborn, Xaero's Minimap)
+[00:31:11] [Render thread/INFO]: Connecting to 90.151.59.120, 25565
+[00:31:11] [Render thread/INFO]: Loading Xaero's Minimap - Stage 2/2
+[00:31:13] [Render thread/INFO]: No Optifine!
+[00:31:17] [Render thread/INFO]: New minimap session initialized!
+[00:31:17] [Render thread/INFO]: Reloading pipeline on dimension change: null => OVERWORLD
+[00:31:17] [Render thread/INFO]: Creating pipeline for dimension OVERWORLD
+[00:31:17] [Render thread/WARN]: @Redirect conflict. Skipping mixins.iris.compat.sodium.json:vertex_format.MixinFluidRenderer from mod iris->@Redirect::iris$fixSidewaysInnerFaceNormal(Lme/jellysquid/mods/sodium/client/model/IndexBufferBuilder;ILme/jellysquid/mods/sodium/client/model/quad/properties/ModelQuadWinding;Lnet/minecraft/class_1920;Lnet/minecraft/class_3610;Lnet/minecraft/class_2338;Lnet/minecraft/class_2338;Lme/jellysquid/mods/sodium/client/render/chunk/compile/buffers/ChunkModelBuilder;)V with priority 1000, already redirected by mixins.iris.compat.sodium.json:vertex_format.MixinFluidRenderer from mod iris->@Redirect::iris$fixBackwardUpFaceNormal(Lme/jellysquid/mods/sodium/client/model/IndexBufferBuilder;ILme/jellysquid/mods/sodium/client/model/quad/properties/ModelQuadWinding;Lnet/minecraft/class_1920;Lnet/minecraft/class_3610;Lnet/minecraft/class_2338;Lnet/minecraft/class_2338;Lme/jellysquid/mods/sodium/client/render/chunk/compile/buffers/ChunkModelBuilder;)V with priority 1000
+[00:31:17] [Render thread/ERROR]: Error executing task on Client
+java.lang.NullPointerException: Cannot invoke "net.minecraft.class_4724.method_24098(net.minecraft.class_2960)" because "this.field_21775" is null
+	at net.minecraft.class_1092.method_24153(class_1092.java:97) ~[client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1549(class_310.java:2506) ~[client-intermediary.jar:?]
+	at net.minecraft.class_4730.method_24148(class_4730.java:35) ~[client-intermediary.jar:?]
+	at me.jellysquid.mods.sodium.client.render.pipeline.FluidRenderer.<init>(FluidRenderer.java:64) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.pipeline.context.ChunkRenderCacheLocal.<init>(ChunkRenderCacheLocal.java:32) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.gl.compile.ChunkBuildContext.<init>(ChunkBuildContext.java:16) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.chunk.compile.ChunkBuilder.startWorkers(ChunkBuilder.java:67) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.chunk.compile.ChunkBuilder.init(ChunkBuilder.java:167) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager.<init>(RenderSectionManager.java:111) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer.initRenderer(SodiumWorldRenderer.java:246) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer.loadWorld(SodiumWorldRenderer.java:112) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer.setWorld(SodiumWorldRenderer.java:101) ~[sodium-fabric-mc1.18.2-0.4.1+build.15.jar:?]
+	at net.minecraft.class_761.handler$bli000$sodium$onWorldChanged(class_761.java:10928) ~[client-intermediary.jar:?]
+	at net.minecraft.class_761.method_3244(class_761.java:752) ~[client-intermediary.jar:?]
+	at net.minecraft.class_310.method_18097(class_310.java:2221) ~[client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1481(class_310.java:2144) ~[client-intermediary.jar:?]
+	at net.minecraft.class_634.method_11120(class_634.java:365) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2678.method_11567(class_2678.java:83) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2678.method_11054(class_2678.java:19) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2600.method_11072(class_2600.java:22) ~[client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_18859(class_1255.java:157) [client-intermediary.jar:?]
+	at net.minecraft.class_4093.method_18859(class_4093.java:23) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_16075(class_1255.java:131) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_5383(class_1255.java:116) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1523(class_310.java:1085) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1514(class_310.java:737) [client-intermediary.jar:?]
+	at net.minecraft.client.main.Main.main(Main.java:236) [client-intermediary.jar:?]
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.16.10.jar:?]
+[00:31:17] [Render thread/ERROR]: Error executing task on Client
+java.lang.NullPointerException: Cannot invoke "net.minecraft.class_746.method_3146(String)" because "this.field_3690.field_1724" is null
+	at net.minecraft.class_634.method_11152(class_634.java:1753) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2658.method_11457(class_2658.java:60) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2658.method_11054(class_2658.java:8) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2600.method_11072(class_2600.java:22) ~[client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_18859(class_1255.java:157) [client-intermediary.jar:?]
+	at net.minecraft.class_4093.method_18859(class_4093.java:23) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_16075(class_1255.java:131) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_5383(class_1255.java:116) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1523(class_310.java:1085) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1514(class_310.java:737) [client-intermediary.jar:?]
+	at net.minecraft.client.main.Main.main(Main.java:236) [client-intermediary.jar:?]
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.16.10.jar:?]
+[00:31:17] [Render thread/ERROR]: Error executing task on Client
+java.lang.NullPointerException: Cannot invoke "net.minecraft.class_1657.method_31549()" because "$$1" is null
+	at net.minecraft.class_634.method_11154(class_634.java:1558) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2696.method_11697(class_2696.java:65) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2696.method_11054(class_2696.java:7) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2600.method_11072(class_2600.java:22) ~[client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_18859(class_1255.java:157) [client-intermediary.jar:?]
+	at net.minecraft.class_4093.method_18859(class_4093.java:23) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_16075(class_1255.java:131) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_5383(class_1255.java:116) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1523(class_310.java:1085) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1514(class_310.java:737) [client-intermediary.jar:?]
+	at net.minecraft.client.main.Main.main(Main.java:236) [client-intermediary.jar:?]
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.16.10.jar:?]
+[00:31:17] [Render thread/ERROR]: Error executing task on Client
+java.lang.NullPointerException: Cannot invoke "net.minecraft.class_746.method_31548()" because "this.field_3690.field_1724" is null
+	at net.minecraft.class_634.method_11135(class_634.java:509) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2735.method_11802(class_2735.java:25) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2735.method_11054(class_2735.java:7) ~[client-intermediary.jar:?]
+	at net.minecraft.class_2600.method_11072(class_2600.java:22) ~[client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_18859(class_1255.java:157) [client-intermediary.jar:?]
+	at net.minecraft.class_4093.method_18859(class_4093.java:23) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_16075(class_1255.java:131) [client-intermediary.jar:?]
+	at net.minecraft.class_1255.method_5383(class_1255.java:116) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1523(class_310.java:1085) [client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1514(class_310.java:737) [client-intermediary.jar:?]
+	at net.minecraft.client.main.Main.main(Main.java:236) [client-intermediary.jar:?]
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.16.10.jar:?]
+[00:31:17] [Render thread/WARN]: COM exception: Invalid Class Win32_Processor
+[00:31:17] [Render thread/WARN]: COM exception: Invalid Class Win32_VideoController
+[00:31:17] [Render thread/WARN]: COM exception: Invalid Class Win32_PhysicalMemory
+[00:31:17] [Render thread/ERROR]: Unreported exception thrown!
+java.lang.NullPointerException: Cannot invoke "net.minecraft.class_746.method_31548()" because "this.field_3712.field_1724" is null
+	at net.minecraft.class_636.method_2911(class_636.java:292) ~[client-intermediary.jar:?]
+	at net.minecraft.class_636.method_2927(class_636.java:271) ~[client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1574(class_310.java:1709) ~[client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1523(class_310.java:1091) ~[client-intermediary.jar:?]
+	at net.minecraft.class_310.method_1514(class_310.java:737) [client-intermediary.jar:?]
+	at net.minecraft.client.main.Main.main(Main.java:236) [client-intermediary.jar:?]
+	at net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider.launch(MinecraftGameProvider.java:480) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:74) [fabric-loader-0.16.10.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.16.10.jar:?]
+[00:31:18] [Render thread/INFO]: OpenAL initialized on device OpenAL Soft on FY24FH-Pro (3- NVIDIA High Definition Audio)
+[00:31:18] [Render thread/INFO]: Sound engine started
+[00:31:18] [Render thread/INFO]: Created: 1024x1024x4 minecraft:textures/atlas/blocks.png-atlas
+[00:31:18] [Render thread/INFO]: Created: 256x128x4 minecraft:textures/atlas/signs.png-atlas
+[00:31:18] [Render thread/INFO]: Created: 512x512x4 minecraft:textures/atlas/banner_patterns.png-atlas
+[00:31:18] [Render thread/INFO]: Created: 512x512x4 minecraft:textures/atlas/shield_patterns.png-atlas
+[00:31:18] [Render thread/INFO]: Created: 256x256x4 minecraft:textures/atlas/chest.png-atlas
+[00:31:18] [Render thread/INFO]: Created: 512x256x4 minecraft:textures/atlas/beds.png-atlas
+[00:31:18] [Render thread/INFO]: Created: 512x256x4 minecraft:textures/atlas/shulker_boxes.png-atlas
+[00:31:19] [Render thread/INFO]: Created: 256x256x0 minecraft:textures/atlas/particles.png-atlas
+[00:31:19] [Render thread/INFO]: Created: 256x256x0 minecraft:textures/atlas/paintings.png-atlas
+[00:31:19] [Render thread/INFO]: Created: 128x128x0 minecraft:textures/atlas/mob_effects.png-atlas
+[00:31:19] [Render thread/INFO]: Created: 256x128x0 jei:textures/atlas/gui.png-atlas
+[00:31:19] [Render thread/INFO]: BookContentResourceListenerLoader preloaded 41 jsons
+[00:31:19] [Render thread/INFO]: Reloading resource pack-based books, world is nonnull
+[00:31:19] [Render thread/INFO]: Successfully reloaded the minimap shaders!

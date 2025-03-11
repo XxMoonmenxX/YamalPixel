@@ -1,0 +1,86 @@
+[13:05:05] [main/INFO]: Loading Minecraft 1.18.2 with Fabric Loader 0.16.10
+[13:05:05] [main/INFO]: Fabric is preparing JARs on first launch, this may take a few seconds...
+[13:05:06] [main/WARN]: Warnings were found!
+ - Mod 'Sodium Extra' (sodium-extra) 0.4.5+mc1.18.2-build.42 recommends version 1.4.2 or later of reeses-sodium-options, which is missing!
+	 - You should install version 1.4.2 or later of reeses-sodium-options for the optimal experience.
+[13:05:06] [main/INFO]: Loading 71 mods:
+	- ae2 11.7.6
+	   \-- noindium 1.0.2+1.18.2
+	- chiselsandbits 1.2.116
+	- cloth-config 6.5.133
+	   \-- cloth-basic-math 0.6.1
+	- fabric-api 0.77.0+1.18.2
+	   |-- fabric-api-base 0.4.5+64b7c69360
+	   |-- fabric-api-lookup-api-v1 1.6.3+2373a54560
+	   |-- fabric-biome-api-v1 8.0.7+e83becad60
+	   |-- fabric-block-api-v1 1.0.0+ee3621fc60
+	   |-- fabric-blockrenderlayer-v1 1.1.13+3ac43d9560
+	   |-- fabric-command-api-v1 1.1.10+d7c144a860
+	   |-- fabric-commands-v0 0.2.9+b4f4f6cd60
+	   |-- fabric-containers-v0 0.1.24+d7c144a860
+	   |-- fabric-content-registries-v0 3.1.3+c85f2e3860
+	   |-- fabric-convention-tags-v1 1.1.0+43ce63a460
+	   |-- fabric-crash-report-info-v1 0.2.1+ee261a3e60
+	   |-- fabric-data-generation-api-v1 3.1.0+6c70b68e60
+	   |-- fabric-dimensions-v1 2.1.21+489d6f8260
+	   |-- fabric-entity-events-v1 1.4.9+d7c144a860
+	   |-- fabric-events-interaction-v0 0.4.20+d7c144a860
+	   |-- fabric-events-lifecycle-v0 0.2.22+d7c144a860
+	   |-- fabric-game-rule-api-v1 1.0.13+d7c144a860
+	   |-- fabric-item-api-v1 1.6.2+8165403660
+	   |-- fabric-item-groups-v0 0.3.16+91896a4960
+	   |-- fabric-key-binding-api-v1 1.0.12+54e5b2ec60
+	   |-- fabric-keybindings-v0 0.2.10+b4f4f6cd60
+	   |-- fabric-lifecycle-events-v1 2.1.1+cc71601c60
+	   |-- fabric-loot-api-v2 1.1.2+1997ad1260
+	   |-- fabric-loot-tables-v1 1.1.4+e747827960
+	   |-- fabric-mining-level-api-v1 2.1.6+cc71601c60
+	   |-- fabric-models-v0 0.3.7+d7c144a860
+	   |-- fabric-networking-api-v1 1.0.24+2d30af4b60
+	   |-- fabric-networking-v0 0.3.11+b4f4f6cd60
+	   |-- fabric-object-builder-api-v1 2.1.5+032c981d60
+	   |-- fabric-particles-v1 0.2.13+526dc1ac60
+	   |-- fabric-registry-sync-v0 0.9.12+bb2e047760
+	   |-- fabric-renderer-api-v1 0.5.0+bf48649860
+	   |-- fabric-renderer-indigo 0.6.1+03e2b68760
+	   |-- fabric-renderer-registries-v1 3.2.13+b4f4f6cd60
+	   |-- fabric-rendering-data-attachment-v1 0.3.9+ee3621fc60
+	   |-- fabric-rendering-fluids-v1 2.0.3+54e5b2ec60
+	   |-- fabric-rendering-v0 1.1.15+b4f4f6cd60
+	   |-- fabric-rendering-v1 1.11.0+b7f3cf3460
+	   |-- fabric-resource-conditions-api-v1 2.0.3+91b7aa6660
+	   |-- fabric-resource-loader-v0 0.5.3+047a5ecb60
+	   |-- fabric-screen-api-v1 1.0.11+d882b91560
+	   |-- fabric-screen-handler-api-v1 1.2.3+1f6558e860
+	   |-- fabric-textures-v0 1.0.13+3ac43d9560
+	   |-- fabric-transfer-api-v1 1.6.4+f4563ac860
+	   \-- fabric-transitive-access-wideners-v1 1.1.0+e747827960
+	- fabricloader 0.16.10
+	   \-- mixinextras 0.4.1
+	- fallingtree 3.5.5
+	- java 17
+	- minecraft 1.18.2
+	- modern_industrialization 1.2.3
+	   |-- magna 1.7.0-1.18-pre1
+	   |-- noindium 1.0.2+1.18.2
+	   |-- patchouli 1.18.2-66-FABRIC-SNAPSHOT
+	   |    \-- fiber 0.23.0-2
+	   |-- playerabilitylib 1.5.0
+	   \-- team_reborn_energy 2.2.0
+	- omega-config 1.2.3-1.18.1
+	- reborncore 5.2.1
+	   \-- team_reborn_energy 2.2.0
+	- roughlyenoughitems 8.4.778
+	   \-- error_notifier 1.0.9
+	- sodium 0.4.1+build.15
+	   \-- org_joml_joml 1.10.2
+	- sodium-extra 0.4.5+mc1.18.2-build.42
+	   \-- caffeineconfig 1.1.0
+	- techreborn 5.2.1
+	   \-- team_reborn_energy 2.2.0
+[13:05:07] [main/INFO]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=file:/C:/Users/%d0%a2%d0%be%d0%bb%d0%b8%d0%ba-%d0%b5%d0%b1%d0%be%d0%bb%d0%b8%d0%ba/YamalPixel/libraries/net/fabricmc/sponge-mixin/0.15.4+mixin.0.8.7/sponge-mixin-0.15.4+mixin.0.8.7.jar Service=Knot/Fabric Env=CLIENT
+[13:05:13] [main/INFO]: Compatibility level set to JAVA_11
+[13:05:13] [main/INFO]: Compatibility level set to JAVA_16
+[13:05:13] [main/INFO]: Compatibility level set to JAVA_17
+[13:05:13] [main/INFO]: Loaded configuration file for Sodium: 29 options available, 0 override(s) found
+[13:05:13] [main/INFO]: Loaded configuration file for Sodium Extra: 27 options available, 0 override(s) found
