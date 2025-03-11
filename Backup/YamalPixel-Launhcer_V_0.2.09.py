@@ -41,7 +41,7 @@ def check_for_updates():
             logging.info(f"Найдена новая версия: {latest_version}")
             answer = messagebox.askyesno(
                 "Обновление",
-                f"Доступна версия {latest_version}.\n\n{changelog}\n\n Обновить?\nВаши моды и настройки не будут затронуты."
+                f"Доступна версия {latest_version}.\n\n{changelog}\n\n Обновить?"
             )
             if answer:
                 # Ищем любой EXE-файл в ассетах
