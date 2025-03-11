@@ -15,10 +15,23 @@ import urllib.request
 import sys
 import shutil
 import logging
+from pypresence import Presence
 
-CURRENT_VERSION = "0.2.09" # тестовое обновление
+CURRENT_VERSION = "0.2.1" # тестовое обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def update_discord_status():
+    RPC = Presence("1349070276327116890")
+    RPC.connect()
+    RPC.update(
+        state="Играет",
+        details="YamalPixel",
+        large_image="logo",
+        buttons=[{"label": "Скачать", "url": "https://disk.yandex.ru/d/WaJwp2ThduRrgQ"}]
+    )
+update_discord_status()
 
 
 def check_for_updates():
