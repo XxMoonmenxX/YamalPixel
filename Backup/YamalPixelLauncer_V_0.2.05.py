@@ -16,7 +16,7 @@ import sys
 import shutil
 import logging
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
