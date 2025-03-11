@@ -16,7 +16,7 @@ import sys
 import shutil
 import logging
 
-CURRENT_VERSION = "0.2.07"
+CURRENT_VERSION = "0.2.08"
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -28,13 +28,20 @@ def check_for_updates():
         response.raise_for_status()
 
         release_data = response.json()
+        changelog = release_data.get('body', 'Нет описания изменений')
+
+        # Убираем Markdown-разметку
+        changelog = re.sub(r'\#{2,}', '', changelog)
+        changelog = re.sub(r'\- ', '• ', changelog)
+
+        release_data = response.json()
         latest_version = release_data['tag_name'].lstrip('v')
 
         if latest_version != CURRENT_VERSION:
             logging.info(f"Найдена новая версия: {latest_version}")
             answer = messagebox.askyesno(
                 "Обновление",
-                f"Доступна версия {latest_version}. Обновить?\nВаши моды и настройки не будут затронуты."
+                f"Доступна версия {latest_version}.\n\n{changelog}\n\n Обновить?\nВаши моды и настройки не будут затронуты."
             )
             if answer:
                 # Ищем любой EXE-файл в ассетах
