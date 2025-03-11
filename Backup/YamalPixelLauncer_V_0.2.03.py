@@ -24,7 +24,7 @@ logging.basicConfig(filename='launcher.log', level=logging.INFO,
 def check_for_updates():
     try:
         logging.info("Проверка обновлений...")
-        response = requests.get("https://api.github.com/repos/ВАШ_АККАУНТ/ВАШ_РЕПОЗИТОРИЙ/releases/latest")
+        response = requests.get("https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest")
         response.raise_for_status()
         latest_version = response.json()['tag_name']
 
