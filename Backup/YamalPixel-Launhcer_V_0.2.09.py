@@ -16,7 +16,7 @@ import sys
 import shutil
 import logging
 
-CURRENT_VERSION = "0.2.08"
+CURRENT_VERSION = "0.2.09" # тестовое обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
