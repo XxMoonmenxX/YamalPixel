@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 import psutil
-CURRENT_VERSION = "0.2.121" #обновление
+CURRENT_VERSION = "0.2.122" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
