@@ -16,6 +16,82 @@ import sys
 import shutil
 import logging
 from pypresence import Presence
+from pathlib import Path
+
+# Конфигурация ресурсов
+RESOURCE_DIR = Path.home() / "YamalPixelRes"
+RESOURCES = {
+    "logo.png": "https://disk.yandex.ru/i/ztKpQOZEjQDE_Q",
+    "menu_song.mp3": "https://disk.yandex.ru/d/Ahqnmj2T8YlNKg"
+}
+
+
+def get_yandex_direct_link(public_key):
+    """Получаем прямую ссылку для скачивания через API Яндекс.Диска"""
+    api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
+    try:
+        response = requests.get(api_url, params={"public_key": public_key})
+        response.raise_for_status()
+        return response.json().get('href')
+    except Exception as e:
+        logging.error(f"Ошибка получения ссылки: {str(e)}")
+        return None
+
+
+def setup_environment():
+    """Настройка окружения и загрузка ресурсов"""
+    try:
+        # Создаем папку если не существует
+        RESOURCE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Скачиваем недостающие файлы
+        for filename, url in RESOURCES.items():
+            file_path = RESOURCE_DIR / filename
+            if not file_path.exists():
+                # Получаем прямую ссылку на файл
+                download_url = get_yandex_direct_link(url)
+                if not download_url:
+                    continue
+
+                # Скачиваем файл
+                response = requests.get(download_url, stream=True)
+                response.raise_for_status()
+
+                # Сохраняем файл
+                with open(file_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                logging.info(f"Файл {filename} успешно загружен")
+
+    except Exception as e:
+        logging.error(f"Ошибка инициализации: {str(e)}")
+        messagebox.showerror("Ошибка", f"Не удалось загрузить ресурсы: {str(e)}")
+        sys.exit(1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 CURRENT_VERSION = "0.2.1" # тестовое обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
@@ -139,7 +215,9 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'config'),
         os.path.join(launcher_dir, 'patchouli_books'),
         os.path.join(launcher_dir, 'patchouli_data.json'),
-        os.path.join(launcher_dir, 'logs')
+        os.path.join(launcher_dir, 'logs'),
+        os.path.join(launcher_dir, 'logo.png')
+        os.path.join(launcher_dir,)
     ]
     for item in items_to_remove:
         if os.path.exists(item):
@@ -270,7 +348,7 @@ CONFIG = {
 
 # Инициализация звука
 mixer.init()
-mixer.music.load('Obuse - Menu song.mp3')
+#mixer.music.load('Obuse - Menu song.mp3')
 mixer.music.set_volume(0.1)
 
 # Создание главного окна
@@ -281,8 +359,16 @@ win.attributes("-fullscreen", True)
 win.after(100, initial_check)
 win.after(200, check_for_updates)  # NEW
 
-# GUI элементы
-bag = tk.PhotoImage(file="logo.png")
+# Вызываем перед созданием главного окна
+setup_environment()
+
+# Модифицируем блок инициализации звука:
+mixer.init()
+mixer.music.load(str(RESOURCE_DIR / "menu_song.mp3"))
+mixer.music.set_volume(0.1)
+
+# Модифицируем блок GUI элементов:
+bag = tk.PhotoImage(file=str(RESOURCE_DIR / "logo.png"))
 img = ttk.Label(win, image=bag)
 img.place(x=0, y=-1)
 
