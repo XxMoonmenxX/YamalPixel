@@ -17,6 +17,9 @@ import shutil
 import logging
 from pypresence import Presence
 from pathlib import Path
+CURRENT_VERSION = "0.2.11" # тестовое обновление
+logging.basicConfig(filename='launcher.log', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Конфигурация ресурсов
 RESOURCE_DIR = Path.home() / "YamalPixelRes"
@@ -70,32 +73,6 @@ def setup_environment():
         sys.exit(1)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-CURRENT_VERSION = "0.2.1" # тестовое обновление
-logging.basicConfig(filename='launcher.log', level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def update_discord_status():
