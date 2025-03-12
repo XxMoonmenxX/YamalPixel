@@ -216,9 +216,10 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'patchouli_books'),
         os.path.join(launcher_dir, 'patchouli_data.json'),
         os.path.join(launcher_dir, 'logs'),
-        os.path.join(launcher_dir, 'logo.png')
-        os.path.join(launcher_dir,)
+        os.path.join(launcher_dir, 'logo.png'),  # <- Добавлена запятая
+        os.path.join(launcher_dir, 'Obuse - Menu song.mp3')  # <- Добавлена запятая
     ]
+
     for item in items_to_remove:
         if os.path.exists(item):
             if os.path.isdir(item):
@@ -226,6 +227,7 @@ def cleanup_before_launch():
             else:
                 os.remove(item)
             print(f"Удалено: {item}")
+
 
 cleanup_before_launch()
 
