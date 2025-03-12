@@ -229,7 +229,8 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'patchouli_data.json'),
         os.path.join(launcher_dir, 'logs'),
         os.path.join(launcher_dir, 'logo.png'),  # <- Добавлена запятая
-        os.path.join(launcher_dir, 'Obuse - Menu song.mp3')  # <- Добавлена запятая
+        os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),  # <- Добавлена запятая
+        os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe')
     ]
 
     for item in items_to_remove:
