@@ -17,8 +17,8 @@ import shutil
 import logging
 from pypresence import Presence
 from pathlib import Path
-import psutil
-CURRENT_VERSION = "0.2.122" #обновление
+
+CURRENT_VERSION = "0.2.123" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -88,14 +88,7 @@ def update_discord_status():
 update_discord_status()
 
 
-def kill_process(process_name):
-    """Принудительное завершение процесса"""
-    for proc in psutil.process_iter():
-        try:
-            if proc.name().lower() == process_name.lower():
-                proc.kill()
-        except Exception as e:
-            logging.error(f"Ошибка завершения процесса: {str(e)}")
+
 
 def check_for_updates():
     try:
@@ -142,15 +135,11 @@ def check_for_updates():
 
 def download_and_install_update(download_url):
     progress_window = None
-    temp_exe = os.path.join(os.getcwd(), "YamalPixelLaunhcer_New.exe")
-    old_exe = os.path.join(os.getcwd(), "YamalPixelLaunhcer.exe")
-    backup_exe = os.path.join(os.getcwd(), "YamalPixelLaunhcer_Backup.exe")
+    temp_exe = os.path.join(os.getcwd(), "YamalPixelLauncher_New.exe")
+    old_exe = os.path.join(os.getcwd(), "YamalPixelLauncher.exe")
+    backup_exe = os.path.join(os.getcwd(), "YamalPixelLauncher_Backup.exe")
 
     try:
-        # Закрываем все процессы лаунчера
-        kill_process("YamalPixelLaunhcer.exe")
-        kill_process("YamalPixelLaunhcer_New.exe")
-
         # Создаем окно прогресса
         progress_window = tk.Toplevel(win)
         progress_window.title("Обновление")
@@ -191,6 +180,15 @@ def download_and_install_update(download_url):
 
         # Перезапускаем лаунчер
         subprocess.Popen([old_exe], shell=True)
+
+        # Удаляем старую версию после успешного запуска новой
+        if os.path.exists(backup_exe):
+            try:
+                os.remove(backup_exe)
+                logging.info("Старая версия лаунчера успешно удалена.")
+            except Exception as e:
+                logging.error(f"Ошибка удаления старой версии: {str(e)}")
+
         sys.exit()
 
     except Exception as e:
@@ -208,16 +206,6 @@ def download_and_install_update(download_url):
 
         messagebox.showerror("Ошибка", f"Ошибка при обновлении: {str(e)}")
 
-    except Exception as e:
-        logging.error(f"Ошибка обновления: {str(e)}")
-        messagebox.showerror("Ошибка", f"Ошибка при обновлении: {str(e)}")
-        if progress_window:
-            progress_window.destroy()
-
-        # Удаление временных файлов при ошибке
-        if os.path.exists(temp_exe):
-            os.remove(temp_exe)
-
 
 
 # Функция очистки перед запуском
@@ -228,8 +216,8 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'patchouli_books'),
         os.path.join(launcher_dir, 'patchouli_data.json'),
         os.path.join(launcher_dir, 'logs'),
-        os.path.join(launcher_dir, 'logo.png'),  # <- Добавлена запятая
-        os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),  # <- Добавлена запятая
+        os.path.join(launcher_dir, 'logo.png'),
+        os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),
         os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe')
     ]
 
@@ -247,16 +235,19 @@ cleanup_before_launch()
 # Функция проверки версии Java
 def check_java_version():
     try:
-        result = subprocess.check_output(['java', '-version'], stderr=subprocess.STDOUT, text=True)
-        version_match = re.search(r'version "([1-9]\d*\.\d+\.\d+)', result)
+        result = subprocess.run(['java', '-version'],
+                                stderr=subprocess.PIPE,
+                                stdout=subprocess.PIPE,
+                                text=True,
+                                timeout=5)
+        version_line = [line for line in result.stderr.split('\n') if 'version "' in line][0]
+        version_match = re.search(r'version "([1-9]\d*\.\d+\.\d+)', version_line)
+
         if version_match:
-            version = version_match.group(1)
-            major_version = int(version.split('.')[0])
-            if major_version >= 17:
-                print(f"Установлена Java версии {version}")
-                return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
+            major_version = int(version_match.group(1).split('.')[0])
+            return major_version >= 17
+    except (subprocess.CalledProcessError, FileNotFoundError, IndexError, TimeoutError) as e:
+        logging.warning(f"Java check failed: {str(e)}")
     return False
 
 
