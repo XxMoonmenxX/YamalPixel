@@ -422,27 +422,10 @@ def outscrn(): win.attributes("-fullscreen", False)
 
 # Функция для удаления модов
 def fig1():
-    mods_dir = os.path.join(CONFIG['minecraft_dir'],'mods')
+    mods_dir = os.path.join(CONFIG['minecraft_dir'])
     items_to_remove2 = [
-        os.path.join(mods_dir, 'fabric-api-0.77.0.jar'),
-        os.path.join(mods_dir, 'sodium-fabric-mc1.18.2-0.4.1+build.15.jar'),
-        os.path.join(mods_dir, 'indium-0.7.10+mc1.18.2.zip'),
-        os.path.join(mods_dir, 'RebornCore-5.2.0.jar'),
-        os.path.join(mods_dir, 'TechReborn-5.2.0.jar'),
-        os.path.join(mods_dir, 'Xaeros_Minimap_22.14.1_Fabric_1.18.2.jar'),
-        os.path.join(mods_dir, 'architectury-4.9.83-fabric.jar'),
-        os.path.join(mods_dir, 'betterdroppeditems-1.3.2-1.18.2.jar'),
-        os.path.join(mods_dir, 'cloth-config-6.3.81-fabric.jar'),
-        os.path.join(mods_dir, 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar'),
-        os.path.join(mods_dir, 'iris-mc1.18.2-1.3.1.jar'),
-        os.path.join(mods_dir, 'lithium-fabric-mc1.18.2-0.7.10.jar'),
-        os.path.join(mods_dir, 'supplementaries-1.18.2-1.4.11.jar'),
-        os.path.join(mods_dir, 'modmenu-3.2.5.jar'),
-        os.path.join(mods_dir, 'autoconfig1u-3.4.0.jar'),
-        os.path.join(mods_dir, 'NoIndium-1.0.2+1.18.2.jar'),
-        os.path.join(mods_dir, 'omega-config-base-1.2.3-1.18.1.jar'),
-        os.path.join(mods_dir, 'pal-1.5.0.jar'),
-        os.path.join(mods_dir, 'Patchouli-1.18.2-66-FABRIC.jar')
+        os.path.join(mods_dir, 'mods'),
+        os.path.join(mods_dir, 'versions')
     ]
     for item2 in items_to_remove2:
         if os.path.exists(item2):
@@ -547,7 +530,13 @@ def is_fabric_needed(selected_version):
         "Minecraft 1.17.1 + Fabric",
         "Minecraft 1.18.2 + Fabric",
         "Minecraft 1.19.2 + Fabric",
-        "Minecraft 1.20.1 + Fabric"
+        "Minecraft 1.20.1 + Fabric",
+        "Minecraft 1.20.2 + Fabric",
+        "Minecraft 1.21 + Fabric",
+        "Minecraft 1.21.1 + Fabric",
+        "Minecraft 1.21.2 + Fabric",
+        "Minecraft 1.21.3 + Fabric",
+        "Minecraft 1.21.4 + Fabric"
     ]
     return selected_version in fabric_supported_versions
 
@@ -755,46 +744,92 @@ def select_version(event):
         CONFIG['fabric_loader'] = None  # Fabric не поддерживает 1.12.2 напрямую
     elif selected_version == "Minecraft 1.14.4":
         CONFIG['version'] = '1.14.4'
-        CONFIG['fabric_loader'] = '0.4.8'  # Пример версии Fabric для 1.14.4
+        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.14.4
     elif selected_version == "Minecraft 1.14.4 + Fabric":
         CONFIG['version'] = '1.14.4'
-        CONFIG['fabric_loader'] = '0.4.8'
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.15.2":
         CONFIG['version'] = '1.15.2'
-        CONFIG['fabric_loader'] = '0.6.1'  # Пример версии Fabric для 1.15.2
+        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.15.2
     elif selected_version == "Minecraft 1.15.2 + Fabric":
         CONFIG['version'] = '1.15.2'
-        CONFIG['fabric_loader'] = '0.6.1'
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.16.5":
         CONFIG['version'] = '1.16.5'
         CONFIG['fabric_loader'] = None  # Fabric не используется
     elif selected_version == "Minecraft 1.16.5 + Fabric":
         CONFIG['version'] = '1.16.5'
-        CONFIG['fabric_loader'] = '0.11.6'  # Пример версии Fabric для 1.16.5
+        CONFIG['fabric_loader'] = '0.16.10'  # Пример версии Fabric для 1.16.5
     elif selected_version == "Minecraft 1.17.1":
         CONFIG['version'] = '1.17.1'
-        CONFIG['fabric_loader'] = '0.12.0'  # Пример версии Fabric для 1.17.1
+        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.17.1
     elif selected_version == "Minecraft 1.17.1 + Fabric":
         CONFIG['version'] = '1.17.1'
-        CONFIG['fabric_loader'] = '0.12.0'
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.18.2":
         CONFIG['version'] = '1.18.2'
-        CONFIG['fabric_loader'] = '0.13.3'  # Пример версии Fabric для 1.18.2
+        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.18.2
     elif selected_version == "Minecraft 1.18.2 + Fabric":
         CONFIG['version'] = '1.18.2'
-        CONFIG['fabric_loader'] = '0.13.3'
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.19.2":
         CONFIG['version'] = '1.19.2'
-        CONFIG['fabric_loader'] = '0.14.22'  # Пример версии Fabric для 1.19.2
+        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.19.2
     elif selected_version == "Minecraft 1.19.2 + Fabric":
         CONFIG['version'] = '1.19.2'
-        CONFIG['fabric_loader'] = '0.14.22'
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.20.1":
         CONFIG['version'] = '1.20.1'
-        CONFIG['fabric_loader'] = '0.14.22'  # Пример версии Fabric для 1.20.1
+        CONFIG['fabric_loader'] = '0.16.10'  # Пример версии Fabric для 1.20.1
     elif selected_version == "Minecraft 1.20.1 + Fabric":
         CONFIG['version'] = '1.20.1'
-        CONFIG['fabric_loader'] = '0.14.22'
+        CONFIG['fabric_loader'] = '0.16.10'
+    elif selected_version == "Minecraft 1.20.2":
+        CONFIG['version'] = '1.20.2'
+        CONFIG['fabric_loader'] = None
+    elif selected_version == "Minecraft 1.20.2 + Fabric":
+        CONFIG['version'] = '1.20.2'
+        CONFIG['fabric_loader'] = '0.16.10'
+    # Версия 1.21.x
+    elif selected_version == "Minecraft 1.21":
+        CONFIG['version'] = '1.21'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21 + Fabric":
+        CONFIG['version'] = '1.21'
+        CONFIG['fabric_loader'] = '0.16.10'
+
+    elif selected_version == "Minecraft 1.21.1":
+        CONFIG['version'] = '1.21.1'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21.1 + Fabric":
+        CONFIG['version'] = '1.21.1'
+        CONFIG['fabric_loader'] = '0.16.10'
+
+    elif selected_version == "Minecraft 1.21.2":
+        CONFIG['version'] = '1.21.2'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21.2 + Fabric":
+        CONFIG['version'] = '1.21.2'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21.3":
+        CONFIG['version'] = '1.21.3'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21.3 + Fabric":
+        CONFIG['version'] = '1.21.3'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21.4":
+        CONFIG['version'] = '1.21.4'
+        CONFIG['fabric_loader'] = None
+
+    elif selected_version == "Minecraft 1.21.4 + Fabric":
+        CONFIG['version'] = '1.21.4'
+        CONFIG['fabric_loader'] = '0.16.10'
     messagebox.showinfo("Версия изменена", f"Выбрана версия: {selected_version}")
 
 # Добавление выпадающего списка для выбора версии
@@ -816,7 +851,19 @@ versions = [
     "Minecraft 1.19.2",
     "Minecraft 1.19.2 + Fabric",
     "Minecraft 1.20.1",
-    "Minecraft 1.20.1 + Fabric"
+    "Minecraft 1.20.1 + Fabric",
+    "Minecraft 1.20.2",
+    "Minecraft 1.20.2 + Fabric",
+    "Minecraft 1.21",
+    "Minecraft 1.21 + Fabric",
+    "Minecraft 1.21.1",
+    "Minecraft 1.21.1 + Fabric",
+    "Minecraft 1.21.2",
+    "Minecraft 1.21.2 + Fabric",
+    "Minecraft 1.21.3",
+    "Minecraft 1.21.3 + Fabric",
+    "Minecraft 1.21.4",
+    "Minecraft 1.21.4 + Fabric"
 ]
 
 version_combobox = ttk.Combobox(win, values=versions, state="readonly")
