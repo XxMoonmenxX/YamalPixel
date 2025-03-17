@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.2.123" #обновление
+CURRENT_VERSION = "0.2.141" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -182,32 +182,45 @@ def download_and_install_update(download_url):
                     status_label.config(text=f"Загружено {percent}%")
                     progress_window.update()
 
+        # Создаем батник для завершения обновления
+        if os.name == 'nt':  # Windows
+            bat_path = os.path.join(os.getcwd(), "update.bat")
+            with open(bat_path, 'w') as bat_file:
+                bat_file.write(f"""
+                @echo off
+                timeout /t 1 /nobreak >nul
+                del "{old_exe}"
+                rename "{temp_exe}" "{os.path.basename(old_exe)}"
+                start "" "{old_exe}"
+                del "{backup_exe}" 2>nul
+                del "%~f0"
+                """)
+        else:  # Linux/MacOS
+            sh_path = os.path.join(os.getcwd(), "update.sh")
+            with open(sh_path, 'w') as sh_file:
+                sh_file.write(f"""
+                #!/bin/bash
+                sleep 1
+                rm -f "{old_exe}"
+                mv "{temp_exe}" "{old_exe}"
+                chmod +x "{old_exe}"
+                "{old_exe}" &
+                rm -f "{backup_exe}"
+                rm -f "$0"
+                """)
+            os.chmod(sh_path, 0o755)  # Делаем скрипт исполняемым
+
         # Создаем бэкап старой версии
         if os.path.exists(old_exe):
             os.rename(old_exe, backup_exe)
 
-        # Устанавливаем новую версию
-        os.rename(temp_exe, old_exe)
+        # Запускаем скрипт обновления
+        if os.name == 'nt':
+            subprocess.Popen([bat_path], shell=True)
+        else:
+            subprocess.Popen([sh_path], shell=True)
 
-        # Удаляем бэкап и временные файлы
-        for file_to_remove in [backup_exe, temp_exe]:
-            if os.path.exists(file_to_remove):
-                try:
-                    os.remove(file_to_remove)
-                except Exception as e:
-                    logging.error(f"Ошибка удаления {file_to_remove}: {str(e)}")
-
-        # Перезапускаем лаунчер
-        subprocess.Popen([old_exe], shell=True)
-
-        # Удаляем старую версию после успешного запуска новой
-        if os.path.exists(backup_exe):
-            try:
-                os.remove(backup_exe)
-                logging.info("Старая версия лаунчера успешно удалена.")
-            except Exception as e:
-                logging.error(f"Ошибка удаления старой версии: {str(e)}")
-
+        # Закрываем лаунчер
         sys.exit()
 
     except Exception as e:
