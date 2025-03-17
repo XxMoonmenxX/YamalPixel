@@ -76,15 +76,34 @@ def setup_environment():
 
 
 
+
+
+def is_discord_installed():
+    # Проверяем, установлен ли Discord (пример для Windows)
+    if os.name == 'nt':  # Windows
+        discord_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Discord')
+        return os.path.exists(discord_path)
+    else:  # Linux/MacOS
+        # Добавь проверки для других ОС, если нужно
+        return False
+
 def update_discord_status():
-    RPC = Presence("1349070276327116890")
-    RPC.connect()
-    RPC.update(
-        state="Играет",
-        details="YamalPixel",
-        large_image="logo",
-        buttons=[{"label": "Скачать", "url": "https://disk.yandex.ru/d/WaJwp2ThduRrgQ"}]
-    )
+    if not is_discord_installed():
+        print("Discord не установлен. Интеграция с Discord пропущена.")
+        return
+
+    try:
+        RPC = Presence("1349070276327116890")
+        RPC.connect()
+        RPC.update(
+            state="Играет",
+            details="YamalPixel",
+            large_image="logo",
+            buttons=[{"label": "Скачать", "url": "https://disk.yandex.ru/d/WaJwp2ThduRrgQ"}]
+        )
+    except Exception as e:
+        print(f"Ошибка при подключении к Discord: {str(e)}")
+# Вызываем функцию обновления статуса Discord
 update_discord_status()
 
 
