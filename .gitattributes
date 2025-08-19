@@ -3,4 +3,5 @@
 *.out linguist-vendored
 *.toc linguist-vendored
 *.html linguist-vendored
+*.txt linguist-vendored
 *.py linguist-detectable
