@@ -2,4 +2,5 @@
 *.log linguist-vendored
 *.out linguist-vendored
 *.toc linguist-vendored
+*.html linguist-vendored
 *.py linguist-detectable
