@@ -1,0 +1,5 @@
+*.aux linguist-vendored
+*.log linguist-vendored
+*.out linguist-vendored
+*.toc linguist-vendored
+*.py linguist-detectable
