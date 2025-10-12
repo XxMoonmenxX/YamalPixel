@@ -380,7 +380,9 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/sEMe8EGrqKfxcA', 'file': 'NoIndium-1.0.2+1.18.2.jar'},
         {'url': 'https://disk.yandex.ru/d/1d7-rrBDObktmg', 'file': 'omega-config-base-1.2.3-1.18.1.jar'},
         {'url': 'https://disk.yandex.ru/d/5Zv2QC9-SelwDA', 'file': 'pal-1.5.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/ahOdVWSraF65xQ', 'file': 'Patchouli-1.18.2-66-FABRIC.jar'}
+        {'url': 'https://disk.yandex.ru/d/ahOdVWSraF65xQ', 'file': 'Patchouli-1.18.2-66-FABRIC.jar'},
+        {'url': 'https://disk.yandex.ru/d/PrvKKegQUFj1aA', 'file': 'cardinal-components-api-4.2.0.jar'},
+        {'url': 'https://disk.yandex.ru/d/MAKOIjOlFOvrzQ', 'file': 'travelersbackpack-fabric-1.18.2-7.1.43.jar'}
     ]
 }
 
