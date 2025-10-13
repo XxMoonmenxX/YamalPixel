@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.3.01" #обновление
+CURRENT_VERSION = "0.3.02" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -243,6 +243,7 @@ def download_and_install_update(download_url):
 # Функция очистки перед запуском
 def cleanup_before_launch():
     launcher_dir = os.getcwd()
+    old_Mods = os.path.expanduser("~/YamalPixel/mods")
     items_to_remove = [
         os.path.join(launcher_dir, 'config'),
         os.path.join(launcher_dir, 'patchouli_books'),
@@ -250,7 +251,9 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'logs'),
         os.path.join(launcher_dir, 'logo.png'),
         os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),
-        os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe')
+        os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe'),
+        os.path.join(old_Mods, 'jei-1.18.2-fabric-10.2.1.283.jar' ),
+        os.path.join(old_Mods, 'JEI.zip')
     ]
 
     for item in items_to_remove:
@@ -374,7 +377,7 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/agV4dqkgBjLRJg', 'file': 'cloth-config-6.3.81-fabric.jar'},
         {'url': 'https://disk.yandex.ru/d/5_I5Q7SE6WmExw', 'file': 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar'},
         {'url': 'https://disk.yandex.ru/d/kGgcgJGlg9Bhvg', 'file': 'lithium-fabric-mc1.18.2-0.7.10.jar'},
-        {'url': 'https://disk.yandex.ru/d/UJn-CCA_Uc2QPA', 'file': 'JEI.zip'},
+        #{'url': 'https://disk.yandex.ru/d/UJn-CCA_Uc2QPA', 'file': 'JEI.zip'},
         {'url': 'https://disk.yandex.ru/d/ISYwMEs6GCkOUQ', 'file': 'modmenu-3.2.5.jar'},
         {'url': 'https://disk.yandex.ru/d/Qmd74h8szwpglQ', 'file': 'autoconfig1u-3.4.0.jar'},
         {'url': 'https://disk.yandex.ru/d/sEMe8EGrqKfxcA', 'file': 'NoIndium-1.0.2+1.18.2.jar'},
@@ -383,6 +386,7 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/ahOdVWSraF65xQ', 'file': 'Patchouli-1.18.2-66-FABRIC.jar'},
         {'url': 'https://disk.yandex.ru/d/PrvKKegQUFj1aA', 'file': 'cardinal-components-api-4.2.0.jar'},
         {'url': 'https://disk.yandex.ru/d/XIMMzZ8jtzQJHQ', 'file': 'ctov-2.9.4.jar'},
+        {'url': 'https://disk.yandex.ru/d/3yxMhxa0wg1GlA', 'file': 'emi-0.7.3+1.18.2.jar'},
         {'url': 'https://disk.yandex.ru/d/MAKOIjOlFOvrzQ', 'file': 'travelersbackpack-fabric-1.18.2-7.1.43.jar'}
     ]
 }
