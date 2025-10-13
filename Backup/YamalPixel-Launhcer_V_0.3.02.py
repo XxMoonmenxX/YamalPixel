@@ -387,6 +387,10 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/PrvKKegQUFj1aA', 'file': 'cardinal-components-api-4.2.0.jar'},
         {'url': 'https://disk.yandex.ru/d/XIMMzZ8jtzQJHQ', 'file': 'ctov-2.9.4.jar'},
         {'url': 'https://disk.yandex.ru/d/3yxMhxa0wg1GlA', 'file': 'emi-0.7.3+1.18.2.jar'},
+        {'url': 'https://disk.yandex.ru/d/IkWqOD3VUSo9yg', 'file': 'lambdynamiclights-2.1.0+1.17.jar'},
+        {'url': 'https://disk.yandex.ru/d/NdzX7_fiIa0lCA', 'file': 'more-axolotls-1.1.0-1.18.jar'},
+        {'url': 'https://disk.yandex.ru/d/4aWpt1DlDJbd6g', 'file': 'enchanted-golden-apple-addition-2.0.jar'},
+        {'url': 'https://disk.yandex.ru/d/2Iwq0WWnOSvQGg', 'file': 'mvs-2.2.6-1.18.2.jar'},
         {'url': 'https://disk.yandex.ru/d/MAKOIjOlFOvrzQ', 'file': 'travelersbackpack-fabric-1.18.2-7.1.43.jar'}
     ]
 }
