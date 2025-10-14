@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.3.04" #обновление
+CURRENT_VERSION = "0.3.041" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
