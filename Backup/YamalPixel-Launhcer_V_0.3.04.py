@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.3.03" #обновление
+CURRENT_VERSION = "0.3.04" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -253,6 +253,8 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),
         os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe'),
         os.path.join(old_Mods, 'jei-1.18.2-fabric-10.2.1.283.jar' ),
+        os.path.join(old_Mods, 'Xaeros_Minimap_22.14.1_Fabric_1.18.2.jar' ),
+        os.path.join(old_Mods, 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar' ),
         os.path.join(old_Mods, 'JEI.zip')
     ]
 
@@ -371,11 +373,11 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/LiTGqt32O3EYTQ', 'file': 'AdvancedReborn-1.18.2-1.0.6.jar'},
         {'url': 'https://disk.yandex.ru/d/mnHcD27ReV24Nw', 'file': 'RebornCore-5.2.0.jar'},
         {'url': 'https://disk.yandex.ru/d/-ZDLDoU0aMVIBw', 'file': 'TechReborn-5.2.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/7O1h0pGQFD553g', 'file': 'Xaeros_Minimap_22.14.1_Fabric_1.18.2.jar'},
+        {'url': 'https://disk.yandex.ru/d/D5ZgXPTUQ9s4Nw', 'file': 'Xaeros_Minimap_25.2.10_Fabric_1.18.2.jar'},
         {'url': 'https://disk.yandex.ru/d/vNOUfe3TeIPSDg', 'file': 'architectury-4.9.83-fabric.jar'},
         {'url': 'https://disk.yandex.ru/d/7hbnmzKH_dB6_w', 'file': 'betterdroppeditems-1.3.2-1.18.2.jar'},
         {'url': 'https://disk.yandex.ru/d/agV4dqkgBjLRJg', 'file': 'cloth-config-6.3.81-fabric.jar'},
-        {'url': 'https://disk.yandex.ru/d/5_I5Q7SE6WmExw', 'file': 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar'},
+        #{'url': 'https://disk.yandex.ru/d/5_I5Q7SE6WmExw', 'file': 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar'},
         {'url': 'https://disk.yandex.ru/d/kGgcgJGlg9Bhvg', 'file': 'lithium-fabric-mc1.18.2-0.7.10.jar'},
         #{'url': 'https://disk.yandex.ru/d/UJn-CCA_Uc2QPA', 'file': 'JEI.zip'},
         {'url': 'https://disk.yandex.ru/d/ISYwMEs6GCkOUQ', 'file': 'modmenu-3.2.5.jar'},
@@ -391,6 +393,16 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/NdzX7_fiIa0lCA', 'file': 'more-axolotls-1.1.0-1.18.jar'},
         {'url': 'https://disk.yandex.ru/d/4aWpt1DlDJbd6g', 'file': 'enchanted-golden-apple-addition-2.0.jar'},
         {'url': 'https://disk.yandex.ru/d/2Iwq0WWnOSvQGg', 'file': 'mvs-2.2.6-1.18.2.jar'},
+        {'url': 'https://disk.yandex.ru/d/3JGUY7tfyb7vvg', 'file': 'ironchests-2.0.5-fabric.jar'},
+        {'url': 'https://disk.yandex.ru/d/9l2Apb9AlQ3l7Q', 'file': 'appliedenergistics2-fabric-11.7.6.jar'},
+        {'url': 'https://disk.yandex.ru/d/gBK7Svi9f6HcUA', 'file': 'lovely_snails-1.0.4+1.18.jar'},
+        {'url': 'https://disk.yandex.ru/d/ie0ugUk2DtVCZg', 'file': 'PresenceFootsteps-1.5.1.jar'},
+        {'url': 'https://disk.yandex.ru/d/Wpb1rzgfuq5cbw', 'file': 'cloth-config-6.5.102-fabric.jar'},
+        {'url': 'https://disk.yandex.ru/d/iuNNhdMBn8-KLw', 'file': 'fallingleaves-1.11.1+1.18.2.jar'},
+        {'url': 'https://disk.yandex.ru/d/jSfefQfEPd5yYA', 'file': 'InventoryProfilesNext-fabric-1.18.2-1.10.19.jar'},
+        {'url': 'https://disk.yandex.ru/d/wDK-GY4MNMSVfQ', 'file': 'XaerosWorldMap_1.39.12_Fabric_1.18.2.jar'},
+        {'url': 'https://disk.yandex.ru/d/HvCQmBtWtlr0Rw', 'file': 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar'},
+        {'url': 'https://disk.yandex.ru/d/14gejHCkpSI5Jw', 'file': 'libIPN-fabric-1.18.2-4.0.2.jar'},
         {'url': 'https://disk.yandex.ru/d/MAKOIjOlFOvrzQ', 'file': 'travelersbackpack-fabric-1.18.2-7.1.43.jar'}
     ]
 }
