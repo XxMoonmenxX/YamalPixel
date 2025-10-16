@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.3.042" #обновление
+CURRENT_VERSION = "0.3.05" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -404,6 +404,8 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/HvCQmBtWtlr0Rw', 'file': 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar'},
         {'url': 'https://disk.yandex.ru/d/14gejHCkpSI5Jw', 'file': 'libIPN-fabric-1.18.2-4.0.2.jar'},
         {'url': 'https://disk.yandex.ru/d/6xf4hpONrEhNhw', 'file': 'Frogmod.jar'},
+        {'url': 'https://disk.yandex.ru/d/UmJctCYldTQ5Sw', 'file': 'geckolib-fabric-1.18-3.0.80.jar'},
+        {'url': 'https://disk.yandex.ru/d/dRPU1tyT4yV8aQ', 'file': 'extra-mod-integrations-0.0.31.18.2.jar'},
         {'url': 'https://disk.yandex.ru/d/MAKOIjOlFOvrzQ', 'file': 'travelersbackpack-fabric-1.18.2-7.1.43.jar'}
     ]
 }
