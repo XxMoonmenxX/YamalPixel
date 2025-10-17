@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.4.0" #обновление
+CURRENT_VERSION = "0.4.01" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -298,7 +298,6 @@ def cleanup_before_launch():
         os.path.join(old_Mods, 'fallingleaves-1.11.1+1.18.2.jar'),
         os.path.join(old_Mods, 'InventoryProfilesNext-fabric-1.18.2-1.10.19.jar'),
         os.path.join(old_Mods, 'XaerosWorldMap_1.39.12_Fabric_1.18.2.jar'),
-        os.path.join(old_Mods, 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar'),
         os.path.join(old_Mods, 'libIPN-fabric-1.18.2-4.0.2.jar'),
         os.path.join(old_Mods, 'Frogmod.jar'),
         os.path.join(old_Mods, 'geckolib-fabric-1.18-3.0.80.jar'),
@@ -455,20 +454,138 @@ img.place(x=0, y=-1)
 def fullsc(): win.attributes("-fullscreen", True)
 def outscrn(): win.attributes("-fullscreen", False)
 
-# Функция для удаления модов
+
+def create_backup(folder_path, backup_type):
+    """Создает zip-бэкап указанной папки"""
+    if not os.path.exists(folder_path):
+        return None
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
+
+    backup_filename = f"{backup_type}_backup_{timestamp}.zip"
+    backup_path = os.path.join(backup_dir, backup_filename)
+
+    try:
+        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, folder_path)
+                    zipf.write(file_path, arcname)
+        print(f"Создан бэкап: {backup_path}")
+        return backup_path
+    except Exception as e:
+        print(f"Ошибка создания бэкапа: {str(e)}")
+        return None
+
+
+# Функция для удаления всех бэкапов
+def delete_all_backups():
+    """Удаляет все бэкапы (только по кнопке!)"""
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+    if not os.path.exists(backup_dir):
+        messagebox.showinfo("Бэкапы", "Папка бэкапов не существует")
+        return
+
+    # Подтверждение удаления
+    result = messagebox.askyesno(
+        "Удаление бэкапов",
+        "Вы уверены, что хотите удалить ВСЕ бэкапы?\nЭто действие нельзя отменить!"
+    )
+
+    if not result:
+        return
+
+    try:
+        shutil.rmtree(backup_dir)
+        messagebox.showinfo("Бэкапы", "Все бэкапы удалены")
+        print("Удалены все бэкапы")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось удалить бэкапы: {str(e)}")
+
+
+# Функция для показа информации о бэкапах
+def show_backup_info():
+    """Показывает информацию о бэкапах"""
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+    if not os.path.exists(backup_dir):
+        messagebox.showinfo("Бэкапы", "Бэкапы не создавались")
+        return
+
+    backups = []
+    total_size = 0
+    for filename in os.listdir(backup_dir):
+        if filename.endswith('.zip'):
+            file_path = os.path.join(backup_dir, filename)
+            size = os.path.getsize(file_path) / (1024 * 1024)  # Размер в МБ
+            total_size += size
+            time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
+            backups.append((filename, f"{size:.1f} МБ", time_created.strftime("%d.%m.%Y %H:%M")))
+
+    if not backups:
+        messagebox.showinfo("Бэкапы", "Бэкапы не найдены")
+        return
+
+    backups.sort(key=lambda x: x[2], reverse=True)  # Сортируем по дате (новые сверху)
+
+    info_text = f"Созданные бэкапы (всего: {len(backups)}, общий размер: {total_size:.1f} МБ):\n\n"
+    for backup in backups:
+        info_text += f"• {backup[0]}\n  Размер: {backup[1]}, Создан: {backup[2]}\n\n"
+
+    messagebox.showinfo("Информация о бэкапах", info_text)
+
+
+# Обновленная функция для удаления модов с бэкапами
 def fig1():
     mods_dir = os.path.join(CONFIG['minecraft_dir'])
     items_to_remove2 = [
         os.path.join(mods_dir, 'mods'),
         os.path.join(mods_dir, 'versions')
     ]
+
+    # Создаем бэкапы перед удалением
+    backups_created = []
+    for item in items_to_remove2:
+        if os.path.exists(item):
+            backup_type = "mods" if "mods" in item else "versions"
+            backup_path = create_backup(item, backup_type)
+            if backup_path:
+                backups_created.append(backup_path)
+
+    # Удаляем папки
     for item2 in items_to_remove2:
         if os.path.exists(item2):
-            if os.path.isdir(item2):
-                shutil.rmtree(item2)
-            else:
-                os.remove(item2)
-            print(f"Удалено: {item2}")
+            try:
+                if os.path.isdir(item2):
+                    shutil.rmtree(item2)
+                else:
+                    os.remove(item2)
+                print(f"Удалено: {item2}")
+            except Exception as e:
+                print(f"Ошибка удаления {item2}: {str(e)}")
+
+    # Показываем информацию о созданных бэкапах
+    if backups_created:
+        backup_info = "Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created])
+        messagebox.showinfo("Бэкапы созданы", backup_info)
+    else:
+        messagebox.showinfo("Очистка", "Папки mods и versions очищены (бэкапы не создавались)")
+
+def open_game_folder():
+    minecraft_dir = CONFIG['minecraft_dir']
+    try:
+        if os.path.exists(minecraft_dir):
+            if os.name == 'nt':  # Windows
+                os.startfile(minecraft_dir)
+            elif os.name == 'posix':  # Linux/MacOS
+                subprocess.Popen(['xdg-open', minecraft_dir])
+            print(f"Открыта папка с игрой: {minecraft_dir}")
+        else:
+            messagebox.showwarning("Папка не найдена", f"Папка {minecraft_dir} не существует!")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
 
 # Меню "Инструменты"
 menu_bar = tk.Menu(win)
@@ -481,6 +598,14 @@ settings_menu.configure(
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 settings_menu.add_command(label="Починить игру", command=fig1)
+settings_menu.add_command(label="Открыть папку с игрой", command=open_game_folder)  # НОВАЯ КНОПКА
+settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
+settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
+settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
+settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
+settings_menu.add_separator()
+
+
 
 # Функция для открытия настроек
 def open_settings():
