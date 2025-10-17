@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.14" #обновление
+CURRENT_VERSION = "0.4.16" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -86,8 +86,68 @@ def setup_environment():
 
 
 
+def validate_backup_integrity(backup_path):
+    """Проверяет целостность ZIP-архива"""
+    try:
+        with zipfile.ZipFile(backup_path, 'r') as zip_ref:
+            return zip_ref.testzip() is None
+    except Exception as e:
+        print(f"Ошибка проверки целостности бэкапа: {str(e)}")
+        return False
 
+def auto_repair_game_files():
+    """Автоматически проверяет и восстанавливает поврежденные файлы игры"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    versions_dir = os.path.join(minecraft_dir, 'versions')
 
+    issues_found = []
+    fixes_applied = []
+
+    # Проверяем наличие основных папок
+    if not os.path.exists(mods_dir):
+        issues_found.append("Папка mods отсутствует")
+        os.makedirs(mods_dir, exist_ok=True)
+        fixes_applied.append("Создана папка mods")
+
+    if not os.path.exists(versions_dir):
+        issues_found.append("Папка versions отсутствует")
+        os.makedirs(versions_dir, exist_ok=True)
+        fixes_applied.append("Создана папка versions")
+
+    # Проверяем servers.dat
+    servers_file = os.path.join(minecraft_dir, 'servers.dat')
+    if not os.path.exists(servers_file):
+        issues_found.append("Файл servers.dat отсутствует")
+        # Автоматически загружаем servers.dat
+        try:
+            params = {'public_key': 'https://disk.yandex.ru/d/WM_flS--BathOQ'}
+            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+            response = requests.get(base_url, params=params)
+            download_url = response.json().get('href')
+
+            if download_url:
+                with open(servers_file, 'wb') as f:
+                    dl_response = requests.get(download_url, stream=True)
+                    for chunk in dl_response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                fixes_applied.append("Восстановлен файл servers.dat")
+        except Exception as e:
+            print(f"Ошибка восстановления servers.dat: {str(e)}")
+
+    # Формируем отчет
+    report = "🔍 Автопочинка завершена!\n\n"
+
+    if issues_found:
+        report += "📋 Найдены проблемы:\n• " + "\n• ".join(issues_found) + "\n\n"
+
+    if fixes_applied:
+        report += "✅ Исправления:\n• " + "\n• ".join(fixes_applied)
+
+    if not issues_found and not fixes_applied:
+        report += "✅ Проблем не обнаружено! Все файлы в порядке."
+
+    messagebox.showinfo("Автопочинка", report)
 
 def is_discord_installed():
     # Проверяем, установлен ли Discord (пример для Windows)
@@ -823,6 +883,25 @@ def restore_from_backup(backup_data):
 
         print(f"Начинаем восстановление из бэкапа...")
 
+        # Проверяем целостность бэкапов перед восстановлением
+        valid_backups = []
+
+        if 'mods' in backup_data:
+            if validate_backup_integrity(backup_data['mods']['path']):
+                valid_backups.append('mods')
+            else:
+                print(f"Бэкап модов поврежден: {backup_data['mods']['path']}")
+
+        if 'versions' in backup_data:
+            if validate_backup_integrity(backup_data['versions']['path']):
+                valid_backups.append('versions')
+            else:
+                print(f"Бэкап версий поврежден: {backup_data['versions']['path']}")
+
+        if not valid_backups:
+            messagebox.showerror("Ошибка", "Все бэкапы повреждены. Восстановление невозможно.")
+            return
+
         # Создаем бэкап текущего состояния перед восстановлением
         current_backup_created = []
         if os.path.exists(mods_dir):
@@ -835,51 +914,35 @@ def restore_from_backup(backup_data):
             if current_backup:
                 current_backup_created.append(current_backup)
 
-        # Восстанавливаем моды
-        if 'mods' in backup_data:
+        success_messages = []
+
+        # Восстанавливаем только валидные бэкапы
+        if 'mods' in valid_backups:
             mods_backup = backup_data['mods']['path']
             print(f"Восстанавливаем моды из: {mods_backup}")
 
-            # Удаляем существующую папку mods если есть
             if os.path.exists(mods_dir):
                 shutil.rmtree(mods_dir)
 
-            # Создаем папку mods
             os.makedirs(mods_dir, exist_ok=True)
 
-            # Проверяем что архив существует и не пустой
-            if os.path.exists(mods_backup) and os.path.getsize(mods_backup) > 0:
-                with zipfile.ZipFile(mods_backup, 'r') as zip_ref:
-                    zip_ref.extractall(mods_dir)
-                print(f"Моды восстановлены из: {os.path.basename(mods_backup)}")
-            else:
-                print(f"Бэкап модов пустой или не существует: {mods_backup}")
+            with zipfile.ZipFile(mods_backup, 'r') as zip_ref:
+                zip_ref.extractall(mods_dir)
+            print(f"Моды восстановлены из: {os.path.basename(mods_backup)}")
+            success_messages.append("✅ Моды восстановлены")
 
-        # Восстанавливаем версии
-        if 'versions' in backup_data:
+        if 'versions' in valid_backups:
             versions_backup = backup_data['versions']['path']
             print(f"Восстанавливаем версии из: {versions_backup}")
 
-            # Удаляем существующую папку versions если есть
             if os.path.exists(versions_dir):
                 shutil.rmtree(versions_dir)
 
-            # Создаем папку versions
             os.makedirs(versions_dir, exist_ok=True)
 
-            # Проверяем что архив существует и не пустой
-            if os.path.exists(versions_backup) and os.path.getsize(versions_backup) > 0:
-                with zipfile.ZipFile(versions_backup, 'r') as zip_ref:
-                    zip_ref.extractall(versions_dir)
-                print(f"Версии восстановлены из: {os.path.basename(versions_backup)}")
-            else:
-                print(f"Бэкап версий пустой или не существует: {versions_backup}")
-
-        # Проверяем что восстановление прошло успешно
-        success_messages = []
-        if 'mods' in backup_data and os.path.exists(mods_dir):
-            success_messages.append("✅ Моды восстановлены")
-        if 'versions' in backup_data and os.path.exists(versions_dir):
+            with zipfile.ZipFile(versions_backup, 'r') as zip_ref:
+                zip_ref.extractall(versions_dir)
+            print(f"Версии восстановлены из: {os.path.basename(versions_backup)}")
             success_messages.append("✅ Версии восстановлены")
 
         if success_messages:
@@ -892,9 +955,7 @@ def restore_from_backup(backup_data):
 
             messagebox.showinfo("Восстановление завершено", backup_info)
         else:
-            messagebox.showwarning("Восстановление",
-                                   "Восстановление завершено, но некоторые компоненты не были восстановлены.\n"
-                                   "Проверьте наличие файлов в бэкапе.")
+            messagebox.showwarning("Восстановление", "Не удалось восстановить ни один компонент.")
 
     except Exception as e:
         print(f"Ошибка восстановления: {str(e)}")
@@ -992,6 +1053,36 @@ def choose_backup_to_restore():
     ttk.Button(button_frame, text="❌ Отмена",
                command=on_cancel).pack(side='left', padx=5)
 
+    def on_restore():
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Выбор", "Пожалуйста, выберите бэкап для восстановления")
+            return
+
+        selected_timestamp = tree.item(selection[0])['tags'][0]
+        selected_backup = next((b for b in backups if b['timestamp'] == selected_timestamp), None)
+
+        if selected_backup:
+            # Подтверждение восстановления
+            result = messagebox.askyesno(
+                "Подтверждение восстановления",
+                f"Вы уверены, что хотите восстановить игру из бэкапа от {selected_backup['date']}?\n\n"
+                f"Текущие моды и версии будут заменены."
+            )
+
+            if result:
+                backup_window.destroy()
+                restore_from_backup(selected_backup)
+
+    def on_cancel():
+        backup_window.destroy()
+
+    # Кнопки
+    ttk.Button(button_frame, text="🔄 Восстановить",
+               command=on_restore, style="Accent.TButton").pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Отмена",
+               command=on_cancel).pack(side='left', padx=5)
+
 
 # Обновленная функция "Починить игру" с выбором действия
 def repair_game_with_options():
@@ -1052,7 +1143,7 @@ def restore_latest_backup():
     if result:
         restore_from_backup(latest_backup)
 
-# Обновляем меню "Инструменты"
+
 menu_bar = tk.Menu(win)
 win.config(menu=menu_bar)
 settings_menu = tk.Menu(menu_bar, tearoff=0)
@@ -1064,13 +1155,14 @@ settings_menu.configure(
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
-settings_menu.add_command(label="Починить игру", command=repair_game_with_options)  # Теперь с выбором!
-settings_menu.add_command(label="Восстановить из последнего бэкапа", command=restore_latest_backup)
+settings_menu.add_command(label="🔧 Автопочинка файлов", command=auto_repair_game_files)  # НОВАЯ ФУНКЦИЯ!
+settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
+settings_menu.add_command(label="🔄 Восстановить из последнего бэкапа", command=restore_latest_backup)
 settings_menu.add_separator()
-settings_menu.add_command(label="Открыть папку с игрой", command=open_game_folder)
-settings_menu.add_command(label="Сделать бэкап", command=create_manual_backup)
-settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
-settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
+settings_menu.add_command(label="📂 Открыть папку с игрой", command=open_game_folder)
+settings_menu.add_command(label="💾 Сделать бэкап", command=create_manual_backup)
+settings_menu.add_command(label="📊 Показать бэкапы", command=show_backup_info)
+settings_menu.add_command(label="🗑️ Удалить ВСЕ бэкапы", command=delete_all_backups)
 settings_menu.add_separator()
 
 
@@ -1186,126 +1278,112 @@ def install_minecraft_version(version, progress_callback=None):
     else:
         print(f"Версия {version} уже установлена.")
 
+
 def runn():
     try:
-        servers_file_path = os.path.join(CONFIG['minecraft_dir'], 'servers.dat')
+        if not username.get().strip():
+            messagebox.showerror("Ошибка", "Введите имя пользователя!")
+            return
 
-        # Проверяем существование файла
-        if not os.path.exists(servers_file_path):
-            print("Файл servers.dat не найден, начинаем загрузку...")
+        # Автоматическая проверка файлов перед запуском
+        auto_repair_game_files()
 
-            # Обновляем ссылку на актуальную
-            params = {'public_key': 'https://disk.yandex.ru/d/WM_flS--BathOQ'}
-            base_url1 = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
-            response = requests.get(base_url1, params=params)
-            response.raise_for_status()
-            download_url = response.json().get('href')
+        os.makedirs(CONFIG['minecraft_dir'], exist_ok=True)
 
-            if not download_url:
-                return
+        progress_window = tk.Toplevel(win)
+        progress_window.title("Запуск Minecraft")
+        progress_window.geometry("300x100")
+        progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="indeterminate")
+        progress.pack(pady=20)
+        progress.start()
 
-            with open(servers_file_path, 'wb') as f:
-                dl_response = requests.get(download_url, stream=True)
-                dl_response.raise_for_status()
-                for chunk in dl_response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+        status_label = ttk.Label(progress_window, text="Подготовка к запуску...")
+        status_label.pack()
 
-            print("Файл servers.dat успешно установлен в папку YamalPixel")
-        else:
-            print("Файл servers.dat уже существует, загрузка не требуется")
+        def install_and_run():
+            try:
+                selected_version = version_combobox.get()
+                status_label.config(text="Проверка версии Minecraft...")
 
-    except Exception as e:
-        print(f"Ошибка загрузки servers.dat: {str(e)}")
+                # Устанавливаем Minecraft версию, если она отсутствует
+                install_minecraft_version(
+                    version=CONFIG['version'],
+                    progress_callback={
+                        "setStatus": lambda t: status_label.config(text=t),
+                        "setProgress": lambda v: progress.configure(value=v) if progress[
+                                                                                    'mode'] == 'determinate' else None,
+                        "setMax": lambda m: progress.configure(maximum=m) if progress['mode'] == 'determinate' else None
+                    }
+                )
 
+                status_label.config(text="Установка Fabric...")
 
+                # Устанавливаем Fabric только если он нужен
+                if is_fabric_needed(selected_version):
+                    if not check_minecraft_and_fabric_installed():
+                        minecraft_launcher_lib.fabric.install_fabric(
+                            minecraft_version=CONFIG['version'],
+                            loader_version=CONFIG['fabric_loader'],
+                            minecraft_directory=CONFIG['minecraft_dir'],
+                            callback={
+                                "setStatus": lambda t: status_label.config(text=t),
+                                "setProgress": lambda v: progress.configure(value=v),
+                                "setMax": lambda m: progress.configure(maximum=m)
+                            }
+                        )
 
-    if not username.get().strip():
-        messagebox.showerror("Ошибка", "Введите имя пользователя!")
-        return
-    os.makedirs(CONFIG['minecraft_dir'], exist_ok=True)
+                status_label.config(text="Загрузка модов...")
 
-    progress_window = tk.Toplevel(win)
-    progress_window.title("Запуск Minecraft")
-    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
-    progress.pack(pady=20)
+                # Загрузка модов только для YamalPixel
+                if selected_version == "YamalPixel":
+                    checker1()
 
-    def install_and_run():
-        try:
-            selected_version = version_combobox.get()
+                status_label.config(text="Запуск игры...")
 
-            # Устанавливаем Minecraft версию, если она отсутствует
-            install_minecraft_version(
-                version=CONFIG['version'],
-                progress_callback={
-                    "setStatus": lambda t: None,
-                    "setProgress": lambda v: progress.configure(value=v),
-                    "setMax": lambda m: progress.configure(maximum=m)
-                }
-            )
-
-            # Устанавливаем Fabric только если он нужен для выбранной версии
-            if is_fabric_needed(selected_version):
-                if not check_minecraft_and_fabric_installed():
-                    minecraft_launcher_lib.fabric.install_fabric(
-                        minecraft_version=CONFIG['version'],
-                        loader_version=CONFIG['fabric_loader'],
+                # Формирование команды запуска
+                if is_fabric_needed(selected_version):
+                    command = minecraft_launcher_lib.command.get_minecraft_command(
+                        version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
                         minecraft_directory=CONFIG['minecraft_dir'],
-                        callback={
-                            "setStatus": lambda t: None,
-                            "setProgress": lambda v: progress.configure(value=v),
-                            "setMax": lambda m: progress.configure(maximum=m)
+                        options={
+                            'username': username.get(),
+                            'jvmArguments': [
+                                "-Xmx8G",
+                                "-Duser.language=ru",
+                                "-Duser.country=RU",
+                                "-Dfile.encoding=UTF-8"
+                            ],
+                            'gameLocale': 'ru_RU'
                         }
                     )
                 else:
-                    print("Пропуск установки Fabric, так как он уже установлен.")
-            else:
-                print("Fabric не требуется для выбранной версии. Пропуск установки.")
+                    command = minecraft_launcher_lib.command.get_minecraft_command(
+                        version=CONFIG['version'],
+                        minecraft_directory=CONFIG['minecraft_dir'],
+                        options={
+                            'username': username.get(),
+                            'jvmArguments': [
+                                "-Xmx8G",
+                                "-Duser.language=ru",
+                                "-Duser.country=RU",
+                                "-Dfile.encoding=UTF-8"
+                            ],
+                            'gameLocale': 'ru_RU'
+                        }
+                    )
 
-            # Загрузка модов только для YamalPixel
-            if selected_version == "YamalPixel":
-                checker1()
+                progress_window.destroy()
+                subprocess.Popen(command)
 
-            # Формирование команды запуска
-            if is_fabric_needed(selected_version):
-                # Запуск с Fabric
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
-                    minecraft_directory=CONFIG['minecraft_dir'],
-                    options={
-                        'username': username.get(),
-                        'jvmArguments': [
-                            "-Xmx8G",
-                            "-Duser.language=ru",
-                            "-Duser.country=RU",
-                            "-Dfile.encoding=UTF-8"
-                        ],
-                        'gameLocale': 'ru_RU'
-                    }
-                )
-            else:
-                # Запуск без Fabric (чистая версия)
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=CONFIG['version'],
-                    minecraft_directory=CONFIG['minecraft_dir'],
-                    options={
-                        'username': username.get(),
-                        'jvmArguments': [
-                            "-Xmx8G",
-                            "-Duser.language=ru",
-                            "-Duser.country=RU",
-                            "-Dfile.encoding=UTF-8"
-                        ],
-                        'gameLocale': 'ru_RU'
-                    }
-                )
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Ошибка запуска: {str(e)}")
+                progress_window.destroy()
 
-            progress_window.destroy()
-            subprocess.Popen(command)
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка запуска: {str(e)}")
-            progress_window.destroy()
+        threading.Thread(target=install_and_run, daemon=True).start()
 
-    threading.Thread(target=install_and_run, daemon=True).start()
+    except Exception as e:
+        print(f"Ошибка в основной функции запуска: {str(e)}")
+        messagebox.showerror("Ошибка", f"Не удалось запустить игру: {str(e)}")
 
 # Стили
 style = ttk.Style()
