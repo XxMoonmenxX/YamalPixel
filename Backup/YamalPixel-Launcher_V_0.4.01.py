@@ -601,8 +601,6 @@ settings_menu.add_command(label="Починить игру", command=fig1)
 settings_menu.add_command(label="Открыть папку с игрой", command=open_game_folder)  # НОВАЯ КНОПКА
 settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
 settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
-settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
-settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
 settings_menu.add_separator()
 
 
