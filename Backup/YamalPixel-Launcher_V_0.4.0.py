@@ -18,7 +18,7 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 
-CURRENT_VERSION = "0.3.05" #обновление
+CURRENT_VERSION = "0.4.0" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -243,6 +243,7 @@ def download_and_install_update(download_url):
 # Функция очистки перед запуском
 def cleanup_before_launch():
     launcher_dir = os.getcwd()
+    minecraft_dir = os.path.expanduser("~/YamalPixel/versions")
     old_Mods = os.path.expanduser("~/YamalPixel/mods")
     items_to_remove = [
         os.path.join(launcher_dir, 'config'),
@@ -252,10 +253,57 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'logo.png'),
         os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),
         os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe'),
-        os.path.join(old_Mods, 'jei-1.18.2-fabric-10.2.1.283.jar' ),
-        os.path.join(old_Mods, 'Xaeros_Minimap_22.14.1_Fabric_1.18.2.jar' ),
-        os.path.join(old_Mods, 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar' ),
-        os.path.join(old_Mods, 'JEI.zip')
+        os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.3.0.exe'),
+
+        # Старые моды 1.18.2 которые могут конфликтовать
+        os.path.join(old_Mods, 'jei-1.18.2-fabric-10.2.1.283.jar'),
+        os.path.join(old_Mods, 'Xaeros_Minimap_22.14.1_Fabric_1.18.2.jar'),
+        os.path.join(old_Mods, 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar'),
+        os.path.join(old_Mods, 'JEI.zip'),
+
+        # Старые версии Fabric
+        os.path.join(minecraft_dir, 'fabric-loader-0.15.11-1.20.1'),
+        os.path.join(minecraft_dir, 'fabric-loader-0.16.10-1.18.2'),
+
+        # Все моды из твоего конфига 1.18.2
+        os.path.join(old_Mods, 'fabric-api-0.77.0.jar'),
+        os.path.join(old_Mods, 'sodium-fabric-mc1.18.2-0.4.1+build.15.jar'),
+        os.path.join(old_Mods, 'indium-0.7.10+mc1.18.2.zip'),
+        os.path.join(old_Mods, 'AdvancedReborn-1.18.2-1.0.6.jar'),
+        os.path.join(old_Mods, 'RebornCore-5.2.0.jar'),
+        os.path.join(old_Mods, 'TechReborn-5.2.0.jar'),
+        os.path.join(old_Mods, 'Xaeros_Minimap_25.2.10_Fabric_1.18.2.jar'),
+        os.path.join(old_Mods, 'architectury-4.9.83-fabric.jar'),
+        os.path.join(old_Mods, 'betterdroppeditems-1.3.2-1.18.2.jar'),
+        os.path.join(old_Mods, 'cloth-config-6.3.81-fabric.jar'),
+        os.path.join(old_Mods, 'lithium-fabric-mc1.18.2-0.7.10.jar'),
+        os.path.join(old_Mods, 'modmenu-3.2.5.jar'),
+        os.path.join(old_Mods, 'autoconfig1u-3.4.0.jar'),
+        os.path.join(old_Mods, 'NoIndium-1.0.2+1.18.2.jar'),
+        os.path.join(old_Mods, 'omega-config-base-1.2.3-1.18.1.jar'),
+        os.path.join(old_Mods, 'pal-1.5.0.jar'),
+        os.path.join(old_Mods, 'Patchouli-1.18.2-66-FABRIC.jar'),
+        os.path.join(old_Mods, 'cardinal-components-api-4.2.0.jar'),
+        os.path.join(old_Mods, 'ctov-2.9.4.jar'),
+        os.path.join(old_Mods, 'emi-0.7.3+1.18.2.jar'),
+        os.path.join(old_Mods, 'lambdynamiclights-2.1.0+1.17.jar'),
+        os.path.join(old_Mods, 'more-axolotls-1.1.0-1.18.jar'),
+        os.path.join(old_Mods, 'enchanted-golden-apple-addition-2.0.jar'),
+        os.path.join(old_Mods, 'mvs-2.2.6-1.18.2.jar'),
+        os.path.join(old_Mods, 'ironchests-2.0.5-fabric.jar'),
+        os.path.join(old_Mods, 'appliedenergistics2-fabric-11.7.6.jar'),
+        os.path.join(old_Mods, 'lovely_snails-1.0.4+1.18.jar'),
+        os.path.join(old_Mods, 'PresenceFootsteps-1.5.1.jar'),
+        os.path.join(old_Mods, 'cloth-config-6.5.102-fabric.jar'),
+        os.path.join(old_Mods, 'fallingleaves-1.11.1+1.18.2.jar'),
+        os.path.join(old_Mods, 'InventoryProfilesNext-fabric-1.18.2-1.10.19.jar'),
+        os.path.join(old_Mods, 'XaerosWorldMap_1.39.12_Fabric_1.18.2.jar'),
+        os.path.join(old_Mods, 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar'),
+        os.path.join(old_Mods, 'libIPN-fabric-1.18.2-4.0.2.jar'),
+        os.path.join(old_Mods, 'Frogmod.jar'),
+        os.path.join(old_Mods, 'geckolib-fabric-1.18-3.0.80.jar'),
+        os.path.join(old_Mods, 'extra-mod-integrations-0.0.31.18.2.jar'),
+        os.path.join(old_Mods, 'travelersbackpack-fabric-1.18.2-7.1.43.jar')
     ]
 
     for item in items_to_remove:
@@ -363,50 +411,11 @@ def initial_check():
 
 # Конфигурация
 CONFIG = {
-    'version': '1.18.2',
+    'version': '1.20.1',
     'fabric_loader': '0.16.10',
     'minecraft_dir': os.path.expanduser("~/YamalPixel"),
     'mods': [
-        {'url': 'https://disk.yandex.ru/d/Qe__28HSua0MTg', 'file': 'fabric-api-0.77.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/WuCdSbKpHyF-1Q', 'file': 'sodium-fabric-mc1.18.2-0.4.1+build.15.jar'},
-        {'url': 'https://disk.yandex.ru/d/LTHdaKPKw6OeBw', 'file': 'indium-0.7.10+mc1.18.2.zip'},
-        {'url': 'https://disk.yandex.ru/d/LiTGqt32O3EYTQ', 'file': 'AdvancedReborn-1.18.2-1.0.6.jar'},
-        {'url': 'https://disk.yandex.ru/d/mnHcD27ReV24Nw', 'file': 'RebornCore-5.2.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/-ZDLDoU0aMVIBw', 'file': 'TechReborn-5.2.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/D5ZgXPTUQ9s4Nw', 'file': 'Xaeros_Minimap_25.2.10_Fabric_1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/vNOUfe3TeIPSDg', 'file': 'architectury-4.9.83-fabric.jar'},
-        {'url': 'https://disk.yandex.ru/d/7hbnmzKH_dB6_w', 'file': 'betterdroppeditems-1.3.2-1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/agV4dqkgBjLRJg', 'file': 'cloth-config-6.3.81-fabric.jar'},
-        #{'url': 'https://disk.yandex.ru/d/5_I5Q7SE6WmExw', 'file': 'fabric-language-kotlin-1.7.3+kotlin.1.6.20.jar'},
-        {'url': 'https://disk.yandex.ru/d/kGgcgJGlg9Bhvg', 'file': 'lithium-fabric-mc1.18.2-0.7.10.jar'},
-        #{'url': 'https://disk.yandex.ru/d/UJn-CCA_Uc2QPA', 'file': 'JEI.zip'},
-        {'url': 'https://disk.yandex.ru/d/ISYwMEs6GCkOUQ', 'file': 'modmenu-3.2.5.jar'},
-        {'url': 'https://disk.yandex.ru/d/Qmd74h8szwpglQ', 'file': 'autoconfig1u-3.4.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/sEMe8EGrqKfxcA', 'file': 'NoIndium-1.0.2+1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/1d7-rrBDObktmg', 'file': 'omega-config-base-1.2.3-1.18.1.jar'},
-        {'url': 'https://disk.yandex.ru/d/5Zv2QC9-SelwDA', 'file': 'pal-1.5.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/ahOdVWSraF65xQ', 'file': 'Patchouli-1.18.2-66-FABRIC.jar'},
-        {'url': 'https://disk.yandex.ru/d/PrvKKegQUFj1aA', 'file': 'cardinal-components-api-4.2.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/XIMMzZ8jtzQJHQ', 'file': 'ctov-2.9.4.jar'},
-        {'url': 'https://disk.yandex.ru/d/3yxMhxa0wg1GlA', 'file': 'emi-0.7.3+1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/IkWqOD3VUSo9yg', 'file': 'lambdynamiclights-2.1.0+1.17.jar'},
-        {'url': 'https://disk.yandex.ru/d/NdzX7_fiIa0lCA', 'file': 'more-axolotls-1.1.0-1.18.jar'},
-        {'url': 'https://disk.yandex.ru/d/4aWpt1DlDJbd6g', 'file': 'enchanted-golden-apple-addition-2.0.jar'},
-        {'url': 'https://disk.yandex.ru/d/2Iwq0WWnOSvQGg', 'file': 'mvs-2.2.6-1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/3JGUY7tfyb7vvg', 'file': 'ironchests-2.0.5-fabric.jar'},
-        {'url': 'https://disk.yandex.ru/d/9l2Apb9AlQ3l7Q', 'file': 'appliedenergistics2-fabric-11.7.6.jar'},
-        {'url': 'https://disk.yandex.ru/d/gBK7Svi9f6HcUA', 'file': 'lovely_snails-1.0.4+1.18.jar'},
-        {'url': 'https://disk.yandex.ru/d/ie0ugUk2DtVCZg', 'file': 'PresenceFootsteps-1.5.1.jar'},
-        {'url': 'https://disk.yandex.ru/d/Wpb1rzgfuq5cbw', 'file': 'cloth-config-6.5.102-fabric.jar'},
-        {'url': 'https://disk.yandex.ru/d/iuNNhdMBn8-KLw', 'file': 'fallingleaves-1.11.1+1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/jSfefQfEPd5yYA', 'file': 'InventoryProfilesNext-fabric-1.18.2-1.10.19.jar'},
-        {'url': 'https://disk.yandex.ru/d/wDK-GY4MNMSVfQ', 'file': 'XaerosWorldMap_1.39.12_Fabric_1.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/HvCQmBtWtlr0Rw', 'file': 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar'},
-        {'url': 'https://disk.yandex.ru/d/14gejHCkpSI5Jw', 'file': 'libIPN-fabric-1.18.2-4.0.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/6xf4hpONrEhNhw', 'file': 'Frogmod.jar'},
-        {'url': 'https://disk.yandex.ru/d/UmJctCYldTQ5Sw', 'file': 'geckolib-fabric-1.18-3.0.80.jar'},
-        {'url': 'https://disk.yandex.ru/d/dRPU1tyT4yV8aQ', 'file': 'extra-mod-integrations-0.0.31.18.2.jar'},
-        {'url': 'https://disk.yandex.ru/d/MAKOIjOlFOvrzQ', 'file': 'travelersbackpack-fabric-1.18.2-7.1.43.jar'}
+        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'}
     ]
 }
 
