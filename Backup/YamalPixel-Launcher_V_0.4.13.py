@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.11" #обновление
+CURRENT_VERSION = "0.4.13" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -236,7 +236,7 @@ def check_for_updates():
                     None
                 )
 
-                if update_asset and CURRENT_VERSION <='0.3.0':
+                if update_asset:
                     download_and_install_update(update_asset['browser_download_url'])
                 else:
                     messagebox.showerror("Ошибка", "EXE-файл не найден в релизе.")
@@ -607,8 +607,9 @@ def open_game_folder():
 
 def create_backup(folder_path, backup_type):
     """Создает zip-бэкап указанной папки"""
+    # Если папки не существует, создаем пустой бэкап
     if not os.path.exists(folder_path):
-        return None
+        print(f"Папка {folder_path} не существует, создаем пустой бэкап")
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
@@ -619,11 +620,15 @@ def create_backup(folder_path, backup_type):
 
     try:
         with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(folder_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, folder_path)
-                    zipf.write(file_path, arcname)
+            if os.path.exists(folder_path):
+                for root, dirs, files in os.walk(folder_path):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, folder_path)
+                        zipf.write(file_path, arcname)
+            else:
+                # Создаем пустой архив если папки нет
+                print(f"Создан пустой бэкап для {folder_path}")
         print(f"Создан бэкап: {backup_path}")
         return backup_path
     except Exception as e:
@@ -718,39 +723,43 @@ def show_backup_info():
 
 # Обновленная функция для удаления модов с бэкапами
 def fig1():
-    mods_dir = os.path.join(CONFIG['minecraft_dir'])
-    items_to_remove2 = [
-        os.path.join(mods_dir, 'mods'),
-        os.path.join(mods_dir, 'versions')
-    ]
+    """Очистка игры с созданием бэкапов"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    versions_dir = os.path.join(minecraft_dir, 'versions')
 
     # Создаем бэкапы перед удалением
     backups_created = []
-    for item in items_to_remove2:
-        if os.path.exists(item):
-            backup_type = "mods" if "mods" in item else "versions"
-            backup_path = create_backup(item, backup_type)
-            if backup_path:
-                backups_created.append(backup_path)
 
-    # Удаляем папки
-    for item2 in items_to_remove2:
-        if os.path.exists(item2):
+    # Всегда создаем бэкапы, даже если папки не существуют
+    backup_path_mods = create_backup(mods_dir, "mods")
+    if backup_path_mods:
+        backups_created.append(backup_path_mods)
+
+    backup_path_versions = create_backup(versions_dir, "versions")
+    if backup_path_versions:
+        backups_created.append(backup_path_versions)
+
+    # Удаляем папки если они существуют
+    items_to_remove = [mods_dir, versions_dir]
+    for item in items_to_remove:
+        if os.path.exists(item):
             try:
-                if os.path.isdir(item2):
-                    shutil.rmtree(item2)
+                if os.path.isdir(item):
+                    shutil.rmtree(item)
+                    print(f"Удалено: {item}")
                 else:
-                    os.remove(item2)
-                print(f"Удалено: {item2}")
+                    os.remove(item)
+                    print(f"Удалено: {item}")
             except Exception as e:
-                print(f"Ошибка удаления {item2}: {str(e)}")
+                print(f"Ошибка удаления {item}: {str(e)}")
 
     # Показываем информацию о созданных бэкапах
     if backups_created:
         backup_info = "Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created])
-        messagebox.showinfo("Бэкапы созданы", backup_info)
+        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
     else:
-        messagebox.showinfo("Очистка", "Папки mods и versions очищены (бэкапы не создавались)")
+        messagebox.showinfo("Очистка", "Папки mods и versions очищены")
 
 
 # Функция для получения списка доступных бэкапов
@@ -805,6 +814,8 @@ def restore_from_backup(backup_data):
         mods_dir = os.path.join(minecraft_dir, 'mods')
         versions_dir = os.path.join(minecraft_dir, 'versions')
 
+        print(f"Начинаем восстановление из бэкапа...")
+
         # Создаем бэкап текущего состояния перед восстановлением
         current_backup_created = []
         if os.path.exists(mods_dir):
@@ -820,41 +831,67 @@ def restore_from_backup(backup_data):
         # Восстанавливаем моды
         if 'mods' in backup_data:
             mods_backup = backup_data['mods']['path']
+            print(f"Восстанавливаем моды из: {mods_backup}")
+
+            # Удаляем существующую папку mods если есть
             if os.path.exists(mods_dir):
                 shutil.rmtree(mods_dir)
-            os.makedirs(mods_dir)
 
-            with zipfile.ZipFile(mods_backup, 'r') as zip_ref:
-                zip_ref.extractall(mods_dir)
-            print(f"Восстановлены моды из: {os.path.basename(mods_backup)}")
+            # Создаем папку mods
+            os.makedirs(mods_dir, exist_ok=True)
+
+            # Проверяем что архив существует и не пустой
+            if os.path.exists(mods_backup) and os.path.getsize(mods_backup) > 0:
+                with zipfile.ZipFile(mods_backup, 'r') as zip_ref:
+                    zip_ref.extractall(mods_dir)
+                print(f"Моды восстановлены из: {os.path.basename(mods_backup)}")
+            else:
+                print(f"Бэкап модов пустой или не существует: {mods_backup}")
 
         # Восстанавливаем версии
         if 'versions' in backup_data:
             versions_backup = backup_data['versions']['path']
+            print(f"Восстанавливаем версии из: {versions_backup}")
+
+            # Удаляем существующую папку versions если есть
             if os.path.exists(versions_dir):
                 shutil.rmtree(versions_dir)
-            os.makedirs(versions_dir)
 
-            with zipfile.ZipFile(versions_backup, 'r') as zip_ref:
-                zip_ref.extractall(versions_dir)
-            print(f"Восстановлены версии из: {os.path.basename(versions_backup)}")
+            # Создаем папку versions
+            os.makedirs(versions_dir, exist_ok=True)
 
-        # Показываем результат
-        backup_info = f"✅ Восстановление завершено!\n\n"
-        backup_info += f"📅 Дата бэкапа: {backup_data['date']}\n"
-        if 'mods' in backup_data:
-            backup_info += f"📦 Моды: восстановлено\n"
-        if 'versions' in backup_data:
-            backup_info += f"⚙️ Версии: восстановлено\n"
+            # Проверяем что архив существует и не пустой
+            if os.path.exists(versions_backup) and os.path.getsize(versions_backup) > 0:
+                with zipfile.ZipFile(versions_backup, 'r') as zip_ref:
+                    zip_ref.extractall(versions_dir)
+                print(f"Версии восстановлены из: {os.path.basename(versions_backup)}")
+            else:
+                print(f"Бэкап версий пустой или не существует: {versions_backup}")
 
-        if current_backup_created:
-            backup_info += f"\n📋 Создан бэкап текущего состояния перед восстановлением"
+        # Проверяем что восстановление прошло успешно
+        success_messages = []
+        if 'mods' in backup_data and os.path.exists(mods_dir):
+            success_messages.append("✅ Моды восстановлены")
+        if 'versions' in backup_data and os.path.exists(versions_dir):
+            success_messages.append("✅ Версии восстановлены")
 
-        messagebox.showinfo("Восстановление завершено", backup_info)
+        if success_messages:
+            backup_info = "🔄 Восстановление завершено!\n\n"
+            backup_info += f"📅 Дата бэкапа: {backup_data['date']}\n\n"
+            backup_info += "\n".join(success_messages)
+
+            if current_backup_created:
+                backup_info += f"\n\n📋 Создан бэкап текущего состояния перед восстановлением"
+
+            messagebox.showinfo("Восстановление завершено", backup_info)
+        else:
+            messagebox.showwarning("Восстановление",
+                                   "Восстановление завершено, но некоторые компоненты не были восстановлены.\n"
+                                   "Проверьте наличие файлов в бэкапе.")
 
     except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось восстановить из бэкапа: {str(e)}")
         print(f"Ошибка восстановления: {str(e)}")
+        messagebox.showerror("Ошибка", f"Не удалось восстановить из бэкапа: {str(e)}")
 
 
 # Функция выбора бэкапа для восстановления
