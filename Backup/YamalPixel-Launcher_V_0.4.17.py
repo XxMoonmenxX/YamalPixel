@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.16" #обновление
+CURRENT_VERSION = "0.4.17" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -174,8 +174,6 @@ def update_discord_status():
         )
     except Exception as e:
         print(f"Ошибка при подключении к Discord: {str(e)}")
-# Вызываем функцию обновления статуса Discord
-update_discord_status()
 
 
 def check_for_updates():
@@ -757,7 +755,6 @@ def delete_all_backups():
         messagebox.showerror("Ошибка", f"Не удалось удалить бэкапы: {str(e)}")
 
 
-# Функция для показа информации о бэкапах
 def show_backup_info():
     """Показывает информацию о бэкапах"""
     backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
@@ -786,302 +783,6 @@ def show_backup_info():
         info_text += f"• {backup[0]}\n  Размер: {backup[1]}, Создан: {backup[2]}\n\n"
 
     messagebox.showinfo("Информация о бэкапах", info_text)
-
-
-# Обновленная функция для удаления модов с бэкапами
-def fig1():
-    """Очистка игры с созданием бэкапов"""
-    minecraft_dir = CONFIG['minecraft_dir']
-    mods_dir = os.path.join(minecraft_dir, 'mods')
-    versions_dir = os.path.join(minecraft_dir, 'versions')
-
-    # Создаем бэкапы перед удалением
-    backups_created = []
-
-    # Всегда создаем бэкапы, даже если папки не существуют
-    backup_path_mods = create_backup(mods_dir, "mods")
-    if backup_path_mods:
-        backups_created.append(backup_path_mods)
-
-    backup_path_versions = create_backup(versions_dir, "versions")
-    if backup_path_versions:
-        backups_created.append(backup_path_versions)
-
-    # Удаляем папки если они существуют
-    items_to_remove = [mods_dir, versions_dir]
-    for item in items_to_remove:
-        if os.path.exists(item):
-            try:
-                if os.path.isdir(item):
-                    shutil.rmtree(item)
-                    print(f"Удалено: {item}")
-                else:
-                    os.remove(item)
-                    print(f"Удалено: {item}")
-            except Exception as e:
-                print(f"Ошибка удаления {item}: {str(e)}")
-
-    # Показываем информацию о созданных бэкапах
-    if backups_created:
-        backup_info = "Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created])
-        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
-    else:
-        messagebox.showinfo("Очистка", "Папки mods и versions очищены")
-
-
-# Функция для получения списка доступных бэкапов
-def get_available_backups():
-    """Возвращает список доступных бэкапов с датами"""
-    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
-    if not os.path.exists(backup_dir):
-        return []
-
-    backups = []
-    for filename in os.listdir(backup_dir):
-        if filename.endswith('.zip'):
-            file_path = os.path.join(backup_dir, filename)
-            time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
-            backups.append({
-                'filename': filename,
-                'path': file_path,
-                'type': 'mods' if 'mods' in filename else 'versions',
-                'date': time_created.strftime("%d.%m.%Y %H:%M"),
-                'timestamp': time_created
-            })
-
-    # Группируем бэкапы по времени создания
-    backup_groups = {}
-    for backup in backups:
-        base_name = backup['filename'].split('_backup_')[1].replace('.zip', '')
-        if base_name not in backup_groups:
-            backup_groups[base_name] = {}
-        backup_groups[base_name][backup['type']] = backup
-
-    # Формируем список полных бэкапов (у которых есть и моды и версии)
-    complete_backups = []
-    for base_name, group in backup_groups.items():
-        if 'mods' in group and 'versions' in group:
-            complete_backups.append({
-                'timestamp': base_name,
-                'mods': group['mods'],
-                'versions': group['versions'],
-                'date': group['mods']['date']  # Берем дату из модов
-            })
-
-    # Сортируем по дате (новые сверху)
-    complete_backups.sort(key=lambda x: x['mods']['timestamp'], reverse=True)
-    return complete_backups
-
-
-# Функция восстановления из бэкапа
-def restore_from_backup(backup_data):
-    """Восстанавливает моды и версии из выбранного бэкапа"""
-    try:
-        minecraft_dir = CONFIG['minecraft_dir']
-        mods_dir = os.path.join(minecraft_dir, 'mods')
-        versions_dir = os.path.join(minecraft_dir, 'versions')
-
-        print(f"Начинаем восстановление из бэкапа...")
-
-        # Проверяем целостность бэкапов перед восстановлением
-        valid_backups = []
-
-        if 'mods' in backup_data:
-            if validate_backup_integrity(backup_data['mods']['path']):
-                valid_backups.append('mods')
-            else:
-                print(f"Бэкап модов поврежден: {backup_data['mods']['path']}")
-
-        if 'versions' in backup_data:
-            if validate_backup_integrity(backup_data['versions']['path']):
-                valid_backups.append('versions')
-            else:
-                print(f"Бэкап версий поврежден: {backup_data['versions']['path']}")
-
-        if not valid_backups:
-            messagebox.showerror("Ошибка", "Все бэкапы повреждены. Восстановление невозможно.")
-            return
-
-        # Создаем бэкап текущего состояния перед восстановлением
-        current_backup_created = []
-        if os.path.exists(mods_dir):
-            current_backup = create_backup(mods_dir, "current_mods_before_restore")
-            if current_backup:
-                current_backup_created.append(current_backup)
-
-        if os.path.exists(versions_dir):
-            current_backup = create_backup(versions_dir, "current_versions_before_restore")
-            if current_backup:
-                current_backup_created.append(current_backup)
-
-        success_messages = []
-
-        # Восстанавливаем только валидные бэкапы
-        if 'mods' in valid_backups:
-            mods_backup = backup_data['mods']['path']
-            print(f"Восстанавливаем моды из: {mods_backup}")
-
-            if os.path.exists(mods_dir):
-                shutil.rmtree(mods_dir)
-
-            os.makedirs(mods_dir, exist_ok=True)
-
-            with zipfile.ZipFile(mods_backup, 'r') as zip_ref:
-                zip_ref.extractall(mods_dir)
-            print(f"Моды восстановлены из: {os.path.basename(mods_backup)}")
-            success_messages.append("✅ Моды восстановлены")
-
-        if 'versions' in valid_backups:
-            versions_backup = backup_data['versions']['path']
-            print(f"Восстанавливаем версии из: {versions_backup}")
-
-            if os.path.exists(versions_dir):
-                shutil.rmtree(versions_dir)
-
-            os.makedirs(versions_dir, exist_ok=True)
-
-            with zipfile.ZipFile(versions_backup, 'r') as zip_ref:
-                zip_ref.extractall(versions_dir)
-            print(f"Версии восстановлены из: {os.path.basename(versions_backup)}")
-            success_messages.append("✅ Версии восстановлены")
-
-        if success_messages:
-            backup_info = "🔄 Восстановление завершено!\n\n"
-            backup_info += f"📅 Дата бэкапа: {backup_data['date']}\n\n"
-            backup_info += "\n".join(success_messages)
-
-            if current_backup_created:
-                backup_info += f"\n\n📋 Создан бэкап текущего состояния перед восстановлением"
-
-            messagebox.showinfo("Восстановление завершено", backup_info)
-        else:
-            messagebox.showwarning("Восстановление", "Не удалось восстановить ни один компонент.")
-
-    except Exception as e:
-        print(f"Ошибка восстановления: {str(e)}")
-        messagebox.showerror("Ошибка", f"Не удалось восстановить из бэкапа: {str(e)}")
-
-
-# Функция выбора бэкапа для восстановления
-def choose_backup_to_restore():
-    """Показывает диалог выбора бэкапа для восстановления"""
-    backups = get_available_backups()
-
-    if not backups:
-        messagebox.showinfo("Восстановление", "Нет доступных бэкапов для восстановления")
-        return
-
-    # Создаем окно выбора бэкапа
-    backup_window = tk.Toplevel(win)
-    backup_window.title("Выбор бэкапа для восстановления")
-    backup_window.geometry("600x400")
-    backup_window.configure(bg='#2b2b2b')
-    backup_window.transient(win)
-    backup_window.grab_set()
-
-    # Заголовок
-    title_label = ttk.Label(backup_window, text="Выберите бэкап для восстановления:",
-                            font=('Comfortaa', 12, 'bold'))
-    title_label.pack(pady=10)
-
-    # Фрейм для списка бэкапов
-    frame = ttk.Frame(backup_window)
-    frame.pack(fill='both', expand=True, padx=20, pady=10)
-
-    # Создаем Treeview для отображения бэкапов
-    columns = ('date', 'components')
-    tree = ttk.Treeview(frame, columns=columns, show='headings', height=10)
-
-    # Настраиваем колонки
-    tree.heading('date', text='📅 Дата создания')
-    tree.heading('components', text='🔄 Компоненты')
-
-    tree.column('date', width=200)
-    tree.column('components', width=350)
-
-    # Добавляем данные
-    for backup in backups:
-        components = []
-        if 'mods' in backup:
-            components.append("Моды")
-        if 'versions' in backup:
-            components.append("Версии")
-
-        tree.insert('', 'end', values=(
-            backup['date'],
-            ' + '.join(components)
-        ), tags=(backup['timestamp'],))
-
-    # Скроллбар
-    scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
-    tree.configure(yscrollcommand=scrollbar.set)
-
-    tree.pack(side='left', fill='both', expand=True)
-    scrollbar.pack(side='right', fill='y')
-
-    # Фрейм для кнопок
-    button_frame = ttk.Frame(backup_window)
-    button_frame.pack(pady=10)
-
-    def on_restore():
-        selection = tree.selection()
-        if not selection:
-            messagebox.showwarning("Выбор", "Пожалуйста, выберите бэкап для восстановления")
-            return
-
-        selected_timestamp = tree.item(selection[0])['tags'][0]
-        selected_backup = next((b for b in backups if b['timestamp'] == selected_timestamp), None)
-
-        if selected_backup:
-            # Подтверждение восстановления
-            result = messagebox.askyesno(
-                "Подтверждение восстановления",
-                f"Вы уверены, что хотите восстановить игру из бэкапа от {selected_backup['date']}?\n\n"
-                f"Текущие моды и версии будут заменены."
-            )
-
-            if result:
-                backup_window.destroy()
-                restore_from_backup(selected_backup)
-
-    def on_cancel():
-        backup_window.destroy()
-
-    # Кнопки
-    ttk.Button(button_frame, text="🔄 Восстановить",
-               command=on_restore, style="Accent.TButton").pack(side='left', padx=5)
-    ttk.Button(button_frame, text="❌ Отмена",
-               command=on_cancel).pack(side='left', padx=5)
-
-    def on_restore():
-        selection = tree.selection()
-        if not selection:
-            messagebox.showwarning("Выбор", "Пожалуйста, выберите бэкап для восстановления")
-            return
-
-        selected_timestamp = tree.item(selection[0])['tags'][0]
-        selected_backup = next((b for b in backups if b['timestamp'] == selected_timestamp), None)
-
-        if selected_backup:
-            # Подтверждение восстановления
-            result = messagebox.askyesno(
-                "Подтверждение восстановления",
-                f"Вы уверены, что хотите восстановить игру из бэкапа от {selected_backup['date']}?\n\n"
-                f"Текущие моды и версии будут заменены."
-            )
-
-            if result:
-                backup_window.destroy()
-                restore_from_backup(selected_backup)
-
-    def on_cancel():
-        backup_window.destroy()
-
-    # Кнопки
-    ttk.Button(button_frame, text="🔄 Восстановить",
-               command=on_restore, style="Accent.TButton").pack(side='left', padx=5)
-    ttk.Button(button_frame, text="❌ Отмена",
-               command=on_cancel).pack(side='left', padx=5)
 
 
 # Обновленная функция "Починить игру" с выбором действия
@@ -1155,7 +856,7 @@ settings_menu.configure(
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
-settings_menu.add_command(label="🔧 Автопочинка файлов", command=auto_repair_game_files)  # НОВАЯ ФУНКЦИЯ!
+settings_menu.add_command(label="🔧 Автопочинка файлов", command=auto_repair_game_files)
 settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
 settings_menu.add_command(label="🔄 Восстановить из последнего бэкапа", command=restore_latest_backup)
 settings_menu.add_separator()
@@ -1166,7 +867,6 @@ settings_menu.add_command(label="🗑️ Удалить ВСЕ бэкапы", co
 settings_menu.add_separator()
 
 
-
 # Функция для открытия настроек
 def open_settings():
     settings_window = tk.Toplevel(win)
@@ -1174,16 +874,20 @@ def open_settings():
     ttk.Label(settings_window, text="Выделено памяти (ГБ):").grid(row=0, column=0)
     memory_var = tk.StringVar(value="8")
     ttk.Entry(settings_window, textvariable=memory_var).grid(row=0, column=1)
+
     def save_settings():
         new_memory = f"-Xmx{memory_var.get()}G"
         CONFIG['jvm_memory'] = new_memory
         messagebox.showinfo("Сохранено", "Настройки применены!")
         settings_window.destroy()
+
     ttk.Button(settings_window, text="Сохранить", command=save_settings).grid(row=1, columnspan=2)
+
 
 # Добавление в меню
 settings_menu.add_command(label="Настройки", command=open_settings)
 settings_menu.add_separator()
+
 
 # Функция для проверки и загрузки модов
 def checker1():
@@ -1222,11 +926,12 @@ def checker1():
             zip_path = os.path.join(mods_dir, mod['file'])
             extract_dir = os.path.join(mods_dir)
             try:
-                with ZipFile(zip_path, 'r') as zip_file:
+                with zipfile.ZipFile(zip_path, 'r') as zip_file:
                     zip_file.extractall(path=extract_dir)
                     print(f"Содержимое архива {mod['file']} успешно извлечено в папку mods")
             except Exception as e:
                 print(f"Ошибка распаковки архива {mod['file']}: {str(e)}")
+
 
 # Функция для проверки установки Minecraft и Fabric
 def check_minecraft_and_fabric_installed():
@@ -1239,6 +944,7 @@ def check_minecraft_and_fabric_installed():
     else:
         print("Fabric не установлен.")
         return False
+
 
 def is_fabric_needed(selected_version):
     # Список версий, где Fabric поддерживается
@@ -1385,6 +1091,7 @@ def runn():
         print(f"Ошибка в основной функции запуска: {str(e)}")
         messagebox.showerror("Ошибка", f"Не удалось запустить игру: {str(e)}")
 
+
 # Стили
 style = ttk.Style()
 style.configure("BW.TLabel", background="pink")
@@ -1411,83 +1118,92 @@ style.configure("CenterText.TLabel", layout=('Center',))
 label_online = ttk.Label(win, text="Онлайн: 0", style="BW.TLabel")
 label_online.place(relx=0.5, rely=0.61, anchor="c")
 
+
 # Функции для управления музыкой
 def mscon():
     mixer.music.play()
+
+
 def mscoff():
     mixer.music.stop()
 
+
 enabled1 = tk.IntVar()
 ttk.Checkbutton(
-    text="Включить музыку",style='BW2.TLabel', variable=enabled1, command=lambda: mscoff() if enabled1.get() else mscon(),
+    text="Включить музыку", style='BW2.TLabel', variable=enabled1,
+    command=lambda: mscon() if enabled1.get() else mscoff(),
 ).pack(padx=6, pady=6, anchor=tk.NE)
+
 
 # Функция для показа онлайн игроков
 def show_online_players():
     try:
         server = JavaServer.lookup("90.151.59.120:25565")
         status = server.status()
-        label_online.config(text=f"Онлайн: {status.players.online}", background="green" if status.players.online > 0 else "red")
+        label_online.config(text=f"Онлайн: {status.players.online}",
+                            background="green" if status.players.online > 0 else "red")
     except Exception as e:
         label_online.config(text="Ошибка подключения", background="red")
+
 
 btn_update_online = ttk.Button(win, text="Показать онлайн", style="BW.TLabel", command=show_online_players)
 btn_update_online.place(relx=.5, rely=0.58, width=150, height=25, anchor="c")
 
+
 # Функция для выбора версии игры
 def select_version(event):
     selected_version = version_combobox.get()
-    if selected_version == "YamalPixel + mods":
-        CONFIG['version'] = '1.18.2'
+    if selected_version == "YamalPixel":
+        CONFIG['version'] = '1.20.1'
         CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.7.10":
         CONFIG['version'] = '1.7.10'
-        CONFIG['fabric_loader'] = None  # Fabric не поддерживает 1.7.10
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.8.9":
         CONFIG['version'] = '1.8.9'
-        CONFIG['fabric_loader'] = None  # Fabric не поддерживает 1.8.9
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.12.2":
         CONFIG['version'] = '1.12.2'
-        CONFIG['fabric_loader'] = None  # Fabric не поддерживает 1.12.2 напрямую
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.14.4":
         CONFIG['version'] = '1.14.4'
-        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.14.4
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.14.4 + Fabric":
         CONFIG['version'] = '1.14.4'
         CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.15.2":
         CONFIG['version'] = '1.15.2'
-        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.15.2
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.15.2 + Fabric":
         CONFIG['version'] = '1.15.2'
         CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.16.5":
         CONFIG['version'] = '1.16.5'
-        CONFIG['fabric_loader'] = None  # Fabric не используется
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.16.5 + Fabric":
         CONFIG['version'] = '1.16.5'
-        CONFIG['fabric_loader'] = '0.16.10'  # Пример версии Fabric для 1.16.5
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.17.1":
         CONFIG['version'] = '1.17.1'
-        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.17.1
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.17.1 + Fabric":
         CONFIG['version'] = '1.17.1'
         CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.18.2":
         CONFIG['version'] = '1.18.2'
-        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.18.2
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.18.2 + Fabric":
         CONFIG['version'] = '1.18.2'
         CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.19.2":
         CONFIG['version'] = '1.19.2'
-        CONFIG['fabric_loader'] = None  # Пример версии Fabric для 1.19.2
+        CONFIG['fabric_loader'] = None
     elif selected_version == "Minecraft 1.19.2 + Fabric":
         CONFIG['version'] = '1.19.2'
         CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.20.1":
         CONFIG['version'] = '1.20.1'
-        CONFIG['fabric_loader'] = '0.16.10'  # Пример версии Fabric для 1.20.1
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.20.1 + Fabric":
         CONFIG['version'] = '1.20.1'
         CONFIG['fabric_loader'] = '0.16.10'
@@ -1497,47 +1213,39 @@ def select_version(event):
     elif selected_version == "Minecraft 1.20.2 + Fabric":
         CONFIG['version'] = '1.20.2'
         CONFIG['fabric_loader'] = '0.16.10'
-    # Версия 1.21.x
     elif selected_version == "Minecraft 1.21":
         CONFIG['version'] = '1.21'
         CONFIG['fabric_loader'] = None
-
     elif selected_version == "Minecraft 1.21 + Fabric":
         CONFIG['version'] = '1.21'
         CONFIG['fabric_loader'] = '0.16.10'
-
     elif selected_version == "Minecraft 1.21.1":
         CONFIG['version'] = '1.21.1'
         CONFIG['fabric_loader'] = None
-
     elif selected_version == "Minecraft 1.21.1 + Fabric":
         CONFIG['version'] = '1.21.1'
         CONFIG['fabric_loader'] = '0.16.10'
-
     elif selected_version == "Minecraft 1.21.2":
         CONFIG['version'] = '1.21.2'
         CONFIG['fabric_loader'] = None
-
     elif selected_version == "Minecraft 1.21.2 + Fabric":
         CONFIG['version'] = '1.21.2'
-        CONFIG['fabric_loader'] = None
-
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.21.3":
         CONFIG['version'] = '1.21.3'
         CONFIG['fabric_loader'] = None
-
     elif selected_version == "Minecraft 1.21.3 + Fabric":
         CONFIG['version'] = '1.21.3'
-        CONFIG['fabric_loader'] = None
-
+        CONFIG['fabric_loader'] = '0.16.10'
     elif selected_version == "Minecraft 1.21.4":
         CONFIG['version'] = '1.21.4'
         CONFIG['fabric_loader'] = None
-
     elif selected_version == "Minecraft 1.21.4 + Fabric":
         CONFIG['version'] = '1.21.4'
         CONFIG['fabric_loader'] = '0.16.10'
+
     messagebox.showinfo("Версия изменена", f"Выбрана версия: {selected_version}")
+
 
 # Добавление выпадающего списка для выбора версии
 versions = [
@@ -1577,6 +1285,9 @@ version_combobox = ttk.Combobox(win, values=versions, state="readonly")
 version_combobox.current(0)
 version_combobox.place(relx=0.5, rely=0.4, anchor="c")
 version_combobox.bind("<<ComboboxSelected>>", select_version)
+
+# Вызываем функцию обновления статуса Discord после создания окна
+win.after(300, update_discord_status)
 
 # Запуск главного цикла
 win.mainloop()
