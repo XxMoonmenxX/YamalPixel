@@ -19,8 +19,8 @@ from pypresence import Presence
 from pathlib import Path
 import datetime
 
-
-CURRENT_VERSION = "0.4.02" #обновление
+#Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
+CURRENT_VERSION = "0.4.1" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -618,7 +618,262 @@ def fig1():
         messagebox.showinfo("Очистка", "Папки mods и versions очищены (бэкапы не создавались)")
 
 
-# Меню "Инструменты"
+# Функция для получения списка доступных бэкапов
+def get_available_backups():
+    """Возвращает список доступных бэкапов с датами"""
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+    if not os.path.exists(backup_dir):
+        return []
+
+    backups = []
+    for filename in os.listdir(backup_dir):
+        if filename.endswith('.zip'):
+            file_path = os.path.join(backup_dir, filename)
+            time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
+            backups.append({
+                'filename': filename,
+                'path': file_path,
+                'type': 'mods' if 'mods' in filename else 'versions',
+                'date': time_created.strftime("%d.%m.%Y %H:%M"),
+                'timestamp': time_created
+            })
+
+    # Группируем бэкапы по времени создания
+    backup_groups = {}
+    for backup in backups:
+        base_name = backup['filename'].split('_backup_')[1].replace('.zip', '')
+        if base_name not in backup_groups:
+            backup_groups[base_name] = {}
+        backup_groups[base_name][backup['type']] = backup
+
+    # Формируем список полных бэкапов (у которых есть и моды и версии)
+    complete_backups = []
+    for base_name, group in backup_groups.items():
+        if 'mods' in group and 'versions' in group:
+            complete_backups.append({
+                'timestamp': base_name,
+                'mods': group['mods'],
+                'versions': group['versions'],
+                'date': group['mods']['date']  # Берем дату из модов
+            })
+
+    # Сортируем по дате (новые сверху)
+    complete_backups.sort(key=lambda x: x['mods']['timestamp'], reverse=True)
+    return complete_backups
+
+
+# Функция восстановления из бэкапа
+def restore_from_backup(backup_data):
+    """Восстанавливает моды и версии из выбранного бэкапа"""
+    try:
+        minecraft_dir = CONFIG['minecraft_dir']
+        mods_dir = os.path.join(minecraft_dir, 'mods')
+        versions_dir = os.path.join(minecraft_dir, 'versions')
+
+        # Создаем бэкап текущего состояния перед восстановлением
+        current_backup_created = []
+        if os.path.exists(mods_dir):
+            current_backup = create_backup(mods_dir, "current_mods_before_restore")
+            if current_backup:
+                current_backup_created.append(current_backup)
+
+        if os.path.exists(versions_dir):
+            current_backup = create_backup(versions_dir, "current_versions_before_restore")
+            if current_backup:
+                current_backup_created.append(current_backup)
+
+        # Восстанавливаем моды
+        if 'mods' in backup_data:
+            mods_backup = backup_data['mods']['path']
+            if os.path.exists(mods_dir):
+                shutil.rmtree(mods_dir)
+            os.makedirs(mods_dir)
+
+            with zipfile.ZipFile(mods_backup, 'r') as zip_ref:
+                zip_ref.extractall(mods_dir)
+            print(f"Восстановлены моды из: {os.path.basename(mods_backup)}")
+
+        # Восстанавливаем версии
+        if 'versions' in backup_data:
+            versions_backup = backup_data['versions']['path']
+            if os.path.exists(versions_dir):
+                shutil.rmtree(versions_dir)
+            os.makedirs(versions_dir)
+
+            with zipfile.ZipFile(versions_backup, 'r') as zip_ref:
+                zip_ref.extractall(versions_dir)
+            print(f"Восстановлены версии из: {os.path.basename(versions_backup)}")
+
+        # Показываем результат
+        backup_info = f"✅ Восстановление завершено!\n\n"
+        backup_info += f"📅 Дата бэкапа: {backup_data['date']}\n"
+        if 'mods' in backup_data:
+            backup_info += f"📦 Моды: восстановлено\n"
+        if 'versions' in backup_data:
+            backup_info += f"⚙️ Версии: восстановлено\n"
+
+        if current_backup_created:
+            backup_info += f"\n📋 Создан бэкап текущего состояния перед восстановлением"
+
+        messagebox.showinfo("Восстановление завершено", backup_info)
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось восстановить из бэкапа: {str(e)}")
+        print(f"Ошибка восстановления: {str(e)}")
+
+
+# Функция выбора бэкапа для восстановления
+def choose_backup_to_restore():
+    """Показывает диалог выбора бэкапа для восстановления"""
+    backups = get_available_backups()
+
+    if not backups:
+        messagebox.showinfo("Восстановление", "Нет доступных бэкапов для восстановления")
+        return
+
+    # Создаем окно выбора бэкапа
+    backup_window = tk.Toplevel(win)
+    backup_window.title("Выбор бэкапа для восстановления")
+    backup_window.geometry("600x400")
+    backup_window.configure(bg='#2b2b2b')
+    backup_window.transient(win)
+    backup_window.grab_set()
+
+    # Заголовок
+    title_label = ttk.Label(backup_window, text="Выберите бэкап для восстановления:",
+                            font=('Comfortaa', 12, 'bold'))
+    title_label.pack(pady=10)
+
+    # Фрейм для списка бэкапов
+    frame = ttk.Frame(backup_window)
+    frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+    # Создаем Treeview для отображения бэкапов
+    columns = ('date', 'components')
+    tree = ttk.Treeview(frame, columns=columns, show='headings', height=10)
+
+    # Настраиваем колонки
+    tree.heading('date', text='📅 Дата создания')
+    tree.heading('components', text='🔄 Компоненты')
+
+    tree.column('date', width=200)
+    tree.column('components', width=350)
+
+    # Добавляем данные
+    for backup in backups:
+        components = []
+        if 'mods' in backup:
+            components.append("Моды")
+        if 'versions' in backup:
+            components.append("Версии")
+
+        tree.insert('', 'end', values=(
+            backup['date'],
+            ' + '.join(components)
+        ), tags=(backup['timestamp'],))
+
+    # Скроллбар
+    scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+
+    tree.pack(side='left', fill='both', expand=True)
+    scrollbar.pack(side='right', fill='y')
+
+    # Фрейм для кнопок
+    button_frame = ttk.Frame(backup_window)
+    button_frame.pack(pady=10)
+
+    def on_restore():
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Выбор", "Пожалуйста, выберите бэкап для восстановления")
+            return
+
+        selected_timestamp = tree.item(selection[0])['tags'][0]
+        selected_backup = next((b for b in backups if b['timestamp'] == selected_timestamp), None)
+
+        if selected_backup:
+            # Подтверждение восстановления
+            result = messagebox.askyesno(
+                "Подтверждение восстановления",
+                f"Вы уверены, что хотите восстановить игру из бэкапа от {selected_backup['date']}?\n\n"
+                f"Текущие моды и версии будут заменены."
+            )
+
+            if result:
+                backup_window.destroy()
+                restore_from_backup(selected_backup)
+
+    def on_cancel():
+        backup_window.destroy()
+
+    # Кнопки
+    ttk.Button(button_frame, text="🔄 Восстановить",
+               command=on_restore, style="Accent.TButton").pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Отмена",
+               command=on_cancel).pack(side='left', padx=5)
+
+
+# Обновленная функция "Починить игру" с выбором действия
+def repair_game_with_options():
+    """Расширенная функция починки игры с выбором действия"""
+    choice_window = tk.Toplevel(win)
+    choice_window.title("Починить игру")
+    choice_window.geometry("400x250")
+    choice_window.configure(bg='#2b2b2b')
+    choice_window.transient(win)
+    choice_window.grab_set()
+
+    title_label = ttk.Label(choice_window,
+                            text="Выберите действие:",
+                            font=('Comfortaa', 14, 'bold'))
+    title_label.pack(pady=20)
+
+    def cleanup_only():
+        choice_window.destroy()
+        fig1()  # Старая функция очистки
+
+    def restore_backup():
+        choice_window.destroy()
+        choose_backup_to_restore()
+
+    def cancel():
+        choice_window.destroy()
+
+    # Кнопки действий
+    ttk.Button(choice_window, text="🧹 Очистить игру (удалить моды и версии)",
+               command=cleanup_only, width=30).pack(pady=10)
+
+    ttk.Button(choice_window, text="🔄 Восстановить из бэкапа",
+               command=restore_backup, width=30).pack(pady=10)
+
+    ttk.Button(choice_window, text="❌ Отмена",
+               command=cancel, width=20).pack(pady=20)
+
+
+# Функция быстрого восстановления из последнего бэкапа
+def restore_latest_backup():
+    """Быстрое восстановление из самого свежего бэкапа"""
+    backups = get_available_backups()
+
+    if not backups:
+        messagebox.showinfo("Восстановление", "Нет доступных бэкапов")
+        return
+
+    latest_backup = backups[0]  # Самый свежий бэкап
+
+    result = messagebox.askyesno(
+        "Восстановление из последнего бэкапа",
+        f"Восстановить игру из последнего бэкапа?\n\n"
+        f"📅 Дата: {latest_backup['date']}\n"
+        f"🔄 Будет восстановлено: Моды + Версии\n\n"
+        f"Текущие данные будут заменены."
+    )
+
+    if result:
+        restore_from_backup(latest_backup)
+
+# Обновляем меню "Инструменты"
 menu_bar = tk.Menu(win)
 win.config(menu=menu_bar)
 settings_menu = tk.Menu(menu_bar, tearoff=0)
@@ -628,9 +883,13 @@ settings_menu.configure(
     postcommand=lambda: settings_menu.configure(bg='#FFB6C1')
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
-settings_menu.add_command(label="Починить игру", command=fig1)
+
+# ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
+settings_menu.add_command(label="Починить игру", command=repair_game_with_options)  # Теперь с выбором!
+settings_menu.add_command(label="Восстановить из последнего бэкапа", command=restore_latest_backup)
+settings_menu.add_separator()
 settings_menu.add_command(label="Открыть папку с игрой", command=open_game_folder)
-settings_menu.add_command(label="Сделать бэкап", command=create_manual_backup)  # Исправленная кнопка
+settings_menu.add_command(label="Сделать бэкап", command=create_manual_backup)
 settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
 settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
 settings_menu.add_separator()
@@ -873,6 +1132,7 @@ def runn():
 style = ttk.Style()
 style.configure("BW.TLabel", background="pink")
 app = ttk.Style()
+style.configure("Accent.TButton", background='#0078D7', foreground='white')
 app.configure('TLabel', font=('Comfortaa', 12))
 app.configure('TButton', font=('Comfortaa', 12))
 
