@@ -118,8 +118,6 @@ def update_discord_status():
 update_discord_status()
 
 
-
-
 def check_for_updates():
     try:
         logging.info("Проверка обновлений...")
@@ -129,32 +127,169 @@ def check_for_updates():
         release_data = response.json()
         changelog = release_data.get('body', 'Нет описания изменений')
 
-        # Убираем Markdown-разметку
+        # Убираем Markdown-разметку и форматируем
         changelog = re.sub(r'\#{2,}', '', changelog)
         changelog = re.sub(r'\- ', '• ', changelog)
+        changelog = re.sub(r'\*\*(.*?)\*\*', r'\1', changelog)
+        changelog = re.sub(r'\*(.*?)\*', r'\1', changelog)
+        changelog = changelog.strip()
 
-        release_data = response.json()
         latest_version = release_data['tag_name'].lstrip('v')
 
         if latest_version != CURRENT_VERSION:
             logging.info(f"Найдена новая версия: {latest_version}")
-            answer = messagebox.askyesno(
-                "Обновление",
-                f"Доступна версия {latest_version}.\n\n{changelog}\n\n Обновить?"
-            )
-            if answer:
-                # Ищем любой EXE-файл в ассетах
+
+            # Создаем окно обновления
+            update_window = tk.Toplevel(win)
+            update_window.title(f"YamalPixel - Обновление до v{latest_version}")
+            update_window.geometry("550x450")
+            update_window.resizable(True, True)
+            update_window.transient(win)
+            update_window.grab_set()
+
+            # Устанавливаем минимальный размер окна
+            update_window.minsize(500, 400)
+
+            # Делаем светлую тему для лучшей читаемости
+            update_window.configure(bg='white')
+
+            # Центрируем окно
+            update_window.update_idletasks()
+            x = (win.winfo_screenwidth() // 2) - (550 // 2)
+            y = (win.winfo_screenheight() // 2) - (450 // 2)
+            update_window.geometry(f"550x450+{x}+{y}")
+
+            # Используем grid для всего окна
+            update_window.columnconfigure(0, weight=1)
+            update_window.rowconfigure(2, weight=1)  # Текстовое поле будет расширяться
+
+            # Заголовок
+            header_frame = tk.Frame(update_window, bg='white')
+            header_frame.grid(row=0, column=0, sticky='ew', padx=20, pady=15)
+            header_frame.columnconfigure(0, weight=1)
+
+            tk.Label(header_frame,
+                     text=f"Доступно обновление!",
+                     font=('Comfortaa', 14, 'bold'),
+                     bg='white', fg='#2c3e50').grid(row=0, column=0)
+
+            tk.Label(header_frame,
+                     text=f"Версия {latest_version}",
+                     font=('Comfortaa', 11),
+                     bg='white', fg='#7f8c8d').grid(row=1, column=0, pady=(5, 0))
+
+            # Разделитель
+            separator = ttk.Separator(update_window, orient='horizontal')
+            separator.grid(row=1, column=0, sticky='ew', padx=20, pady=10)
+
+            # Метка "Что нового"
+            label_frame = tk.Frame(update_window, bg='white')
+            label_frame.grid(row=2, column=0, sticky='ew', padx=20, pady=(0, 5))
+            label_frame.columnconfigure(0, weight=1)
+
+            tk.Label(label_frame,
+                     text="Что нового в этой версии:",
+                     font=('Comfortaa', 10, 'bold'),
+                     bg='white', fg='#2c3e50').grid(row=0, column=0, sticky='w')
+
+            # Фрейм для текста с прокруткой
+            text_frame = tk.Frame(update_window, bg='white')
+            text_frame.grid(row=3, column=0, sticky='nsew', padx=20, pady=(0, 10))
+            text_frame.columnconfigure(0, weight=1)
+            text_frame.rowconfigure(0, weight=1)
+
+            # Текстовое поле
+            text_widget = tk.Text(text_frame,
+                                  wrap='word',
+                                  width=60,
+                                  height=15,
+                                  font=('Comfortaa', 9),
+                                  bg='#f8f9fa',
+                                  fg='#2c3e50',
+                                  relief='solid',
+                                  borderwidth=1,
+                                  padx=10,
+                                  pady=10)
+
+            scrollbar = ttk.Scrollbar(text_frame, orient='vertical', command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+
+            # Вставляем текст
+            text_widget.insert('1.0', changelog)
+            text_widget.configure(state='disabled')
+
+            # Упаковываем с grid
+            text_widget.grid(row=0, column=0, sticky='nsew')
+            scrollbar.grid(row=0, column=1, sticky='ns')
+
+            # Фрейм для кнопок
+            button_frame = tk.Frame(update_window, bg='white')
+            button_frame.grid(row=4, column=0, sticky='ew', padx=20, pady=15)
+            button_frame.columnconfigure(0, weight=1)
+            button_frame.columnconfigure(1, weight=1)
+
+            def install_update():
+                update_window.destroy()
                 update_asset = next(
                     (asset for asset in release_data['assets']
                      if asset['name'].lower().endswith('.exe') and "yamalpixel" in asset['name'].lower()),
                     None
                 )
 
-                if update_asset:
+                if update_asset and CURRENT_VERSION <='0.3.0':
                     download_and_install_update(update_asset['browser_download_url'])
                 else:
-                    messagebox.showerror("Ошибка",
-                                         "EXE-файл не найден в релизе. Постучите разрабу по голове.")
+                    messagebox.showerror("Ошибка", "EXE-файл не найден в релизе.")
+
+            def skip_update():
+                update_window.destroy()
+                logging.info("Пользователь отказался от обновления")
+
+            # Кнопки - используем grid для фиксированного размера
+            btn_install = tk.Button(button_frame,
+                                    text="🔄 УСТАНОВИТЬ ОБНОВЛЕНИЕ",
+                                    font=('Comfortaa', 10, 'bold'),
+                                    bg='#27ae60',
+                                    fg='white',
+                                    relief='flat',
+                                    padx=20,
+                                    pady=10,
+                                    command=install_update)
+            btn_install.grid(row=0, column=0, padx=(0, 10), sticky='ew')
+
+            btn_skip = tk.Button(button_frame,
+                                 text="ПРОПУСТИТЬ",
+                                 font=('Comfortaa', 10),
+                                 bg='#95a5a6',
+                                 fg='white',
+                                 relief='flat',
+                                 padx=20,
+                                 pady=10,
+                                 command=skip_update)
+            btn_skip.grid(row=0, column=1, sticky='ew')
+
+            # Фокус и прокрутка
+            text_widget.focus_set()
+            text_widget.see('1.0')
+
+            # Добавляем ховер-эффекты для кнопок
+            def on_enter_install(e):
+                btn_install.configure(bg='#219653')
+
+            def on_leave_install(e):
+                btn_install.configure(bg='#27ae60')
+
+            def on_enter_skip(e):
+                btn_skip.configure(bg='#7f8c8d')
+
+            def on_leave_skip(e):
+                btn_skip.configure(bg='#95a5a6')
+
+            btn_install.bind("<Enter>", on_enter_install)
+            btn_install.bind("<Leave>", on_leave_install)
+            btn_skip.bind("<Enter>", on_enter_skip)
+            btn_skip.bind("<Leave>", on_leave_skip)
+
         else:
             logging.info("Лаунчер актуален")
 
@@ -427,7 +562,7 @@ mixer.music.set_volume(0.1)
 win = ThemedTk(theme="arc")
 win.geometry("1920x1080")
 win.title('YamPixel')
-win.attributes("-fullscreen", True)
+#win.attributes("-fullscreen", True)
 win.after(100, initial_check)
 win.after(200, check_for_updates)  # NEW
 
