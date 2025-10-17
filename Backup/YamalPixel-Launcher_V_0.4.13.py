@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.13" #обновление
+CURRENT_VERSION = "0.4.14" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -230,16 +230,23 @@ def check_for_updates():
 
             def install_update():
                 update_window.destroy()
+
+                # Ищем ЛЮБОЙ EXE-файл в ассетах
                 update_asset = next(
                     (asset for asset in release_data['assets']
-                     if asset['name'].lower().endswith('.exe') and "yamalpixel" in asset['name'].lower()),
+                     if asset['name'].lower().endswith('.exe')),
                     None
                 )
 
                 if update_asset:
                     download_and_install_update(update_asset['browser_download_url'])
                 else:
-                    messagebox.showerror("Ошибка", "EXE-файл не найден в релизе.")
+                    # Если EXE не найден, показываем какие файлы есть
+                    available_files = "\n".join([f"• {asset['name']}" for asset in release_data['assets']])
+                    messagebox.showerror(
+                        "Файл не найден",
+                        f"EXE-файл не найден в релизе.\n\nДоступные файлы:\n{available_files}"
+                    )
 
             def skip_update():
                 update_window.destroy()
