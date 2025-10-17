@@ -9,7 +9,7 @@ import re
 from ttkthemes import ThemedTk
 from mcstatus import JavaServer
 from pygame import mixer
-from zipfile import ZipFile
+import zipfile
 import platform
 import urllib.request
 import sys
@@ -17,8 +17,10 @@ import shutil
 import logging
 from pypresence import Presence
 from pathlib import Path
+import datetime
 
-CURRENT_VERSION = "0.4.01" #обновление
+
+CURRENT_VERSION = "0.4.02" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -27,6 +29,15 @@ RESOURCE_DIR = Path.home() / "YamalPixelRes"
 RESOURCES = {
     "logo.png": "https://disk.yandex.ru/i/ztKpQOZEjQDE_Q",
     "menu_song.mp3": "https://disk.yandex.ru/d/Ahqnmj2T8YlNKg"
+}
+# Конфигурация
+CONFIG = {
+    'version': '1.20.1',
+    'fabric_loader': '0.16.10',
+    'minecraft_dir': os.path.expanduser("~/YamalPixel"),
+    'mods': [
+        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'}
+    ]
 }
 
 
@@ -407,17 +418,6 @@ def initial_check():
     else:
         print("Необходимая версия JAVA установлена.")
 
-
-# Конфигурация
-CONFIG = {
-    'version': '1.20.1',
-    'fabric_loader': '0.16.10',
-    'minecraft_dir': os.path.expanduser("~/YamalPixel"),
-    'mods': [
-        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'}
-    ]
-}
-
 # Инициализация звука
 mixer.init()
 #mixer.music.load('Obuse - Menu song.mp3')
@@ -455,6 +455,21 @@ def fullsc(): win.attributes("-fullscreen", True)
 def outscrn(): win.attributes("-fullscreen", False)
 
 
+def open_game_folder():
+    minecraft_dir = CONFIG['minecraft_dir']
+    try:
+        if os.path.exists(minecraft_dir):
+            if os.name == 'nt':  # Windows
+                os.startfile(minecraft_dir)
+            elif os.name == 'posix':  # Linux/MacOS
+                subprocess.Popen(['xdg-open', minecraft_dir])
+            print(f"Открыта папка с игрой: {minecraft_dir}")
+        else:
+            messagebox.showwarning("Папка не найдена", f"Папка {minecraft_dir} не существует!")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
+
+
 def create_backup(folder_path, backup_type):
     """Создает zip-бэкап указанной папки"""
     if not os.path.exists(folder_path):
@@ -479,6 +494,35 @@ def create_backup(folder_path, backup_type):
     except Exception as e:
         print(f"Ошибка создания бэкапа: {str(e)}")
         return None
+
+
+# Новая функция для ручного создания бэкапа
+def create_manual_backup():
+    """Создает бэкап вручную по кнопке"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    versions_dir = os.path.join(minecraft_dir, 'versions')
+
+    backups_created = []
+
+    # Бэкап модов
+    if os.path.exists(mods_dir):
+        backup_path = create_backup(mods_dir, "mods")
+        if backup_path:
+            backups_created.append(backup_path)
+
+    # Бэкап версий
+    if os.path.exists(versions_dir):
+        backup_path = create_backup(versions_dir, "versions")
+        if backup_path:
+            backups_created.append(backup_path)
+
+    # Показываем результат
+    if backups_created:
+        backup_info = "Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created])
+        messagebox.showinfo("Бэкапы созданы", backup_info)
+    else:
+        messagebox.showinfo("Бэкапы", "Не удалось создать бэкапы (папки не найдены)")
 
 
 # Функция для удаления всех бэкапов
@@ -573,19 +617,6 @@ def fig1():
     else:
         messagebox.showinfo("Очистка", "Папки mods и versions очищены (бэкапы не создавались)")
 
-def open_game_folder():
-    minecraft_dir = CONFIG['minecraft_dir']
-    try:
-        if os.path.exists(minecraft_dir):
-            if os.name == 'nt':  # Windows
-                os.startfile(minecraft_dir)
-            elif os.name == 'posix':  # Linux/MacOS
-                subprocess.Popen(['xdg-open', minecraft_dir])
-            print(f"Открыта папка с игрой: {minecraft_dir}")
-        else:
-            messagebox.showwarning("Папка не найдена", f"Папка {minecraft_dir} не существует!")
-    except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
 
 # Меню "Инструменты"
 menu_bar = tk.Menu(win)
@@ -598,7 +629,8 @@ settings_menu.configure(
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 settings_menu.add_command(label="Починить игру", command=fig1)
-settings_menu.add_command(label="Открыть папку с игрой", command=open_game_folder)  # НОВАЯ КНОПКА
+settings_menu.add_command(label="Открыть папку с игрой", command=open_game_folder)
+settings_menu.add_command(label="Сделать бэкап", command=create_manual_backup)  # Исправленная кнопка
 settings_menu.add_command(label="Показать бэкапы", command=show_backup_info)
 settings_menu.add_command(label="Удалить ВСЕ бэкапы", command=delete_all_backups)
 settings_menu.add_separator()
