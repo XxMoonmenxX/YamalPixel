@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.33" #обновление
+CURRENT_VERSION = "0.4.34" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -37,7 +37,8 @@ CONFIG = {
     'minecraft_dir': os.path.expanduser("~/YamalPixel"),
     'mods': [
         {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'},
-        {'url': 'https://disk.yandex.ru/d/tUkQALFAJ4Mc_g', 'file': 'iris-1.7.6+mc1.20.1.jar'}
+        {'url': 'https://disk.yandex.ru/d/tUkQALFAJ4Mc_g', 'file': 'iris-1.7.6+mc1.20.1.jar'},
+        {'url': 'https://disk.yandex.ru/d/Uk6BTgjVqByR_A', 'file': 'entityculling-fabric-1.9.1-mc1.20.1.jar'}
     ]
 }
 
@@ -124,15 +125,7 @@ SHADERS_CONFIG = {
     ]
 }
 
-# Конфигурация
-CONFIG = {
-    'version': '1.20.1',
-    'fabric_loader': '0.16.10',
-    'minecraft_dir': os.path.expanduser("~/YamalPixel"),
-    'mods': [
-        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'}
-    ]
-}
+
 
 
 # Функция для скачивания шейдеров
