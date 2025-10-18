@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.3" #обновление
+CURRENT_VERSION = "0.4.33" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -81,17 +81,237 @@ def fig1():
         messagebox.showinfo("Очистка", "Папки mods и versions очищены")
 
 
+# Конфигурация шейдеров
+SHADERS_CONFIG = {
+    'shaders': [
+        {'name': 'Aurora Shaders', 'url': 'https://disk.yandex.ru/d/Ish63cvEZjqqMw',
+         'file': 'Aurora-s-Shaders-1.20.2-1.20.zip'},
+        {'name': 'BSL Shaders', 'url': 'https://disk.yandex.ru/d/G7YX0Az5ZuUptA', 'file': 'BSL_v8.4.01.2.zip'},
+        {'name': 'Bliss Shaders', 'url': 'https://disk.yandex.ru/d/GjbXRVgDF9S55w',
+         'file': 'Bliss_v2.0.4_(Chocapic13_Shaders_edit).zip'},
+        {'name': 'Complementary Reimagined', 'url': 'https://disk.yandex.ru/d/1afdG-63Z4dxog',
+         'file': 'ComplementaryReimagined_r5.0.1.zip'},
+        {'name': 'Complementary Unbound', 'url': 'https://disk.yandex.ru/d/mPKPzpM5Rfw4Ag',
+         'file': 'ComplementaryUnbound_r5.1.1.zip'},
+        {'name': 'Hysteria Shaders', 'url': 'https://disk.yandex.ru/d/-sJWGfa1wzA77w',
+         'file': 'Hysteria-Shaders-Universal-v1.1.0.zip'},
+        {'name': 'Insanity Shader', 'url': 'https://disk.yandex.ru/d/fu3X8ZJ1FdyfWQ',
+         'file': 'Insanity-Shader-Universal-v1.500.zip'},
+        {'name': 'IterationT Shaders', 'url': 'https://disk.yandex.ru/d/U4ZsdD303pamBg',
+         'file': 'IterationT-Shaders-v2.0.0-All-Versions.zip'},
+        {'name': 'Kappa Shaders', 'url': 'https://disk.yandex.ru/d/salUSNvQg01C0A', 'file': 'Kappa_v5.2.zip'},
+        {'name': 'Lost Souls', 'url': 'https://disk.yandex.ru/d/XydaLzVyWPOeFg',
+         'file': 'Lost Souls version ComplementaryReimagined_r5.2.1.zip'},
+        {'name': 'MakeUp UltraFast', 'url': 'https://disk.yandex.ru/d/lXzHIs0K3Ico0Q',
+         'file': 'MakeUp-UltraFast-8.9d.zip'},
+        {'name': 'SEUS Renewed', 'url': 'https://disk.yandex.ru/d/yPiGbWFPYdfcqA', 'file': 'SEUS-Renewed-1.0.0.zip'},
+        {'name': 'Sildur Vibrant Shaders', 'url': 'https://disk.yandex.ru/d/258c6NIYVdugWw',
+         'file': 'Sildur\'s Vibrant Shaders v1.32 Extreme.zip'},
+        {'name': 'Solas Shader', 'url': 'https://disk.yandex.ru/d/z-tQHGTsiwQAhg',
+         'file': 'Solas Shader V2.0 [BETA 0.6b].zip'},
+        {'name': 'Spooklementary', 'url': 'https://disk.yandex.ru/d/AjAhhGl1ueGdsQ', 'file': 'Spooklementary_1.1.zip'},
+        {'name': 'VanillAA', 'url': 'https://disk.yandex.ru/d/NErUzx0Q6ZCgew', 'file': 'VanillAA.zip'},
+        {'name': 'Ymir Shader', 'url': 'https://disk.yandex.ru/d/IOv8qwrvYktaJQ', 'file': 'Ymir_beta3.0.zip'},
+        {'name': 'Miniature Shader', 'url': 'https://disk.yandex.ru/d/dNcMKdHzP1cFRQ',
+         'file': 'miniature-shader-2.14.1.zip'},
+        {'name': 'Nostalgia Shader', 'url': 'https://disk.yandex.ru/d/QwLrr-DRx2k8tw', 'file': 'nostalgia_v5.0.zip'},
+        {'name': 'Photon Shader', 'url': 'https://disk.yandex.ru/d/JNOA4ITKiqA04g', 'file': 'photon-iris-stable.zip'},
+        {'name': 'Rethinking Voxels', 'url': 'https://disk.yandex.ru/d/3SUoopowIUI8pA',
+         'file': 'rethinking-voxels_beta18c.zip'},
+        {'name': 'Super Duper Vanilla', 'url': 'https://disk.yandex.ru/d/aEiGZvEBXRe67Q',
+         'file': 'superDuperVanilla.zip'}
+    ]
+}
+
+# Конфигурация
+CONFIG = {
+    'version': '1.20.1',
+    'fabric_loader': '0.16.10',
+    'minecraft_dir': os.path.expanduser("~/YamalPixel"),
+    'mods': [
+        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'}
+    ]
+}
 
 
+# Функция для скачивания шейдеров
+def download_shaders():
+    """Показывает диалог выбора и скачивания шейдеров"""
+    shaders_window = tk.Toplevel(win)
+    shaders_window.title("Скачать шейдеры")
+    shaders_window.geometry("600x500")
+    shaders_window.transient(win)
+    shaders_window.grab_set()
 
+    # Заголовок
+    ttk.Label(shaders_window, text="Выберите шейдеры для скачивания:",
+              font=('Comfortaa', 12, 'bold')).pack(pady=10)
 
+    # Фрейм для списка шейдеров
+    frame = ttk.Frame(shaders_window)
+    frame.pack(fill='both', expand=True, padx=20, pady=10)
 
+    # Создаем Treeview с чекбоксами
+    columns = ('selected', 'name')
+    tree = ttk.Treeview(frame, columns=columns, show='tree headings', height=15)
 
+    # Настраиваем колонки
+    tree.heading('selected', text='✓')
+    tree.heading('name', text='Название шейдера')
 
+    tree.column('selected', width=50, anchor='center')
+    tree.column('name', width=500, anchor='w')
 
+    # Добавляем данные
+    for shader in SHADERS_CONFIG['shaders']:
+        tree.insert('', 'end', values=('☐', shader['name']), tags=(shader['url'], shader['file']))
 
+    # Скроллбар
+    scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
 
+    tree.pack(side='left', fill='both', expand=True)
+    scrollbar.pack(side='right', fill='y')
 
+    # Переменная для хранения выбранных шейдеров
+    selected_shaders = []
+
+    def toggle_selection(event):
+        item = tree.selection()[0]
+        current_values = tree.item(item, 'values')
+        if current_values[0] == '☐':
+            tree.set(item, 'selected', '☑')
+            selected_shaders.append({
+                'name': current_values[1],
+                'url': tree.item(item, 'tags')[0],
+                'file': tree.item(item, 'tags')[1]
+            })
+        else:
+            tree.set(item, 'selected', '☐')
+            # Удаляем из выбранных
+            for shader in selected_shaders[:]:
+                if shader['name'] == current_values[1]:
+                    selected_shaders.remove(shader)
+
+    tree.bind('<Button-1>', toggle_selection)
+
+    # Фрейм для кнопок
+    button_frame = ttk.Frame(shaders_window)
+    button_frame.pack(pady=10)
+
+    def download_selected():
+        if not selected_shaders:
+            messagebox.showwarning("Выбор", "Пожалуйста, выберите хотя бы один шейдер")
+            return
+
+        shaders_window.destroy()
+
+        # Создаем окно прогресса
+        progress_window = tk.Toplevel(win)
+        progress_window.title("Скачивание шейдеров")
+        progress_window.geometry("400x150")
+
+        progress_label = ttk.Label(progress_window, text="Подготовка к скачиванию...")
+        progress_label.pack(pady=10)
+
+        progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+        progress.pack(pady=10)
+
+        status_label = ttk.Label(progress_window, text="")
+        status_label.pack()
+
+        def download_thread():
+            try:
+                shaders_dir = os.path.join(CONFIG['minecraft_dir'], 'shaderpacks')
+                os.makedirs(shaders_dir, exist_ok=True)
+
+                total = len(selected_shaders)
+                success_count = 0
+
+                for i, shader in enumerate(selected_shaders, 1):
+                    status_label.config(text=f"Скачивание: {shader['name']}...")
+                    progress['value'] = (i - 1) * 100 / total
+                    progress_window.update()
+
+                    try:
+                        # Получаем прямую ссылку для скачивания
+                        download_url = get_yandex_direct_link(shader['url'])
+                        if not download_url:
+                            logging.error(f"Не удалось получить ссылку для шейдера: {shader['name']}")
+                            continue
+
+                        shader_path = os.path.join(shaders_dir, shader['file'])
+
+                        # Скачиваем файл
+                        response = requests.get(download_url, stream=True)
+                        response.raise_for_status()
+
+                        with open(shader_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+
+                        success_count += 1
+                        logging.info(f"Успешно скачан шейдер: {shader['name']}")
+
+                    except Exception as e:
+                        logging.error(f"Ошибка скачивания шейдера {shader['name']}: {str(e)}")
+
+                progress_window.destroy()
+
+                if success_count > 0:
+                    messagebox.showinfo(
+                        "Скачивание завершено",
+                        f"Успешно скачано {success_count} из {total} шейдеров.\n\n"
+                        f"Шейдеры сохранены в папке: {shaders_dir}"
+                    )
+                else:
+                    messagebox.showerror("Ошибка", "Не удалось скачать ни одного шейдера")
+
+            except Exception as e:
+                progress_window.destroy()
+                messagebox.showerror("Ошибка", f"Ошибка при скачивании шейдеров: {str(e)}")
+
+        threading.Thread(target=download_thread, daemon=True).start()
+
+    def select_all():
+        selected_shaders.clear()
+        for item in tree.get_children():
+            tree.set(item, 'selected', '☑')
+            values = tree.item(item, 'values')
+            selected_shaders.append({
+                'name': values[1],
+                'url': tree.item(item, 'tags')[0],
+                'file': tree.item(item, 'tags')[1]
+            })
+
+    def deselect_all():
+        selected_shaders.clear()
+        for item in tree.get_children():
+            tree.set(item, 'selected', '☐')
+
+    def open_shaders_folder():
+        shaders_dir = os.path.join(CONFIG['minecraft_dir'], 'shaderpacks')
+        try:
+            if not os.path.exists(shaders_dir):
+                os.makedirs(shaders_dir)
+            if os.name == 'nt':  # Windows
+                os.startfile(shaders_dir)
+            elif os.name == 'posix':  # Linux/MacOS
+                subprocess.Popen(['xdg-open', shaders_dir])
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
+
+    # Кнопки управления
+    ttk.Button(button_frame, text="✅ Выбрать все",
+               command=select_all).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Снять все",
+               command=deselect_all).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="📥 Скачать выбранные",
+               command=download_selected).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="📁 Открыть папку шейдеров",
+               command=open_shaders_folder).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Закрыть",
+               command=shaders_window.destroy).pack(side='left', padx=5)
 
 
 
@@ -1169,16 +1389,38 @@ def install_java_with_progress():
 
 # Инициализация проверки Java при запуске
 def initial_check():
-    if not check_java_version():
-        response = messagebox.askyesno("Java не установлена",
-                                       "Для работы лаунчера требуется Java 17. Установить сейчас?")
-        if response:
-            install_java_with_progress()
-        else:
-            sys.exit()
-    else:
-        print("Необходимая версия JAVA установлена.")
+    print("🔍 Проверка установленной Java...")
 
+    if not check_java_version():
+        print("❌ Java 17 не найдена")
+
+        choice = messagebox.askyesnocancel(
+            "Требуется Java 17",
+            "Для работы лаунчера рекомендуется Java 17.\n\n"
+            "Выберите действие:\n"
+            "• Да - установить автоматически\n"
+            "• Нет - пропустить проверку\n"
+            "• Отмена - выйти из лаунчера"
+        )
+
+        if choice is None:  # Отмена
+            sys.exit()
+        elif choice:  # Да - установить
+            install_java_with_progress()
+        else:  # Нет - пропустить
+            print("⚠️ Проверка Java пропущена пользователем")
+    else:
+        print("✅ Правильная версия Java установлена")
+def skip_java_check():
+    """Пропустить проверку Java (для опытных пользователей)"""
+    result = messagebox.askyesno(
+        "Пропустить проверку Java",
+        "Вы уверены, что хотите пропустить проверку Java?\n\n"
+        "Игра может не запуститься если Java 17 не установлена.\n"
+        "Продолжить на свой страх и риск?",
+        icon='warning'
+    )
+    return result
 # Инициализация звука
 mixer.init()
 #mixer.music.load('Obuse - Menu song.mp3')
@@ -1878,6 +2120,8 @@ settings_menu.configure(
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
+settings_menu.add_command(label="🎨 Скачать шейдеры", command=download_shaders)  # НОВАЯ КНОПКА
+settings_menu.add_separator()
 settings_menu.add_command(label="🔧 Починка файлов", command=auto_repair_game_files)
 settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
 settings_menu.add_separator()
