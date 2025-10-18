@@ -36,7 +36,8 @@ CONFIG = {
     'fabric_loader': '0.16.10',
     'minecraft_dir': os.path.expanduser("~/YamalPixel"),
     'mods': [
-        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'}
+        {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'},
+        {'url': 'https://disk.yandex.ru/d/tUkQALFAJ4Mc_g', 'file': 'iris-1.7.6+mc1.20.1.jar'}
     ]
 }
 
