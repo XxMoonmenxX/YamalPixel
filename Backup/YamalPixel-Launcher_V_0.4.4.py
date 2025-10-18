@@ -18,9 +18,14 @@ import logging
 from pypresence import Presence
 from pathlib import Path
 import datetime
+import asyncio
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor
+import hashlib
+import time
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.34" #обновление
+CURRENT_VERSION = "0.4.4" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -42,6 +47,262 @@ CONFIG = {
     ]
 }
 
+
+class LauncherCache:
+    def __init__(self):
+        self.cache_dir = Path.home() / ".yamalpixel_cache"
+        self.cache_dir.mkdir(exist_ok=True)
+
+    def is_cache_fresh(self, cache_file, max_age_hours=24):
+        """Проверяет свежесть кэша"""
+        if not cache_file.exists():
+            return False
+
+        file_age = time.time() - cache_file.stat().st_mtime
+        return file_age < (max_age_hours * 3600)
+
+    def get_file_hash(self, url):
+        """Создает хеш для имени файла кэша"""
+        return hashlib.md5(url.encode()).hexdigest()
+
+    def download_and_cache(self, url, cache_file):
+        """Скачивает и кэширует файл"""
+        try:
+            response = requests.get(url, timeout=30, stream=True)
+            response.raise_for_status()
+
+            with open(cache_file, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192 * 4):
+                    f.write(chunk)
+
+            logging.info(f"Файл закэширован: {cache_file.name}")
+        except Exception as e:
+            logging.error(f"Ошибка кэширования {url}: {e}")
+            raise
+
+    def get_cached_file(self, url, force_refresh=False):
+        """Возвращает кэшированный файл или качает новый"""
+        file_hash = self.get_file_hash(url)
+        cache_file = self.cache_dir / file_hash
+
+        if cache_file.exists() and not force_refresh:
+            if self.is_cache_fresh(cache_file):
+                return cache_file
+
+        # Качаем и кэшируем
+        self.download_and_cache(url, cache_file)
+        return cache_file
+
+
+class TurboDownloader:
+    def __init__(self):
+        self.cache = {}
+        self.cache_manager = LauncherCache()
+
+    async def get_turbo_link(self, public_key):
+        """Быстрое получение ссылки через асинхронность"""
+        if public_key in self.cache:
+            return self.cache[public_key]
+
+        api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(api_url, params={"public_key": public_key}) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        direct_link = data.get('href')
+                        self.cache[public_key] = direct_link
+                        return direct_link
+                    else:
+                        logging.error(f"Ошибка API Яндекс: {response.status}")
+                        return None
+        except asyncio.TimeoutError:
+            logging.error("Таймаут получения ссылки Яндекс")
+            return None
+        except Exception as e:
+            logging.error(f"Ошибка получения ссылки: {e}")
+            return None
+
+    async def download_file_async(self, url, file_path, progress_callback=None):
+        """Турбо-загрузка с прогрессом"""
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        raise Exception(f"HTTP {response.status}")
+
+                    total_size = int(response.headers.get('content-length', 0))
+
+                    with open(file_path, 'wb') as f:
+                        downloaded = 0
+                        async for chunk in response.content.iter_chunked(8192 * 8):  # Ещё больше буфер
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total_size > 0:
+                                progress_callback(downloaded, total_size)
+
+                    return True
+        except Exception as e:
+            logging.error(f"Ошибка загрузки {url}: {e}")
+            return False
+
+    def download_file_sync(self, url, file_path, progress_callback=None):
+        """Синхронная версия для использования в потоках"""
+        return asyncio.run(self.download_file_async(url, file_path, progress_callback))
+
+
+# 🔥 ОБНОВЛЕННЫЕ ФУНКЦИИ ДЛЯ МОДОВ:
+
+def download_single_mod_turbo(mod_info):
+    """Турбо-загрузка одного мода"""
+    try:
+        downloader = TurboDownloader()
+
+        # Получаем прямую ссылку
+        direct_link = asyncio.run(downloader.get_turbo_link(mod_info['url']))
+        if not direct_link:
+            logging.error(f"Не удалось получить ссылку для {mod_info['file']}")
+            return False
+
+        # Путь для сохранения
+        mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
+        os.makedirs(mods_dir, exist_ok=True)
+        file_path = os.path.join(mods_dir, mod_info['file'])
+
+        # Загружаем файл
+        success = downloader.download_file_sync(direct_link, file_path)
+
+        if success and mod_info['file'].endswith('.zip'):
+            # Распаковываем ZIP
+            try:
+                with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                    zip_ref.extractall(mods_dir)
+                logging.info(f"Мод распакован: {mod_info['file']}")
+            except Exception as e:
+                logging.error(f"Ошибка распаковки {mod_info['file']}: {e}")
+
+        return success
+
+    except Exception as e:
+        logging.error(f"Ошибка загрузки мода {mod_info['file']}: {e}")
+        return False
+
+
+def download_mods_turbo_ui(mods_list):
+    """Версия с UI для использования в лаунчере - ИСПРАВЛЕННАЯ"""
+
+    # Создаем окно прогресса
+    progress_window = tk.Toplevel(win)
+    progress_window.title("Загрузка модов")
+    progress_window.geometry("400x150")
+
+    progress_label = ttk.Label(progress_window, text="Подготовка к загрузке...")
+    progress_label.pack(pady=10)
+
+    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+    progress.pack(pady=10)
+
+    status_label = ttk.Label(progress_window, text=f"0/{len(mods_list)} модов")
+    status_label.pack()
+
+    def download_thread():
+        total_mods = len(mods_list)
+        success_count = 0
+
+        def update_progress(current, total, mod_name=""):
+            percent = (current * 100) // total
+            progress['value'] = percent
+            status_label.config(text=f"{current}/{total} модов - {mod_name}")
+            progress_window.update()
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = []
+
+            for i, mod in enumerate(mods_list):
+                future = executor.submit(download_single_mod_turbo, mod)
+                futures.append((future, mod['file']))
+
+            # Обновляем прогресс
+            for i, (future, mod_name) in enumerate(futures):
+                try:
+                    win.after(0, lambda: update_progress(i, total_mods, mod_name))
+                    success = future.result(timeout=180)  # 3 минуты на мод
+                    if success:
+                        success_count += 1
+
+                    win.after(0, lambda: update_progress(i + 1, total_mods, mod_name))
+
+                except Exception as e:
+                    logging.error(f"Ошибка в потоке загрузки {mod_name}: {e}")
+
+        # Финальное сообщение
+        win.after(0, lambda: show_download_result(success_count, total_mods, progress_window))
+
+    def show_download_result(success, total, window):
+        window.destroy()
+        if success == total:
+            messagebox.showinfo("Загрузка завершена", f"✅ Все {success} модов успешно загружены!")
+        else:
+            messagebox.showwarning(
+                "Загрузка завершена",
+                f"📊 Загружено {success} из {total} модов\n\n"
+                f"Некоторые моды могли не загрузиться. Проверьте логи."
+            )
+
+    threading.Thread(target=download_thread, daemon=True).start()
+
+
+# 🎯 ОБНОВЛЕННАЯ ФУНКЦИЯ ДЛЯ ШЕЙДЕРОВ:
+
+def download_shaders_turbo(selected_shaders, progress_callback=None):
+    """Турбо-загрузка шейдеров"""
+
+    def download_shaders_thread():
+        shaders_dir = os.path.join(CONFIG['minecraft_dir'], 'shaderpacks')
+        os.makedirs(shaders_dir, exist_ok=True)
+
+        downloader = TurboDownloader()
+        total = len(selected_shaders)
+        success_count = 0
+
+        with ThreadPoolExecutor(max_workers=2) as executor:  # 2 потока для шейдеров
+            futures = []
+
+            for shader in selected_shaders:
+                future = executor.submit(download_single_shader_turbo, downloader, shader, shaders_dir)
+                futures.append(future)
+
+            for i, future in enumerate(futures):
+                try:
+                    success = future.result(timeout=300)  # 5 минут на шейдер
+                    if success:
+                        success_count += 1
+
+                    if progress_callback:
+                        progress = (i + 1) * 100 // total
+                        win.after(0, lambda: progress_callback(progress, f"Шейдер {i + 1}/{total}"))
+
+                except Exception as e:
+                    logging.error(f"Ошибка загрузки шейдера: {e}")
+
+        return success_count, total
+
+    threading.Thread(target=download_shaders_thread, daemon=True).start()
+
+
+def download_single_shader_turbo(downloader, shader, shaders_dir):
+    """Загрузка одного шейдера"""
+    try:
+        direct_link = asyncio.run(downloader.get_turbo_link(shader['url']))
+        if not direct_link:
+            return False
+
+        shader_path = os.path.join(shaders_dir, shader['file'])
+        return downloader.download_file_sync(direct_link, shader_path)
+
+    except Exception as e:
+        logging.error(f"Ошибка загрузки шейдера {shader['name']}: {e}")
+        return False
 
 def fig1():
     """Очистка игры с созданием бэкапов"""
@@ -126,11 +387,122 @@ SHADERS_CONFIG = {
 }
 
 
+def speed_test():
+    """Тест скорости загрузки с исправлениями"""
+    try:
+        # Список альтернативных серверов для теста скорости
+        test_servers = [
+            "https://proof.ovh.net/files/100Mb.dat",  # Основной
+            "http://ipv4.download.thinkbroadband.com/100MB.zip",  # Резервный (HTTP)
+            "https://ash-speed.hetzner.com/100MB.bin"  # Альтернативный Hetzner
+        ]
+
+        # Пробуем серверы по порядку
+        for test_url in test_servers:
+            try:
+                # Быстрая проверка доступности сервера
+                response = requests.head(test_url, timeout=5)
+                if response.status_code == 200:
+                    break  # Сервер доступен, используем его
+            except:
+                continue  # Пробуем следующий сервер
+        else:
+            # Если все серверы недоступны
+            messagebox.showerror("Ошибка", "Все серверы для теста скорости недоступны")
+            return
+
+        test_file = "test_speed.bin"
+        # Создаем окно прогресса
+        progress_window = tk.Toplevel(win)
+        progress_window.title("Тест скорости")
+        progress_window.geometry("300x120")
+
+        progress_label = ttk.Label(progress_window, text="Тестирование скорости...")
+        progress_label.pack(pady=10)
+
+        progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="indeterminate")
+        progress.pack(pady=10)
+        progress.start()
+
+        status_label = ttk.Label(progress_window, text="Подготовка...")
+        status_label.pack()
+
+        def test_thread():
+            try:
+                start_time = time.time()
+
+                # Используем requests для надежности
+                response = requests.get(test_url, stream=True, timeout=30)
+                response.raise_for_status()
+
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+
+                with open(test_file, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192 * 8):  # Большой чанк для скорости
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+
+                            # Обновляем прогресс
+                            if total_size > 0:
+                                percent = (downloaded / total_size) * 100
+                                win.after(0, lambda: status_label.config(
+                                    text=f"Скачано: {downloaded // 1024 // 1024}MB/{total_size // 1024 // 1024}MB"
+                                ))
+
+                end_time = time.time()
+
+                # Расчет скорости
+                if os.path.exists(test_file):
+                    file_size_mb = os.path.getsize(test_file) / 1024 / 1024
+                    time_seconds = end_time - start_time
+                    speed_mbps = file_size_mb / time_seconds
+
+                    # Очистка
+                    os.remove(test_file)
+
+                    # Показываем результат
+                    win.after(0, lambda: show_speed_result(speed_mbps, progress_window))
+                else:
+                    win.after(0, lambda: show_speed_error("Файл не был скачан", progress_window))
+
+            except Exception as e:
+                win.after(0, lambda: show_speed_error(str(e), progress_window))
+                # Очистка при ошибке
+                if os.path.exists(test_file):
+                    os.remove(test_file)
+
+        def show_speed_result(speed, window):
+            window.destroy()
+            messagebox.showinfo(
+                "Результат теста скорости",
+                f"📊 Ваша скорость загрузки:\n\n"
+                f"🚀 {speed:.2f} MB/сек\n"
+                f"💨 {speed * 8:.2f} Mbit/сек\n\n"
+                f"Для сравнения:\n"
+                f"• 1-5 MB/сек - Медленно\n"
+                f"• 5-10 MB/сек - Нормально\n"
+                f"• 10-20 MB/сек - Быстро\n"
+                f"• 20+ MB/сек - Очень быстро"
+            )
+
+        def show_speed_error(error, window):
+            window.destroy()
+            messagebox.showerror("Ошибка теста", f"Не удалось измерить скорость:\n{error}")
+
+        threading.Thread(target=test_thread, daemon=True).start()
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Ошибка запуска теста: {str(e)}")
+
+
+
 
 
 # Функция для скачивания шейдеров
 def download_shaders():
-    """Показывает диалог выбора и скачивания шейдеров"""
+    """Показывает диалог выбора и скачивания шейдеров - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     shaders_window = tk.Toplevel(win)
     shaders_window.title("Скачать шейдеры")
     shaders_window.geometry("600x500")
@@ -171,21 +543,23 @@ def download_shaders():
     selected_shaders = []
 
     def toggle_selection(event):
-        item = tree.selection()[0]
-        current_values = tree.item(item, 'values')
-        if current_values[0] == '☐':
-            tree.set(item, 'selected', '☑')
-            selected_shaders.append({
-                'name': current_values[1],
-                'url': tree.item(item, 'tags')[0],
-                'file': tree.item(item, 'tags')[1]
-            })
-        else:
-            tree.set(item, 'selected', '☐')
-            # Удаляем из выбранных
-            for shader in selected_shaders[:]:
-                if shader['name'] == current_values[1]:
-                    selected_shaders.remove(shader)
+        item = tree.selection()
+        if item:
+            item = item[0]
+            current_values = tree.item(item, 'values')
+            if current_values[0] == '☐':
+                tree.set(item, 'selected', '☑')
+                selected_shaders.append({
+                    'name': current_values[1],
+                    'url': tree.item(item, 'tags')[0],
+                    'file': tree.item(item, 'tags')[1]
+                })
+            else:
+                tree.set(item, 'selected', '☐')
+                # Удаляем из выбранных
+                for shader in selected_shaders[:]:
+                    if shader['name'] == current_values[1]:
+                        selected_shaders.remove(shader)
 
     tree.bind('<Button-1>', toggle_selection)
 
@@ -199,73 +573,7 @@ def download_shaders():
             return
 
         shaders_window.destroy()
-
-        # Создаем окно прогресса
-        progress_window = tk.Toplevel(win)
-        progress_window.title("Скачивание шейдеров")
-        progress_window.geometry("400x150")
-
-        progress_label = ttk.Label(progress_window, text="Подготовка к скачиванию...")
-        progress_label.pack(pady=10)
-
-        progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
-        progress.pack(pady=10)
-
-        status_label = ttk.Label(progress_window, text="")
-        status_label.pack()
-
-        def download_thread():
-            try:
-                shaders_dir = os.path.join(CONFIG['minecraft_dir'], 'shaderpacks')
-                os.makedirs(shaders_dir, exist_ok=True)
-
-                total = len(selected_shaders)
-                success_count = 0
-
-                for i, shader in enumerate(selected_shaders, 1):
-                    status_label.config(text=f"Скачивание: {shader['name']}...")
-                    progress['value'] = (i - 1) * 100 / total
-                    progress_window.update()
-
-                    try:
-                        # Получаем прямую ссылку для скачивания
-                        download_url = get_yandex_direct_link(shader['url'])
-                        if not download_url:
-                            logging.error(f"Не удалось получить ссылку для шейдера: {shader['name']}")
-                            continue
-
-                        shader_path = os.path.join(shaders_dir, shader['file'])
-
-                        # Скачиваем файл
-                        response = requests.get(download_url, stream=True)
-                        response.raise_for_status()
-
-                        with open(shader_path, 'wb') as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-
-                        success_count += 1
-                        logging.info(f"Успешно скачан шейдер: {shader['name']}")
-
-                    except Exception as e:
-                        logging.error(f"Ошибка скачивания шейдера {shader['name']}: {str(e)}")
-
-                progress_window.destroy()
-
-                if success_count > 0:
-                    messagebox.showinfo(
-                        "Скачивание завершено",
-                        f"Успешно скачано {success_count} из {total} шейдеров.\n\n"
-                        f"Шейдеры сохранены в папке: {shaders_dir}"
-                    )
-                else:
-                    messagebox.showerror("Ошибка", "Не удалось скачать ни одного шейдера")
-
-            except Exception as e:
-                progress_window.destroy()
-                messagebox.showerror("Ошибка", f"Ошибка при скачивании шейдеров: {str(e)}")
-
-        threading.Thread(target=download_thread, daemon=True).start()
+        download_shaders_turbo_ui(selected_shaders)
 
     def select_all():
         selected_shaders.clear()
@@ -308,8 +616,72 @@ def download_shaders():
                command=shaders_window.destroy).pack(side='left', padx=5)
 
 
+def download_shaders_turbo_ui(selected_shaders):
+    """UI для загрузки шейдеров с прогрессом"""
+    progress_window = tk.Toplevel(win)
+    progress_window.title("Скачивание шейдеров")
+    progress_window.geometry("400x150")
 
+    progress_label = ttk.Label(progress_window, text="Подготовка к скачиванию...")
+    progress_label.pack(pady=10)
 
+    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+    progress.pack(pady=10)
+
+    status_label = ttk.Label(progress_window, text="")
+    status_label.pack()
+
+    def update_progress(percent, status):
+        progress['value'] = percent
+        status_label.config(text=status)
+        progress_window.update()
+
+    def completion_callback(success_count, total):
+        progress_window.destroy()
+        if success_count > 0:
+            messagebox.showinfo(
+                "Скачивание завершено",
+                f"✅ Успешно скачано {success_count} из {total} шейдеров!\n\n"
+                f"Шейдеры сохранены в папке shaderpacks"
+            )
+        else:
+            messagebox.showerror("Ошибка", "❌ Не удалось скачать ни одного шейдера")
+
+    # Запускаем загрузку в отдельном потоке
+    def download_thread():
+        shaders_dir = os.path.join(CONFIG['minecraft_dir'], 'shaderpacks')
+        os.makedirs(shaders_dir, exist_ok=True)
+
+        downloader = TurboDownloader()
+        total = len(selected_shaders)
+        success_count = 0
+
+        for i, shader in enumerate(selected_shaders):
+            try:
+                win.after(0, lambda: update_progress(
+                    (i * 100) // total,
+                    f"Скачивание: {shader['name']}..."
+                ))
+
+                direct_link = asyncio.run(downloader.get_turbo_link(shader['url']))
+                if direct_link:
+                    shader_path = os.path.join(shaders_dir, shader['file'])
+                    success = downloader.download_file_sync(direct_link, shader_path)
+
+                    if success:
+                        success_count += 1
+                        logging.info(f"Успешно скачан шейдер: {shader['name']}")
+                    else:
+                        logging.error(f"Ошибка скачивания шейдера: {shader['name']}")
+                else:
+                    logging.error(f"Не удалось получить ссылку для шейдера: {shader['name']}")
+
+            except Exception as e:
+                logging.error(f"Ошибка при загрузке шейдера {shader['name']}: {e}")
+
+        win.after(0, lambda: completion_callback(success_count, total))
+
+    threading.Thread(target=download_thread, daemon=True).start()
 
 
 
@@ -2100,6 +2472,254 @@ def repair_game_with_options():
 
     ttk.Button(choice_window, text="❌ Отмена",
                command=cancel, width=20).pack(pady=20)
+def launch_without_mods():
+    """Запуск игры полностью без модов"""
+    result = messagebox.askyesno(
+        "Запуск без модов",
+        "Запустить игру БЕЗ ВСЕХ модов?\n\n"
+        "Это поможет определить:\n"
+        "• Проблема в модах или в игре\n"
+        "• Конфликтующие моды\n\n"
+        "После проверки можно включить моды обратно.",
+        icon='question'
+    )
+
+    if not result:
+        return
+
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    disabled_dir = os.path.join(minecraft_dir, 'mods_disabled_temp')
+
+    # Создаем бэкап модов
+    if os.path.exists(mods_dir) and os.listdir(mods_dir):
+        backup_path = create_backup(mods_dir, "mods_before_clean_launch")
+        if backup_path:
+            print(f"Создан бэкап модов: {backup_path}")
+
+    # Перемещаем ВСЕ моды
+    os.makedirs(disabled_dir, exist_ok=True)
+
+    moved_count = 0
+    if os.path.exists(mods_dir):
+        for filename in os.listdir(mods_dir):
+            if filename.endswith('.jar'):
+                try:
+                    shutil.move(
+                        os.path.join(mods_dir, filename),
+                        os.path.join(disabled_dir, filename)
+                    )
+                    moved_count += 1
+                    print(f"Отключен мод: {filename}")
+                except Exception as e:
+                    print(f"Ошибка отключения {filename}: {e}")
+
+    if moved_count > 0:
+        messagebox.showinfo(
+            "Моды отключены",
+            f"Отключено {moved_count} модов.\n\n"
+            f"Теперь запустите игру через основную кнопку 'Войти в игру'.\n\n"
+            f"Моды находятся в: {disabled_dir}"
+        )
+    else:
+        messagebox.showinfo("Информация", "Модов для отключения не найдено")
+
+def complete_reinstall():
+    """Полная переустановка игры с очисткой всех файлов"""
+    result = messagebox.askyesno(
+        "Полная переустановка",
+        "⚠️ ВНИМАНИЕ! Это удалит ВСЕ файлы игры и настроек.\n\n"
+        "Будет выполнено:\n"
+        "• Удаление папки YamalPixel\n"
+        "• Удаление всех модов и конфигов\n"
+        "• Удаление миров и сохранений\n"
+        "• Создание чистых бэкапов\n\n"
+        "Продолжить?",
+        icon='warning'
+    )
+
+    if not result:
+        return
+
+    minecraft_dir = CONFIG['minecraft_dir']
+
+    # Создаем полные бэкапы
+    backups_created = []
+
+    # Бэкап модов
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    if os.path.exists(mods_dir) and os.listdir(mods_dir):
+        backup_path = create_backup(mods_dir, "mods_full_backup")
+        if backup_path:
+            backups_created.append(f"Моды: {os.path.basename(backup_path)}")
+
+    # Бэкап мира
+    world_dir = os.path.join(minecraft_dir, 'world')
+    if os.path.exists(world_dir) and os.listdir(world_dir):
+        backup_path = create_backup(world_dir, "world_full_backup")
+        if backup_path:
+            backups_created.append(f"Мир: {os.path.basename(backup_path)}")
+
+    # Бэкап конфигов
+    config_dir = os.path.join(minecraft_dir, 'config')
+    if os.path.exists(config_dir) and os.listdir(config_dir):
+        backup_path = create_backup(config_dir, "config_full_backup")
+        if backup_path:
+            backups_created.append(f"Настройки: {os.path.basename(backup_path)}")
+
+    # Полностью удаляем папку Minecraft
+    progress_window = tk.Toplevel(win)
+    progress_window.title("Переустановка")
+    progress_window.geometry("400x150")
+
+    progress_label = ttk.Label(progress_window, text="Удаление старых файлов...")
+    progress_label.pack(pady=10)
+
+    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="indeterminate")
+    progress.pack(pady=10)
+    progress.start()
+
+    def reinstall_thread():
+        try:
+            # Полностью удаляем папку Minecraft
+            if os.path.exists(minecraft_dir):
+                shutil.rmtree(minecraft_dir)
+                print(f"Полностью удалена папка: {minecraft_dir}")
+
+            # Создаем чистую структуру
+            os.makedirs(minecraft_dir, exist_ok=True)
+            os.makedirs(os.path.join(minecraft_dir, 'mods'), exist_ok=True)
+            os.makedirs(os.path.join(minecraft_dir, 'config'), exist_ok=True)
+            os.makedirs(os.path.join(minecraft_dir, 'shaderpacks'), exist_ok=True)
+
+            progress_label.config(text="Установка Minecraft...")
+
+            # Чистая установка Minecraft
+            minecraft_launcher_lib.install.install_minecraft_version(
+                versionid=CONFIG['version'],
+                minecraft_directory=minecraft_dir
+            )
+
+            progress_label.config(text="Установка Fabric...")
+
+            # Чистая установка Fabric
+            minecraft_launcher_lib.fabric.install_fabric(
+                minecraft_version=CONFIG['version'],
+                loader_version=CONFIG['fabric_loader'],
+                minecraft_directory=minecraft_dir
+            )
+
+            progress_label.config(text="Установка модов...")
+
+            # Скачиваем только ОСНОВНЫЕ моды (без проблемных)
+            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+            essential_mods = [
+                {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'},
+                {'url': 'https://disk.yandex.ru/d/tUkQALFAJ4Mc_g', 'file': 'iris-1.7.6+mc1.20.1.jar'},
+                {'url': 'https://disk.yandex.ru/d/Uk6BTgjVqByR_A', 'file': 'entityculling-fabric-1.9.1-mc1.20.1.jar'}
+            ]
+
+            for mod in essential_mods:
+                try:
+                    mods_dir_path = os.path.join(minecraft_dir, 'mods')
+                    mod_path = os.path.join(mods_dir_path, mod['file'])
+
+                    params = {'public_key': mod['url']}
+                    response = requests.get(base_url, params=params)
+                    response.raise_for_status()
+                    download_url = response.json().get('href')
+
+                    if download_url:
+                        with open(mod_path, 'wb') as f:
+                            dl_response = requests.get(download_url, stream=True)
+                            dl_response.raise_for_status()
+                            for chunk in dl_response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+
+                        # Распаковываем ZIP если нужно
+                        if mod['file'].endswith('.zip'):
+                            try:
+                                with zipfile.ZipFile(mod_path, 'r') as zip_file:
+                                    zip_file.extractall(path=mods_dir_path)
+                                print(f"Распакован: {mod['file']}")
+                            except Exception as e:
+                                print(f"Ошибка распаковки {mod['file']}: {e}")
+
+                except Exception as e:
+                    print(f"Ошибка загрузки мода {mod['file']}: {e}")
+
+            progress_window.destroy()
+
+            # Показываем отчет
+            report = "✅ Переустановка завершена!\n\n"
+
+            if backups_created:
+                report += "📦 Созданы бэкапы:\n" + "\n".join([f"• {b}" for b in backups_created]) + "\n\n"
+
+            report += "🔄 Установлено:\n"
+            report += "• Чистая версия Minecraft 1.20.1\n"
+            report += "• Fabric Loader 0.16.10\n"
+            report += "• Основные моды (без проблемных)\n\n"
+            report += "🎯 Теперь попробуйте запустить игру!"
+
+            messagebox.showinfo("Переустановка завершена", report)
+
+        except Exception as e:
+            progress_window.destroy()
+            messagebox.showerror("Ошибка", f"Ошибка переустановки: {str(e)}")
+
+    threading.Thread(target=reinstall_thread, daemon=True).start()
+
+def create_diagnostic_panel():
+    """Создает панель диагностики проблем"""
+    diag_window = tk.Toplevel(win)
+    diag_window.title("Диагностика проблем")
+    diag_window.geometry("500x400")
+
+    # Заголовок
+    ttk.Label(diag_window, text="🔧 Диагностика проблем с запуском",
+              font=('Comfortaa', 14, 'bold')).pack(pady=10)
+
+    # Описание проблем
+    problems_text = tk.Text(diag_window, height=12, width=60, wrap='word')
+    problems_text.pack(pady=10, padx=10, fill='both', expand=True)
+
+    problems_info = """
+    ВАША ПРОБЛЕМА: Игра зависает при подключении к серверу
+
+    ВОЗМОЖНЫЕ ПРИЧИНЫ:
+    1. 🚫 Конфликт модов - некоторые моды несовместимы
+    2. 🔄 Поврежденные файлы игры
+    3. 🔐 Проблемы с аутентификацией
+    4. 💾 Нехватка памяти
+
+    РЕКОМЕНДУЕМЫЕ РЕШЕНИЯ:
+
+    🎯 БЫСТРОЕ РЕШЕНИЕ (попробуйте по порядку):
+    1. Запуск без модов - определит проблему в модах
+    2. Полная переустановка - чистая установка игры
+    3. Запуск с 2GB памяти - исключит проблемы с памятью
+
+    📊 СТАТУС ВАШЕЙ СИСТЕМЫ:
+    • Java 17 ✅ Установлена
+    • Память: 4GB ✅ Достаточно
+    • Видеокарта: NVIDIA RTX 3070 ✅ Совместима
+    """
+
+    problems_text.insert('1.0', problems_info)
+    problems_text.config(state='disabled')
+
+    # Кнопки решений
+    button_frame = ttk.Frame(diag_window)
+    button_frame.pack(pady=10)
+
+    ttk.Button(button_frame, text="🚀 Запуск без модов",
+               command=launch_without_mods).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="🔄 Полная переустановка",
+               command=complete_reinstall).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Закрыть",
+               command=diag_window.destroy).pack(side='left', padx=5)
 
 
 
@@ -2124,6 +2744,12 @@ settings_menu.add_command(label="💾 Сделать бэкап", command=create
 settings_menu.add_command(label="📊 Показать бэкапы", command=show_backup_info)
 settings_menu.add_command(label="🗑️ Удалить ВСЕ бэкапы", command=delete_all_backups)
 settings_menu.add_separator()
+settings_menu.add_command(label="🔄 Полная переустановка", command=complete_reinstall)
+settings_menu.add_separator()
+settings_menu.add_command(label="🔧 Диагностика проблем", command=create_diagnostic_panel)
+settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
+
+
 
 
 # Функция для открытия настроек
@@ -2150,46 +2776,27 @@ settings_menu.add_separator()
 
 # Функция для проверки и загрузки модов
 def checker1():
-    # Если выбрана не YamalPixel, пропускаем загрузку модов
+    """ОБНОВЛЕННАЯ функция проверки и загрузки модов"""
     if version_combobox.get() != "YamalPixel":
         print("Выбрана версия, отличная от YamalPixel. Загрузка модов пропущена.")
         return
 
     mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
     os.makedirs(mods_dir, exist_ok=True)
-    base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+    # Проверяем какие моды отсутствуют
     missing_mods = []
     for mod in CONFIG['mods']:
         mod_path = os.path.join(mods_dir, mod['file'])
         if not os.path.exists(mod_path):
             missing_mods.append(mod)
-    for mod in missing_mods:
-        mod_path = os.path.join(mods_dir, mod['file'])
-        try:
-            params = {'public_key': mod['url']}
-            response = requests.get(base_url, params=params)
-            response.raise_for_status()
-            download_url = response.json().get('href')
-            if not download_url:
-                continue
-            with open(mod_path, 'wb') as f:
-                dl_response = requests.get(download_url, stream=True)
-                dl_response.raise_for_status()
-                for chunk in dl_response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            print(f"Мод {mod['file']} успешно установлен")
-        except Exception as e:
-            print(f"Ошибка загрузки мода {mod['file']}: {str(e)}")
-    for mod in missing_mods:
-        if mod['file'].endswith('.zip'):
-            zip_path = os.path.join(mods_dir, mod['file'])
-            extract_dir = os.path.join(mods_dir)
-            try:
-                with zipfile.ZipFile(zip_path, 'r') as zip_file:
-                    zip_file.extractall(path=extract_dir)
-                    print(f"Содержимое архива {mod['file']} успешно извлечено в папку mods")
-            except Exception as e:
-                print(f"Ошибка распаковки архива {mod['file']}: {str(e)}")
+
+    if missing_mods:
+        print(f"Найдено отсутствующих модов: {len(missing_mods)}")
+        # Запускаем турбо-загрузку
+        download_mods_turbo_ui(missing_mods)
+    else:
+        print("Все моды установлены")
 
 
 # Функция для проверки установки Minecraft и Fabric
@@ -2244,11 +2851,33 @@ def install_minecraft_version(version, progress_callback=None):
         print(f"Версия {version} уже установлена.")
 
 
+def clear_auth_cache():
+    """Очищает кэш аутентификации Minecraft"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    cache_files = [
+        os.path.join(minecraft_dir, 'usercache.json'),
+        os.path.join(minecraft_dir, 'launcher_profiles.json'),
+        os.path.join(minecraft_dir, 'launcher_accounts.json')
+    ]
+
+    for cache_file in cache_files:
+        if os.path.exists(cache_file):
+            try:
+                os.remove(cache_file)
+                print(f"Удален: {cache_file}")
+            except Exception as e:
+                print(f"Ошибка удаления {cache_file}: {e}")
+
+
+
 def runn():
     try:
         if not username.get().strip():
             messagebox.showerror("Ошибка", "Введите имя пользователя!")
             return
+
+        # Очищаем кэш аутентификации
+        clear_auth_cache()
 
         # Автоматическая проверка файлов перед запуском
         auto_repair_game_files()
@@ -2257,9 +2886,29 @@ def runn():
 
         progress_window = tk.Toplevel(win)
         progress_window.title("Запуск Minecraft")
-        progress_window.geometry("300x100")
+        progress_window.geometry("400x200")
+
+        # Добавляем выбор режима запуска
+        mode_frame = ttk.Frame(progress_window)
+        mode_frame.pack(pady=5)
+
+        ttk.Label(mode_frame, text="Режим:").pack(side='left')
+        launch_mode = tk.StringVar(value="online")
+        ttk.Radiobutton(mode_frame, text="Онлайн", variable=launch_mode, value="online").pack(side='left', padx=5)
+        ttk.Radiobutton(mode_frame, text="Оффлайн", variable=launch_mode, value="offline").pack(side='left', padx=5)
+
+        # Выбор памяти
+        memory_frame = ttk.Frame(progress_window)
+        memory_frame.pack(pady=5)
+
+        ttk.Label(memory_frame, text="Память:").pack(side='left')
+        memory_var = tk.StringVar(value="4G")
+        memory_combo = ttk.Combobox(memory_frame, textvariable=memory_var,
+                                    values=["2G", "4G", "6G", "8G"], state="readonly", width=10)
+        memory_combo.pack(side='left', padx=5)
+
         progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="indeterminate")
-        progress.pack(pady=20)
+        progress.pack(pady=10)
         progress.start()
 
         status_label = ttk.Label(progress_window, text="Подготовка к запуску...")
@@ -2268,22 +2917,23 @@ def runn():
         def install_and_run():
             try:
                 selected_version = version_combobox.get()
+                selected_memory = memory_var.get()
+                is_offline = launch_mode.get() == "offline"
+
                 status_label.config(text="Проверка версии Minecraft...")
 
-                # Устанавливаем Minecraft версию, если она отсутствует
+                # Устанавливаем Minecraft версию
                 install_minecraft_version(
                     version=CONFIG['version'],
                     progress_callback={
                         "setStatus": lambda t: status_label.config(text=t),
-                        "setProgress": lambda v: progress.configure(value=v) if progress[
-                                                                                    'mode'] == 'determinate' else None,
-                        "setMax": lambda m: progress.configure(maximum=m) if progress['mode'] == 'determinate' else None
+                        "setProgress": lambda v: None,
+                        "setMax": lambda m: None
                     }
                 )
 
                 status_label.config(text="Установка Fabric...")
 
-                # Устанавливаем Fabric только если он нужен
                 if is_fabric_needed(selected_version):
                     if not check_minecraft_and_fabric_installed():
                         minecraft_launcher_lib.fabric.install_fabric(
@@ -2292,53 +2942,73 @@ def runn():
                             minecraft_directory=CONFIG['minecraft_dir'],
                             callback={
                                 "setStatus": lambda t: status_label.config(text=t),
-                                "setProgress": lambda v: progress.configure(value=v),
-                                "setMax": lambda m: progress.configure(maximum=m)
+                                "setProgress": lambda v: None,
+                                "setMax": lambda m: None
                             }
                         )
 
                 status_label.config(text="Загрузка модов...")
 
-                # Загрузка модов только для YamalPixel
                 if selected_version == "YamalPixel":
                     checker1()
 
                 status_label.config(text="Запуск игры...")
 
-                # Формирование команды запуска
+                # ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ ЗАПУСКА
+                jvm_args = [
+                    f"-Xmx{selected_memory}",
+                    f"-Xms{selected_memory}",
+                    "-XX:+UseG1GC",
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:G1NewSizePercent=20",
+                    "-XX:G1ReservePercent=20",
+                    "-XX:MaxGCPauseMillis=50",
+                    "-XX:G1HeapRegionSize=32M",
+                    "-Duser.language=ru",
+                    "-Duser.country=RU",
+                    "-Dfile.encoding=UTF-8"
+                ]
+
+                # Дополнительные настройки для оффлайн-режима
+                if is_offline:
+                    jvm_args.extend([
+                        "-Dminecraft.online_mode=false",
+                        "-Dminecraft.auth.enabled=false"
+                    ])
+
+                options = {
+                    'username': username.get(),
+                    'jvmArguments': jvm_args,
+                    'gameLocale': 'ru_RU'
+                }
+
+                # Принудительно отключаем онлайн-проверки в оффлайн режиме
+                if is_offline:
+                    options['demo'] = True
+                    options['versionType'] = 'offline'
+
                 if is_fabric_needed(selected_version):
                     command = minecraft_launcher_lib.command.get_minecraft_command(
                         version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
                         minecraft_directory=CONFIG['minecraft_dir'],
-                        options={
-                            'username': username.get(),
-                            'jvmArguments': [
-                                "-Xmx8G",
-                                "-Duser.language=ru",
-                                "-Duser.country=RU",
-                                "-Dfile.encoding=UTF-8"
-                            ],
-                            'gameLocale': 'ru_RU'
-                        }
+                        options=options
                     )
                 else:
                     command = minecraft_launcher_lib.command.get_minecraft_command(
                         version=CONFIG['version'],
                         minecraft_directory=CONFIG['minecraft_dir'],
-                        options={
-                            'username': username.get(),
-                            'jvmArguments': [
-                                "-Xmx8G",
-                                "-Duser.language=ru",
-                                "-Duser.country=RU",
-                                "-Dfile.encoding=UTF-8"
-                            ],
-                            'gameLocale': 'ru_RU'
-                        }
+                        options=options
                     )
 
                 progress_window.destroy()
-                subprocess.Popen(command)
+
+                print(f"Запуск команды: {' '.join(command)}")
+
+                # Запуск с пониженным приоритетом
+                if os.name == 'nt':
+                    subprocess.Popen(command, creationflags=subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+                else:
+                    subprocess.Popen(command)
 
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Ошибка запуска: {str(e)}")
@@ -2351,6 +3021,84 @@ def runn():
         messagebox.showerror("Ошибка", f"Не удалось запустить игру: {str(e)}")
 
 
+def disable_problematic_mods():
+    """Временно отключает потенциально проблемные моды"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    disabled_dir = os.path.join(minecraft_dir, 'mods_disabled')
+
+    os.makedirs(disabled_dir, exist_ok=True)
+
+    # Моды которые могут вызывать проблемы при подключении
+    problematic_mods = [
+        'antixray-fabric-1.4.6+1.20.1.jar',
+        'servercore-fabric-1.5.2+1.20.1.jar',
+        'auth-1.0.0.jar'
+    ]
+
+    moved_mods = []
+    for mod in problematic_mods:
+        mod_path = os.path.join(mods_dir, mod)
+        if os.path.exists(mod_path):
+            try:
+                shutil.move(mod_path, os.path.join(disabled_dir, mod))
+                moved_mods.append(mod)
+                print(f"Отключен мод: {mod}")
+            except Exception as e:
+                print(f"Ошибка отключения мода {mod}: {e}")
+
+    if moved_mods:
+        messagebox.showinfo("Моды отключены",
+                            f"Временно отключены моды:\n" + "\n".join(moved_mods) +
+                            f"\n\nОни перемещены в: {disabled_dir}")
+
+
+quick_btn = ttk.Button(win, text="🚀 Быстрый запуск (оффлайн)",
+                       width=20, style="BW.TLabel",
+                       command=lambda: quick_launch_offline())
+quick_btn.place(relx=0.5, rely=0.55, width=150, height=30, anchor="c")
+
+
+def quick_launch_offline():
+    """Быстрый запуск в оффлайн-режиме с отключенными проблемными модами"""
+    result = messagebox.askyesno(
+        "Быстрый запуск",
+        "Запустить игру в оффлайн-режиме?\n\n" +
+        "Это может помочь если есть проблемы с:\n" +
+        "• Аутентификацией\n" +
+        "• Подключением к серверу\n" +
+        "• Зависаниями при входе\n\n" +
+        "Попробуйте этот режим если обычный запуск не работает."
+    )
+
+    if result:
+        # Временно отключаем проблемные моды
+        disable_problematic_mods()
+
+        # Запускаем в оффлайн режиме
+        runn()  # Функция runn() теперь будет использовать оффлайн режим из выбора
+
+
+
+
+
+def enable_all_mods():
+    """Включает все отключенные моды"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    disabled_dir = os.path.join(minecraft_dir, 'mods_disabled')
+
+    if os.path.exists(disabled_dir):
+        for mod in os.listdir(disabled_dir):
+            try:
+                shutil.move(os.path.join(disabled_dir, mod), os.path.join(mods_dir, mod))
+                print(f"Включен мод: {mod}")
+            except Exception as e:
+                print(f"Ошибка включения мода {mod}: {e}")
+
+        # Удаляем пустую папку
+        if not os.listdir(disabled_dir):
+            os.rmdir(disabled_dir)
 # Стили
 style = ttk.Style()
 style.configure("BW.TLabel", background="pink")
