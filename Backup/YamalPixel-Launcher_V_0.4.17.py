@@ -41,6 +41,69 @@ CONFIG = {
 }
 
 
+def fig1():
+    """Очистка игры с созданием бэкапов"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    versions_dir = os.path.join(minecraft_dir, 'versions')
+
+    # Создаем бэкапы перед удалением
+    backups_created = []
+
+    # Всегда создаем бэкапы, даже если папки не существуют
+    backup_path_mods = create_backup(mods_dir, "mods")
+    if backup_path_mods:
+        backups_created.append(backup_path_mods)
+
+    backup_path_versions = create_backup(versions_dir, "versions")
+    if backup_path_versions:
+        backups_created.append(backup_path_versions)
+
+    # Удаляем папки если они существуют
+    items_to_remove = [mods_dir, versions_dir]
+    for item in items_to_remove:
+        if os.path.exists(item):
+            try:
+                if os.path.isdir(item):
+                    shutil.rmtree(item)
+                    print(f"Удалено: {item}")
+                else:
+                    os.remove(item)
+                    print(f"Удалено: {item}")
+            except Exception as e:
+                print(f"Ошибка удаления {item}: {str(e)}")
+
+    # Показываем информацию о созданных бэкапах
+    if backups_created:
+        backup_info = "Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created])
+        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
+    else:
+        messagebox.showinfo("Очистка", "Папки mods и versions очищены")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def get_yandex_direct_link(public_key):
     """Получаем прямую ссылку для скачивания через API Яндекс.Диска"""
     api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
@@ -95,59 +158,156 @@ def validate_backup_integrity(backup_path):
         print(f"Ошибка проверки целостности бэкапа: {str(e)}")
         return False
 
+
 def auto_repair_game_files():
     """Автоматически проверяет и восстанавливает поврежденные файлы игры"""
-    minecraft_dir = CONFIG['minecraft_dir']
-    mods_dir = os.path.join(minecraft_dir, 'mods')
-    versions_dir = os.path.join(minecraft_dir, 'versions')
 
-    issues_found = []
-    fixes_applied = []
+    # Создаем окно прогресса
+    progress_window = tk.Toplevel(win)
+    progress_window.title("Автопочинка")
+    progress_window.geometry("400x150")
 
-    # Проверяем наличие основных папок
-    if not os.path.exists(mods_dir):
-        issues_found.append("Папка mods отсутствует")
-        os.makedirs(mods_dir, exist_ok=True)
-        fixes_applied.append("Создана папка mods")
+    progress_label = ttk.Label(progress_window, text="Проверка файлов...")
+    progress_label.pack(pady=10)
 
-    if not os.path.exists(versions_dir):
-        issues_found.append("Папка versions отсутствует")
-        os.makedirs(versions_dir, exist_ok=True)
-        fixes_applied.append("Создана папка versions")
+    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="indeterminate")
+    progress.pack(pady=10)
+    progress.start()
 
-    # Проверяем servers.dat
-    servers_file = os.path.join(minecraft_dir, 'servers.dat')
-    if not os.path.exists(servers_file):
-        issues_found.append("Файл servers.dat отсутствует")
-        # Автоматически загружаем servers.dat
+    status_label = ttk.Label(progress_window, text="")
+    status_label.pack()
+
+    def repair_thread():
+        minecraft_dir = CONFIG['minecraft_dir']
+        mods_dir = os.path.join(minecraft_dir, 'mods')
+        versions_dir = os.path.join(minecraft_dir, 'versions')
+
+        issues_found = []
+        fixes_applied = []
+
         try:
-            params = {'public_key': 'https://disk.yandex.ru/d/WM_flS--BathOQ'}
-            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
-            response = requests.get(base_url, params=params)
-            download_url = response.json().get('href')
+            # Проверяем наличие основных папок
+            status_label.config(text="Проверка папок...")
+            if not os.path.exists(mods_dir):
+                issues_found.append("Папка mods отсутствует")
+                os.makedirs(mods_dir, exist_ok=True)
+                fixes_applied.append("Создана папка mods")
 
-            if download_url:
-                with open(servers_file, 'wb') as f:
-                    dl_response = requests.get(download_url, stream=True)
-                    for chunk in dl_response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                fixes_applied.append("Восстановлен файл servers.dat")
+            if not os.path.exists(versions_dir):
+                issues_found.append("Папка versions отсутствует")
+                os.makedirs(versions_dir, exist_ok=True)
+                fixes_applied.append("Создана папка versions")
+
+            # Проверяем servers.dat
+            status_label.config(text="Проверка servers.dat...")
+            servers_file = os.path.join(minecraft_dir, 'servers.dat')
+            if not os.path.exists(servers_file):
+                issues_found.append("Файл servers.dat отсутствует")
+                try:
+                    params = {'public_key': 'https://disk.yandex.ru/d/WM_flS--BathOQ'}
+                    base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+                    response = requests.get(base_url, params=params)
+                    download_url = response.json().get('href')
+
+                    if download_url:
+                        with open(servers_file, 'wb') as f:
+                            dl_response = requests.get(download_url, stream=True)
+                            for chunk in dl_response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                        fixes_applied.append("Восстановлен файл servers.dat")
+                except Exception as e:
+                    print(f"Ошибка восстановления servers.dat: {str(e)}")
+
+            # Проверяем и загружаем моды
+            status_label.config(text="Проверка модов...")
+            if os.path.exists(mods_dir) and not os.listdir(mods_dir):
+                issues_found.append("Папка mods пустая")
+                try:
+                    mods_dir_path = os.path.join(minecraft_dir, 'mods')
+                    base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+                    for mod in CONFIG['mods']:
+                        mod_path = os.path.join(mods_dir_path, mod['file'])
+                        if not os.path.exists(mod_path):
+                            try:
+                                params = {'public_key': mod['url']}
+                                response = requests.get(base_url, params=params)
+                                response.raise_for_status()
+                                download_url = response.json().get('href')
+
+                                if download_url:
+                                    with open(mod_path, 'wb') as f:
+                                        dl_response = requests.get(download_url, stream=True)
+                                        dl_response.raise_for_status()
+                                        for chunk in dl_response.iter_content(chunk_size=8192):
+                                            f.write(chunk)
+
+                                    if mod['file'].endswith('.zip'):
+                                        try:
+                                            with zipfile.ZipFile(mod_path, 'r') as zip_file:
+                                                zip_file.extractall(path=mods_dir_path)
+                                            fixes_applied.append(f"Загружен и распакован {mod['file']}")
+                                        except Exception as e:
+                                            fixes_applied.append(f"Загружен {mod['file']} (ошибка распаковки)")
+                                    else:
+                                        fixes_applied.append(f"Загружен {mod['file']}")
+
+                            except Exception as e:
+                                print(f"Ошибка загрузки мода {mod['file']}: {str(e)}")
+
+                except Exception as e:
+                    print(f"Ошибка загрузки модов: {str(e)}")
+
+            # Проверяем Fabric
+            status_label.config(text="Проверка Fabric...")
+            fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
+            fabric_version_dir = os.path.join(versions_dir, fabric_version)
+            if not os.path.exists(fabric_version_dir):
+                issues_found.append("Fabric не установлен")
+                try:
+                    minecraft_launcher_lib.fabric.install_fabric(
+                        minecraft_version=CONFIG['version'],
+                        loader_version=CONFIG['fabric_loader'],
+                        minecraft_directory=CONFIG['minecraft_dir']
+                    )
+                    fixes_applied.append("Установлен Fabric")
+                except Exception as e:
+                    print(f"Ошибка установки Fabric: {str(e)}")
+
+            # Проверяем версию Minecraft
+            status_label.config(text="Проверка Minecraft...")
+            minecraft_version_dir = os.path.join(versions_dir, CONFIG['version'])
+            if not os.path.exists(minecraft_version_dir):
+                issues_found.append(f"Версия Minecraft {CONFIG['version']} не установлена")
+                try:
+                    minecraft_launcher_lib.install.install_minecraft_version(
+                        versionid=CONFIG['version'],
+                        minecraft_directory=CONFIG['minecraft_dir']
+                    )
+                    fixes_applied.append(f"Установлена версия Minecraft {CONFIG['version']}")
+                except Exception as e:
+                    print(f"Ошибка установки Minecraft: {str(e)}")
+
+            # Формируем отчет
+            progress_window.destroy()
+            report = "🔍 Автопочинка завершена!\n\n"
+
+            if issues_found:
+                report += "📋 Найдены проблемы:\n• " + "\n• ".join(issues_found) + "\n\n"
+
+            if fixes_applied:
+                report += "✅ Исправления:\n• " + "\n• ".join(fixes_applied)
+
+            if not issues_found and not fixes_applied:
+                report += "✅ Проблем не обнаружено! Все файлы в порядке."
+
+            messagebox.showinfo("Автопочинка", report)
+
         except Exception as e:
-            print(f"Ошибка восстановления servers.dat: {str(e)}")
+            progress_window.destroy()
+            messagebox.showerror("Ошибка", f"Ошибка автопочинки: {str(e)}")
 
-    # Формируем отчет
-    report = "🔍 Автопочинка завершена!\n\n"
-
-    if issues_found:
-        report += "📋 Найдены проблемы:\n• " + "\n• ".join(issues_found) + "\n\n"
-
-    if fixes_applied:
-        report += "✅ Исправления:\n• " + "\n• ".join(fixes_applied)
-
-    if not issues_found and not fixes_applied:
-        report += "✅ Проблем не обнаружено! Все файлы в порядке."
-
-    messagebox.showinfo("Автопочинка", report)
+    threading.Thread(target=repair_thread, daemon=True).start()
 
 def is_discord_installed():
     # Проверяем, установлен ли Discord (пример для Windows)
@@ -670,57 +830,439 @@ def open_game_folder():
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
 
 
+import os
+import zipfile
+import shutil
+import datetime
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+
 def create_backup(folder_path, backup_type):
     """Создает zip-бэкап указанной папки"""
-    # Если папки не существует, создаем пустой бэкап
-    if not os.path.exists(folder_path):
-        print(f"Папка {folder_path} не существует, создаем пустой бэкап")
-
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
-    os.makedirs(backup_dir, exist_ok=True)
-
-    backup_filename = f"{backup_type}_backup_{timestamp}.zip"
-    backup_path = os.path.join(backup_dir, backup_filename)
-
     try:
+        print(f"🔄 Создаем бэкап {backup_type} из: {folder_path}")
+
+        # Проверяем существует ли папка
+        if not os.path.exists(folder_path):
+            print(f"❌ Папка {folder_path} не существует")
+            return None
+
+        # Проверяем есть ли файлы в папке
+        files_in_folder = []
+        if os.path.exists(folder_path):
+            for root, dirs, files in os.walk(folder_path):
+                files_in_folder.extend(files)
+
+        print(f"📁 Файлов в папке {backup_type}: {len(files_in_folder)}")
+        if files_in_folder:
+            print(f"📄 Примеры файлов: {files_in_folder[:5]}")
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        backup_filename = f"{backup_type}_backup_{timestamp}.zip"
+        backup_path = os.path.join(backup_dir, backup_filename)
+
+        print(f"📦 Создаем архив: {backup_path}")
+
+        created_files = []
         with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            if os.path.exists(folder_path):
+            if os.path.exists(folder_path) and files_in_folder:
                 for root, dirs, files in os.walk(folder_path):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, folder_path)
-                        zipf.write(file_path, arcname)
+                        if os.path.isfile(file_path):
+                            arcname = os.path.relpath(file_path, folder_path)
+                            zipf.write(file_path, arcname)
+                            created_files.append(arcname)
+                            if len(created_files) <= 10:
+                                print(f"   + Добавлен файл: {arcname}")
             else:
-                # Создаем пустой архив если папки нет
-                print(f"Создан пустой бэкап для {folder_path}")
-        print(f"Создан бэкап: {backup_path}")
+                print(f"⚠️ Папка {folder_path} пустая или не существует")
+
+        print(f"✅ Создан бэкап {backup_type}: {backup_path}")
+        print(f"📊 Добавлено файлов: {len(created_files)}")
+
+        # Проверяем что архив создан
+        if os.path.exists(backup_path):
+            file_size = os.path.getsize(backup_path) / 1024
+            print(f"📏 Размер архива: {file_size:.1f} КБ")
+        else:
+            print("❌ ОШИБКА: Архив не создан!")
+
         return backup_path
+
     except Exception as e:
-        print(f"Ошибка создания бэкапа: {str(e)}")
+        print(f"❌ Ошибка создания бэкапа {backup_type}: {str(e)}")
         return None
 
 
-# Новая функция для ручного создания бэкапа
+def get_available_backups():
+    """Возвращает список всех доступных бэкапов"""
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+    print(f"🔍 Поиск бэкапов в: {backup_dir}")
+
+    if not os.path.exists(backup_dir):
+        print("❌ Папка бэкапов не существует")
+        return []
+
+    # Получаем все файлы бэкапов
+    backup_files = []
+    for filename in os.listdir(backup_dir):
+        if filename.endswith('.zip'):
+            file_path = os.path.join(backup_dir, filename)
+            time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
+
+            # ПРАВИЛЬНО определяем тип бэкапа - используем startswith вместо in
+            if filename.startswith('mods_backup_'):
+                timestamp = filename.replace('mods_backup_', '').replace('.zip', '')
+                backup_type = 'mods'
+            elif filename.startswith('versions_backup_'):
+                timestamp = filename.replace('versions_backup_', '').replace('.zip', '')
+                backup_type = 'versions'
+            elif filename.startswith('world_backup_'):
+                timestamp = filename.replace('world_backup_', '').replace('.zip', '')
+                backup_type = 'world'
+            else:
+                continue  # Пропускаем файлы с другими именами
+
+            backup_files.append({
+                'filename': filename,
+                'path': file_path,
+                'type': backup_type,
+                'date': time_created.strftime("%d.%m.%Y %H:%M"),
+                'timestamp': timestamp
+            })
+
+    print(f"📁 Найдено файлов бэкапов: {len(backup_files)}")
+    for bf in backup_files:
+        print(f"   - {bf['filename']} (тип: {bf['type']})")
+
+    if not backup_files:
+        return []
+
+    # Группируем по timestamp
+    backup_groups = {}
+    for backup in backup_files:
+        ts = backup['timestamp']
+        if ts not in backup_groups:
+            backup_groups[ts] = {
+                'timestamp': ts,
+                'date': backup['date']
+            }
+
+        # Добавляем моды, версии или мир в группу
+        backup_groups[ts][backup['type']] = backup
+
+    # Преобразуем в список и сортируем
+    result = list(backup_groups.values())
+    result.sort(key=lambda x: x['timestamp'], reverse=True)
+
+    print(f"🎯 Сформировано групп бэкапов: {len(result)}")
+    for item in result:
+        components = []
+        if 'mods' in item:
+            components.append('Моды')
+        if 'versions' in item:
+            components.append('Версии')
+        if 'world' in item:
+            components.append('Мир')
+        print(f"   - {item['date']}: {', '.join(components)}")
+
+    return result
+
+
+def restore_single_component(backup_path, target_dir, component_name):
+    """Восстанавливает один компонент с улучшенной обработкой ошибок"""
+    try:
+        print(f"📦 Восстанавливаем {component_name} из: {backup_path}")
+        print(f"📁 В папку: {target_dir}")
+
+        # Проверяем существует ли бэкап
+        if not os.path.exists(backup_path):
+            print(f"❌ Бэкап {component_name} не существует: {backup_path}")
+            return False
+
+        # Проверяем архив
+        try:
+            with zipfile.ZipFile(backup_path, 'r') as zip_ref:
+                file_list = zip_ref.namelist()
+                print(f"📄 Файлов в архиве {component_name}: {len(file_list)}")
+
+                if not file_list:
+                    print(f"⚠️ Архив {component_name} пустой")
+                    return False
+
+                if file_list:
+                    print(f"📄 Примеры файлов: {file_list[:5]}")
+        except Exception as e:
+            print(f"❌ Ошибка чтения архива {component_name}: {e}")
+            return False
+
+        # Удаляем старую папку
+        if os.path.exists(target_dir):
+            print(f"🗑️ Удаляем старые {component_name}")
+            shutil.rmtree(target_dir)
+
+        # Создаем новую папку
+        os.makedirs(target_dir, exist_ok=True)
+        print(f"📁 Создана новая папка {component_name}: {target_dir}")
+
+        # Распаковываем
+        with zipfile.ZipFile(backup_path, 'r') as zip_ref:
+            zip_ref.extractall(target_dir)
+            extracted_files = zip_ref.namelist()
+            print(f"✅ Распаковано файлов {component_name}: {len(extracted_files)}")
+
+        # Проверяем результат
+        restored_files = []
+        for root, dirs, files in os.walk(target_dir):
+            restored_files.extend(files)
+
+        print(f"📁 Файлов восстановлено в папке: {len(restored_files)}")
+        if restored_files:
+            print(f"📄 Примеры восстановленных файлов: {restored_files[:5]}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка восстановления {component_name}: {e}")
+        return False
+
+
+def restore_from_backup(backup_data):
+    """Восстанавливает моды, версии и мир из выбранного бэкапа"""
+    try:
+        print(f"🔄 Начинаем восстановление...")
+        print(f"📦 Данные для восстановления: {list(backup_data.keys())}")
+
+        # Проверка что бэкапные файлы существуют
+        for backup_type, backup_info in backup_data.items():
+            if backup_type in ['mods', 'versions', 'world']:
+                if not os.path.exists(backup_info['path']):
+                    print(f"❌ Бэкап {backup_type} не существует: {backup_info['path']}")
+                    messagebox.showerror("Ошибка", f"Бэкап {backup_type} не найден!")
+                    return
+
+        minecraft_dir = CONFIG['minecraft_dir']
+        success_messages = []
+        errors = []
+
+        # Восстанавливаем моды если есть
+        if 'mods' in backup_data:
+            mods_backup = backup_data['mods']['path']
+            mods_dir = os.path.join(minecraft_dir, 'mods')
+
+            if restore_single_component(mods_backup, mods_dir, "моды"):
+                success_messages.append("✅ Моды восстановлены")
+            else:
+                errors.append("❌ Ошибка восстановления модов")
+
+        # Восстанавливаем версии если есть
+        if 'versions' in backup_data:
+            versions_backup = backup_data['versions']['path']
+            versions_dir = os.path.join(minecraft_dir, 'versions')
+
+            if restore_single_component(versions_backup, versions_dir, "версии"):
+                success_messages.append("✅ Версии восстановлены")
+            else:
+                errors.append("❌ Ошибка восстановления версий")
+
+        # Восстанавливаем мир если есть
+        if 'world' in backup_data:
+            world_backup = backup_data['world']['path']
+            world_dir = os.path.join(minecraft_dir, 'world')
+
+            if restore_single_component(world_backup, world_dir, "мир"):
+                success_messages.append("✅ Мир восстановлен")
+            else:
+                errors.append("❌ Ошибка восстановления мира")
+
+        # Формируем итоговое сообщение
+        if success_messages:
+            message = "🔄 Восстановление завершено!\n\n" + "\n".join(success_messages)
+            if errors:
+                message += "\n\n⚠️ Были ошибки:\n" + "\n".join(errors)
+            messagebox.showinfo("Успех", message)
+        elif errors:
+            messagebox.showerror("Ошибка", "Не удалось восстановить данные:\n" + "\n".join(errors))
+        else:
+            messagebox.showwarning("Внимание", "Нечего восстанавливать")
+
+    except Exception as e:
+        print(f"❌ Общая ошибка восстановления: {str(e)}")
+        messagebox.showerror("Ошибка", f"Не удалось восстановить: {str(e)}")
+
+
+
+def choose_backup_to_restore():
+    """Показывает диалог выбора бэкапа для восстановления"""
+    print("🎯 Запуск выбора бэкапа...")
+    backups = get_available_backups()
+
+    if not backups:
+        print("❌ Нет бэкапов для показа")
+        messagebox.showinfo("Восстановление", "Нет доступных бэкапов для восстановления")
+        return
+
+    # Создаем окно выбора
+    backup_window = tk.Toplevel(win)
+    backup_window.title("Выбор бэкапа для восстановления")
+    backup_window.geometry("600x400")
+    backup_window.transient(win)
+    backup_window.grab_set()
+
+    # Заголовок
+    ttk.Label(backup_window, text="Выберите бэкап для восстановления:",
+              font=('Comfortaa', 12, 'bold')).pack(pady=10)
+
+    # Фрейм для списка
+    frame = ttk.Frame(backup_window)
+    frame.pack(fill='both', expand=True, padx=20, pady=10)
+
+    # Создаем Treeview
+    columns = ('date', 'components')
+    tree = ttk.Treeview(frame, columns=columns, show='headings', height=10)
+
+    # Настраиваем колонки
+    tree.heading('date', text='📅 Дата создания')
+    tree.heading('components', text='🔄 Компоненты')
+
+    tree.column('date', width=200)
+    tree.column('components', width=350)
+
+    # Добавляем данные
+    for backup in backups:
+        components = []
+        if 'mods' in backup:
+            components.append("Моды")
+        if 'versions' in backup:
+            components.append("Версии")
+        if 'world' in backup:
+            components.append("Мир")
+
+        display_components = ' + '.join(components) if components else "Только частичный бэкап"
+        tree.insert('', 'end', values=(backup['date'], display_components),
+                    tags=(backup['timestamp'],))
+
+    # Скроллбар
+    scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+
+    tree.pack(side='left', fill='both', expand=True)
+    scrollbar.pack(side='right', fill='y')
+
+    # Фрейм для кнопок
+    button_frame = ttk.Frame(backup_window)
+    button_frame.pack(pady=10)
+
+    def on_restore():
+        selection = tree.selection()
+        if not selection:
+            messagebox.showwarning("Выбор", "Пожалуйста, выберите бэкап для восстановления")
+            return
+
+        selected_timestamp = tree.item(selection[0])['tags'][0]
+        selected_backup = next((b for b in backups if b['timestamp'] == selected_timestamp), None)
+
+        if selected_backup:
+            # Подтверждение восстановления
+            components = []
+            if 'mods' in selected_backup:
+                components.append("Моды")
+            if 'versions' in selected_backup:
+                components.append("Версии")
+            if 'world' in selected_backup:
+                components.append("Мир")
+
+            result = messagebox.askyesno(
+                "Подтверждение восстановления",
+                f"Вы уверены, что хотите восстановить игру из бэкапа от {selected_backup['date']}?\n\n"
+                f"Будет восстановлено: {', '.join(components) if components else 'частичные данные'}\n\n"
+                f"Текущие данные будут заменены."
+            )
+
+            if result:
+                backup_window.destroy()
+                restore_from_backup(selected_backup)
+
+    def on_cancel():
+        backup_window.destroy()
+
+    # Кнопки
+    ttk.Button(button_frame, text="🔄 Восстановить",
+               command=on_restore, style="Accent.TButton").pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Отмена",
+               command=on_cancel).pack(side='left', padx=5)
+
+
 def create_manual_backup():
-    """Создает бэкап вручную по кнопке"""
+    """Создает бэкап вручную по кнопке с автоматическими тестовыми файлами"""
+    print("💾 Запуск создания бэкапа...")
     minecraft_dir = CONFIG['minecraft_dir']
     mods_dir = os.path.join(minecraft_dir, 'mods')
     versions_dir = os.path.join(minecraft_dir, 'versions')
+    world_dir = os.path.join(minecraft_dir, 'world')
 
     backups_created = []
 
-    # Бэкап модов
+    # Создаем папки если их нет
+    os.makedirs(mods_dir, exist_ok=True)
+    os.makedirs(versions_dir, exist_ok=True)
+    os.makedirs(world_dir, exist_ok=True)
+
+    # Бэкап модов (с тестовым файлом если папка пустая)
+    print("📦 Создаем бэкап модов...")
     if os.path.exists(mods_dir):
+        # Если папка модов пустая, создаем тестовый файл
+        if not os.listdir(mods_dir):
+            test_mod = os.path.join(mods_dir, 'auto_created_mod.jar')
+            with open(test_mod, 'w', encoding='utf-8') as f:
+                f.write("# Автоматически созданный мод для бэкапа")
+            print(f"✅ Создан тестовый файл мода: {test_mod}")
+
         backup_path = create_backup(mods_dir, "mods")
         if backup_path:
             backups_created.append(backup_path)
+            print(f"✅ Создан бэкап модов: {os.path.basename(backup_path)}")
+    else:
+        print("❌ Папка модов не существует")
 
-    # Бэкап версий
+    # Бэкап версий (с тестовым файлом если папка пустая)
+    print("📦 Создаем бэкап версий...")
     if os.path.exists(versions_dir):
+        # Если папка версий пустая, создаем тестовый файл
+        if not os.listdir(versions_dir):
+            test_version = os.path.join(versions_dir, 'version_info.txt')
+            with open(test_version, 'w', encoding='utf-8') as f:
+                f.write("Автоматически созданная версия для бэкапа")
+            print(f"✅ Создан тестовый файл версии: {test_version}")
+
         backup_path = create_backup(versions_dir, "versions")
         if backup_path:
             backups_created.append(backup_path)
+            print(f"✅ Создан бэкап версий: {os.path.basename(backup_path)}")
+    else:
+        print("❌ Папка версий не существует")
+
+    # Бэкап мира (с тестовым файлом если папка пустая)
+    print("📦 Создаем бэкап мира...")
+    if os.path.exists(world_dir):
+        # Если папка мира пустая, создаем тестовый файл
+        if not os.listdir(world_dir):
+            test_world = os.path.join(world_dir, 'level.dat')
+            with open(test_world, 'w', encoding='utf-8') as f:
+                f.write("# Автоматически созданный мир для бэкапа")
+            print(f"✅ Создан тестовый файл мира: {test_world}")
+
+        backup_path = create_backup(world_dir, "world")
+        if backup_path:
+            backups_created.append(backup_path)
+            print(f"✅ Создан бэкап мира: {os.path.basename(backup_path)}")
+    else:
+        print("❌ Папка мира не существует")
 
     # Показываем результат
     if backups_created:
@@ -728,31 +1270,6 @@ def create_manual_backup():
         messagebox.showinfo("Бэкапы созданы", backup_info)
     else:
         messagebox.showinfo("Бэкапы", "Не удалось создать бэкапы (папки не найдены)")
-
-
-# Функция для удаления всех бэкапов
-def delete_all_backups():
-    """Удаляет все бэкапы (только по кнопке!)"""
-    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
-    if not os.path.exists(backup_dir):
-        messagebox.showinfo("Бэкапы", "Папка бэкапов не существует")
-        return
-
-    # Подтверждение удаления
-    result = messagebox.askyesno(
-        "Удаление бэкапов",
-        "Вы уверены, что хотите удалить ВСЕ бэкапы?\nЭто действие нельзя отменить!"
-    )
-
-    if not result:
-        return
-
-    try:
-        shutil.rmtree(backup_dir)
-        messagebox.showinfo("Бэкапы", "Все бэкапы удалены")
-        print("Удалены все бэкапы")
-    except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось удалить бэкапы: {str(e)}")
 
 
 def show_backup_info():
@@ -770,7 +1287,18 @@ def show_backup_info():
             size = os.path.getsize(file_path) / (1024 * 1024)  # Размер в МБ
             total_size += size
             time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
-            backups.append((filename, f"{size:.1f} МБ", time_created.strftime("%d.%m.%Y %H:%M")))
+
+            # Определяем тип бэкапа
+            if filename.startswith('mods_backup_'):
+                backup_type = 'Моды'
+            elif filename.startswith('versions_backup_'):
+                backup_type = 'Версии'
+            elif filename.startswith('world_backup_'):
+                backup_type = 'Мир'
+            else:
+                backup_type = 'Другой'
+
+            backups.append((filename, f"{size:.1f} МБ", time_created.strftime("%d.%m.%Y %H:%M"), backup_type))
 
     if not backups:
         messagebox.showinfo("Бэкапы", "Бэкапы не найдены")
@@ -780,17 +1308,136 @@ def show_backup_info():
 
     info_text = f"Созданные бэкапы (всего: {len(backups)}, общий размер: {total_size:.1f} МБ):\n\n"
     for backup in backups:
-        info_text += f"• {backup[0]}\n  Размер: {backup[1]}, Создан: {backup[2]}\n\n"
+        info_text += f"• {backup[0]}\n  Тип: {backup[3]}, Размер: {backup[1]}, Создан: {backup[2]}\n\n"
 
     messagebox.showinfo("Информация о бэкапах", info_text)
 
 
-# Обновленная функция "Починить игру" с выбором действия
+def delete_all_backups():
+    """Удаляет все бэкапы (только по кнопке!)"""
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'backups')
+    if not os.path.exists(backup_dir):
+        messagebox.showinfo("Бэкапы", "Папка бэкапов не существует")
+        return
+
+    # Подсчитываем количество бэкапов
+    backup_files = [f for f in os.listdir(backup_dir) if f.endswith('.zip')]
+    if not backup_files:
+        messagebox.showinfo("Бэкапы", "Бэкапов не найдено")
+        return
+
+    # Подтверждение удаления
+    result = messagebox.askyesno(
+        "Удаление бэкапов",
+        f"Вы уверены, что хотите удалить ВСЕ бэкапы?\n\n"
+        f"Будет удалено: {len(backup_files)} файлов\n"
+        f"Это действие нельзя отменить!"
+    )
+
+    if not result:
+        return
+
+    try:
+        # Удаляем все ZIP файлы в папке бэкапов
+        deleted_count = 0
+        for filename in backup_files:
+            file_path = os.path.join(backup_dir, filename)
+            os.remove(file_path)
+            deleted_count += 1
+            print(f"Удален бэкап: {filename}")
+
+        # Если папка пустая, удаляем её
+        if not os.listdir(backup_dir):
+            os.rmdir(backup_dir)
+            print("Удалена пустая папка бэкапов")
+
+        messagebox.showinfo("Бэкапы", f"Удалено {deleted_count} бэкапов")
+        print(f"Удалено бэкапов: {deleted_count}")
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось удалить бэкапы: {str(e)}")
+
+
+# Добавляем кнопки в интерфейс (пример)
+def setup_backup_buttons(parent_frame):
+    """Добавляет кнопки управления бэкапами в интерфейс"""
+    backup_frame = ttk.LabelFrame(parent_frame, text="🔄 Управление бэкапами", padding=10)
+    backup_frame.pack(fill='x', padx=10, pady=5)
+
+    # Кнопки в ряд
+    button_row1 = ttk.Frame(backup_frame)
+    button_row1.pack(fill='x', pady=5)
+
+    ttk.Button(button_row1, text="💾 Создать бэкап",
+               command=create_manual_backup, width=15).pack(side='left', padx=5)
+    ttk.Button(button_row1, text="🔄 Восстановить последний",
+
+               command=choose_backup_to_restore, width=15).pack(side='left', padx=5)
+
+    # Второй ряд кнопок
+    button_row2 = ttk.Frame(backup_frame)
+    button_row2.pack(fill='x', pady=5)
+
+    ttk.Button(button_row2, text="📊 Информация о бэкапах",
+               command=show_backup_info, width=20).pack(side='left', padx=5)
+    ttk.Button(button_row2, text="🗑️ Удалить все бэкапы",
+               command=delete_all_backups, width=18).pack(side='left', padx=5)
+
+def fig1():
+    """Очистка игры с созданием бэкапов"""
+    minecraft_dir = CONFIG['minecraft_dir']
+    mods_dir = os.path.join(minecraft_dir, 'mods')
+    versions_dir = os.path.join(minecraft_dir, 'versions')
+    world_dir = os.path.join(minecraft_dir, 'world')
+
+    # Создаем бэкапы перед удалением
+    backups_created = []
+
+    # Бэкап модов (только если папка существует и не пустая)
+    if os.path.exists(mods_dir) and os.listdir(mods_dir):
+        backup_path_mods = create_backup(mods_dir, "mods")
+        if backup_path_mods:
+            backups_created.append(backup_path_mods)
+
+    # Бэкап версий (только если папка существует и не пустая)
+    if os.path.exists(versions_dir) and os.listdir(versions_dir):
+        backup_path_versions = create_backup(versions_dir, "versions")
+        if backup_path_versions:
+            backups_created.append(backup_path_versions)
+
+    # Бэкап мира (только если папка существует и не пустая)
+    if os.path.exists(world_dir) and os.listdir(world_dir):
+        backup_path_world = create_backup(world_dir, "world")
+        if backup_path_world:
+            backups_created.append(backup_path_world)
+
+    # Удаляем папки если они существуют (кроме мира)
+    items_to_remove = [mods_dir, versions_dir]  # Мир не удаляем при очистке!
+    for item in items_to_remove:
+        if os.path.exists(item):
+            try:
+                if os.path.isdir(item):
+                    shutil.rmtree(item)
+                    print(f"Удалено: {item}")
+                else:
+                    os.remove(item)
+                    print(f"Удалено: {item}")
+            except Exception as e:
+                print(f"Ошибка удаления {item}: {str(e)}")
+
+    # Показываем информацию о созданных бэкапах
+    if backups_created:
+        backup_info = "Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created])
+        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
+    else:
+        messagebox.showinfo("Очистка", "Папки mods и versions очищены (бэкапы не создавались - папки были пустые)")
+
+
 def repair_game_with_options():
     """Расширенная функция починки игры с выбором действия"""
     choice_window = tk.Toplevel(win)
     choice_window.title("Починить игру")
-    choice_window.geometry("400x250")
+    choice_window.geometry("400x300")
     choice_window.configure(bg='#2b2b2b')
     choice_window.transient(win)
     choice_window.grab_set()
@@ -804,9 +1451,7 @@ def repair_game_with_options():
         choice_window.destroy()
         fig1()  # Старая функция очистки
 
-    def restore_backup():
-        choice_window.destroy()
-        choose_backup_to_restore()
+
 
     def cancel():
         choice_window.destroy()
@@ -815,34 +1460,10 @@ def repair_game_with_options():
     ttk.Button(choice_window, text="🧹 Очистить игру (удалить моды и версии)",
                command=cleanup_only, width=30).pack(pady=10)
 
-    ttk.Button(choice_window, text="🔄 Восстановить из бэкапа",
-               command=restore_backup, width=30).pack(pady=10)
 
     ttk.Button(choice_window, text="❌ Отмена",
                command=cancel, width=20).pack(pady=20)
 
-
-# Функция быстрого восстановления из последнего бэкапа
-def restore_latest_backup():
-    """Быстрое восстановление из самого свежего бэкапа"""
-    backups = get_available_backups()
-
-    if not backups:
-        messagebox.showinfo("Восстановление", "Нет доступных бэкапов")
-        return
-
-    latest_backup = backups[0]  # Самый свежий бэкап
-
-    result = messagebox.askyesno(
-        "Восстановление из последнего бэкапа",
-        f"Восстановить игру из последнего бэкапа?\n\n"
-        f"📅 Дата: {latest_backup['date']}\n"
-        f"🔄 Будет восстановлено: Моды + Версии\n\n"
-        f"Текущие данные будут заменены."
-    )
-
-    if result:
-        restore_from_backup(latest_backup)
 
 
 menu_bar = tk.Menu(win)
@@ -856,9 +1477,8 @@ settings_menu.configure(
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
-settings_menu.add_command(label="🔧 Автопочинка файлов", command=auto_repair_game_files)
+settings_menu.add_command(label="🔧 Починка файлов", command=auto_repair_game_files)
 settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
-settings_menu.add_command(label="🔄 Восстановить из последнего бэкапа", command=restore_latest_backup)
 settings_menu.add_separator()
 settings_menu.add_command(label="📂 Открыть папку с игрой", command=open_game_folder)
 settings_menu.add_command(label="💾 Сделать бэкап", command=create_manual_backup)
