@@ -20,7 +20,7 @@ from pathlib import Path
 import datetime
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.2" #обновление
+CURRENT_VERSION = "0.4.3" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -689,23 +689,391 @@ cleanup_before_launch()
 
 # Функция проверки версии Java
 def check_java_version():
+    """
+    Улучшенная проверка версии Java с несколькими методами
+    """
+    java_versions = []
+
+    # Метод 1: Проверка через java -version (основной)
     try:
         result = subprocess.run(['java', '-version'],
                                 stderr=subprocess.PIPE,
                                 stdout=subprocess.PIPE,
                                 text=True,
-                                timeout=5)
-        version_line = [line for line in result.stderr.split('\n') if 'version "' in line][0]
-        version_match = re.search(r'version "([1-9]\d*\.\d+\.\d+)', version_line)
+                                timeout=10,
+                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
 
-        if version_match:
-            major_version = int(version_match.group(1).split('.')[0])
-            return major_version >= 17
+        # Ищем версию в stderr (обычно там вывод)
+        version_output = result.stderr or result.stdout
+
+        # Несколько паттернов для поиска версии
+        patterns = [
+            r'version "([1-9]\d*\.\d+\.\d+[_\d]*)',  # OpenJDK/Oracle
+            r'java version "([1-9]\d*\.\d+\.\d+[_\d]*)',  # Старые версии
+            r'openjdk version "([1-9]\d*\.\d+\.\d+[_\d]*)',  # OpenJDK
+            r'\"([1-9]\d*\.\d+\.\d+[_\d]*)'  # Общий паттерн
+        ]
+
+        for pattern in patterns:
+            version_match = re.search(pattern, version_output)
+            if version_match:
+                version_str = version_match.group(1)
+                major_version = extract_major_version(version_str)
+                java_versions.append(major_version)
+                print(f"Найдена Java версия: {version_str} (major: {major_version})")
+                break
+
     except (subprocess.CalledProcessError, FileNotFoundError, IndexError, TimeoutError) as e:
-        logging.warning(f"Java check failed: {str(e)}")
-    return False
+        print(f"Метод 1 (java -version) не сработал: {str(e)}")
+
+    # Метод 2: Проверка через where/java (поиск в PATH)
+    try:
+        if os.name == 'nt':  # Windows
+            result = subprocess.run(['where', 'java'],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True,
+                                    timeout=5,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+        else:  # Linux/MacOS
+            result = subprocess.run(['which', 'java'],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True,
+                                    timeout=5)
+
+        if result.returncode == 0:
+            java_path = result.stdout.strip().split('\n')[0]
+            print(f"Java найдена по пути: {java_path}")
+
+            # Проверяем версию найденной Java
+            version_result = subprocess.run([java_path, '-version'],
+                                            stderr=subprocess.PIPE,
+                                            stdout=subprocess.PIPE,
+                                            text=True,
+                                            timeout=5)
+
+            version_output = version_result.stderr or version_result.stdout
+            version_match = re.search(r'version "([1-9]\d*\.\d+\.\d+[_\d]*)', version_output)
+            if version_match:
+                version_str = version_match.group(1)
+                major_version = extract_major_version(version_str)
+                java_versions.append(major_version)
+                print(f"Java из PATH: {version_str} (major: {major_version})")
+
+    except Exception as e:
+        print(f"Метод 2 (поиск в PATH) не сработал: {str(e)}")
+
+    # Метод 3: Проверка переменных среды JAVA_HOME
+    try:
+        java_home = os.environ.get('JAVA_HOME')
+        if java_home:
+            java_exe = os.path.join(java_home, 'bin', 'java.exe' if os.name == 'nt' else 'java')
+            if os.path.exists(java_exe):
+                version_result = subprocess.run([java_exe, '-version'],
+                                                stderr=subprocess.PIPE,
+                                                stdout=subprocess.PIPE,
+                                                text=True,
+                                                timeout=5)
+
+                version_output = version_result.stderr or version_result.stdout
+                version_match = re.search(r'version "([1-9]\d*\.\d+\.\d+[_\d]*)', version_output)
+                if version_match:
+                    version_str = version_match.group(1)
+                    major_version = extract_major_version(version_str)
+                    java_versions.append(major_version)
+                    print(f"Java из JAVA_HOME: {version_str} (major: {major_version})")
+
+    except Exception as e:
+        print(f"Метод 3 (JAVA_HOME) не сработал: {str(e)}")
+
+    # Анализ результатов
+    if java_versions:
+        max_version = max(java_versions)
+        print(f"Максимальная найденная версия Java: {max_version}")
+        return max_version >= 17
+    else:
+        print("Java не найдена ни одним из методов")
+        return False
 
 
+def extract_major_version(version_str):
+    """
+    Извлекает мажорную версию из строки версии Java
+    Обрабатывает разные форматы: 1.8.0, 9.0.1, 11.0.2, 17.0.1 и т.д.
+    """
+    try:
+        # Убираем возможные префиксы и суффиксы
+        clean_version = version_str.split('_')[0]  # Убираем update версии
+
+        parts = clean_version.split('.')
+
+        # Новый формат версий (9+): первое число - мажорная версия
+        if len(parts) >= 1:
+            major = int(parts[0])
+            # Старый формат версий (1.8.x): второе число - мажорная версия
+            if major == 1 and len(parts) >= 2:
+                return int(parts[1])
+            return major
+
+    except (ValueError, IndexError) as e:
+        print(f"Ошибка парсинга версии Java '{version_str}': {str(e)}")
+
+    return 0
+
+
+def get_java_installer_url():
+    """
+    Возвращает URL для установки Java 17 в зависимости от ОС
+    """
+    system = platform.system()
+    architecture = platform.machine().lower()
+
+    if system == "Windows":
+        if '64' in architecture:
+            return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_windows_hotspot_17.0.11_9.msi"
+        else:
+            return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x86-32_windows_hotspot_17.0.11_9.msi"
+
+    elif system == "Linux":
+        if 'x86_64' in architecture or 'amd64' in architecture:
+            return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_linux_hotspot_17.0.11_9.tar.gz"
+        elif 'aarch64' in architecture:
+            return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_aarch64_linux_hotspot_17.0.11_9.tar.gz"
+
+    elif system == "Darwin":  # macOS
+        if 'arm' in architecture:
+            return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.11_9.tar.gz"
+        else:
+            return "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_mac_hotspot_17.0.11_9.tar.gz"
+
+    return None
+
+
+def install_java_with_progress():
+    """
+    Улучшенная установка Java 17 с детектированием ОС и архитектуры
+    """
+    java_window = tk.Toplevel(win)
+    java_window.title("Установка Java 17")
+    java_window.geometry("450x200")
+    java_window.resizable(False, False)
+
+    # Центрируем окно
+    java_window.transient(win)
+    java_window.grab_set()
+
+    progress_label = ttk.Label(java_window, text="Установка Java 17...", font=('Comfortaa', 10))
+    progress_label.pack(pady=15)
+
+    progress = ttk.Progressbar(java_window, orient="horizontal", length=350, mode="indeterminate")
+    progress.pack(pady=10)
+    progress.start()
+
+    status_label = ttk.Label(java_window, text="Подготовка к установке...", font=('Comfortaa', 9))
+    status_label.pack(pady=5)
+
+    details_label = ttk.Label(java_window, text="", font=('Comfortaa', 8), foreground='gray')
+    details_label.pack(pady=5)
+
+    def install_thread():
+        try:
+            system = platform.system()
+            status_label.config(text="Определение вашей системы...")
+            details_label.config(text=f"ОС: {system}, Архитектура: {platform.machine()}")
+
+            if system == "Windows":
+                install_java_windows(status_label, details_label)
+            elif system == "Linux":
+                install_java_linux(status_label, details_label)
+            elif system == "Darwin":
+                install_java_macos(status_label, details_label)
+            else:
+                raise Exception(f"Неподдерживаемая ОС: {system}")
+
+            # Проверяем успешность установки
+            java_window.after(1000, lambda: verify_java_installation(java_window))
+
+        except Exception as e:
+            java_window.after(0, lambda: show_java_install_error(str(e)))
+
+    def verify_java_installation(window):
+        if check_java_version():
+            window.destroy()
+            messagebox.showinfo("Успех", "Java 17 успешно установлена! Теперь вы можете запустить игру.")
+        else:
+            messagebox.showwarning("Предупреждение",
+                                   "Java может быть установлена, но не обнаружена.\n"
+                                   "Попробуйте перезапустить лаунчер или перезагрузить компьютер.")
+
+    threading.Thread(target=install_thread, daemon=True).start()
+
+
+def install_java_windows(status_label, details_label):
+    """Установка Java на Windows"""
+    try:
+        status_label.config(text="Скачивание установщика Java...")
+        details_label.config(text="Это может занять несколько минут")
+
+        url = get_java_installer_url()
+        if not url:
+            raise Exception("Не найден подходящий установщик для вашей системы")
+
+        msi_path = os.path.join(os.environ['TEMP'], 'OpenJDK17.msi')
+
+        def download_progress_hook(count, block_size, total_size):
+            if total_size > 0:
+                percent = min(int(count * block_size * 100 / total_size), 100)
+                status_label.config(text=f"Скачивание: {percent}%")
+
+        urllib.request.urlretrieve(url, msi_path, reporthook=download_progress_hook)
+
+        status_label.config(text="Установка Java...")
+        details_label.config(text="Не закрывайте это окно")
+
+        # Запуск установки
+        result = subprocess.run(
+            f'msiexec /i "{msi_path}" /quiet /norestart',
+            shell=True,
+            timeout=300,  # 5 минут таймаут
+            capture_output=True,
+            text=True
+        )
+
+        # Очистка
+        if os.path.exists(msi_path):
+            os.remove(msi_path)
+
+        if result.returncode != 0:
+            raise Exception(f"Ошибка установки: {result.stderr}")
+
+    except subprocess.TimeoutExpired:
+        raise Exception("Установка заняла слишком много времени. Попробуйте установить Java вручную.")
+    except Exception as e:
+        raise Exception(f"Ошибка установки на Windows: {str(e)}")
+
+
+def install_java_linux(status_label, details_label):
+    """Установка Java на Linux"""
+    try:
+        status_label.config(text="Установка Java через пакетный менеджер...")
+
+        # Проверяем какой пакетный менеджер доступен
+        commands = [
+            # Ubuntu/Debian
+            ['sudo', 'apt-get', 'update', '-y'],
+            ['sudo', 'apt-get', 'install', '-y', 'wget', 'apt-transport-https', 'gnupg'],
+            ['wget', '-qO', '-', 'https://packages.adoptium.net/artifactory/api/gpg/key/public'],
+            ['sudo', 'apt-key', 'add', '-'],
+            ['echo', '"deb https://packages.adoptium.net/artifactory/deb $(lsb_release -cs) main"', '|', 'sudo', 'tee',
+             '/etc/apt/sources.list.d/adoptium.list'],
+            ['sudo', 'apt-get', 'update', '-y'],
+            ['sudo', 'apt-get', 'install', '-y', 'temurin-17-jdk']
+        ]
+
+        for cmd in commands:
+            status_label.config(text=f"Выполнение: {' '.join(cmd[:2])}...")
+            result = subprocess.run(' '.join(cmd) if isinstance(cmd, list) else cmd,
+                                    shell=True,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=60)
+            if result.returncode != 0:
+                print(
+                    f"Команда {' '.join(cmd) if isinstance(cmd, list) else cmd} завершилась с ошибкой: {result.stderr}")
+
+    except Exception as e:
+        raise Exception(f"Ошибка установки на Linux: {str(e)}")
+
+
+def install_java_macos(status_label, details_label):
+    """Установка Java на macOS"""
+    try:
+        status_label.config(text="Установка через Homebrew...")
+
+        # Проверяем установлен ли Homebrew
+        result = subprocess.run(['which', 'brew'], capture_output=True)
+        if result.returncode != 0:
+            status_label.config(text="Установка Homebrew...")
+            subprocess.run(
+                '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+                shell=True,
+                check=True,
+                timeout=300
+            )
+
+        status_label.config(text="Установка Java...")
+        subprocess.run(['brew', 'tap', 'adoptium/temurin'], check=True)
+        subprocess.run(['brew', 'install', '--cask', 'temurin17'], check=True)
+
+    except Exception as e:
+        raise Exception(f"Ошибка установки на macOS: {str(e)}")
+
+
+def show_java_install_error(error_msg):
+    """Показывает детальную информацию об ошибке установки Java"""
+    error_window = tk.Toplevel(win)
+    error_window.title("Ошибка установки Java")
+    error_window.geometry("500x300")
+
+    tk.Label(error_window, text="❌ Ошибка установки Java 17",
+             font=('Comfortaa', 12, 'bold'), foreground='red').pack(pady=10)
+
+    tk.Label(error_window, text="Не удалось автоматически установить Java 17",
+             font=('Comfortaa', 10)).pack(pady=5)
+
+    # Детали ошибки
+    details_text = tk.Text(error_window, height=8, width=60, font=('Consolas', 8))
+    details_text.pack(pady=10, padx=10, fill='both', expand=True)
+    details_text.insert('1.0', f"Детали ошибки:\n{error_msg}")
+    details_text.config(state='disabled')
+
+    # Рекомендации
+    tk.Label(error_window, text="Рекомендации:", font=('Comfortaa', 9, 'bold')).pack()
+    tk.Label(error_window, text="1. Установите Java 17 вручную с adoptium.net\n2. Перезапустите лаунчер",
+             font=('Comfortaa', 8)).pack()
+
+    tk.Button(error_window, text="Закрыть", command=error_window.destroy).pack(pady=10)
+
+
+def initial_check():
+    """
+    Улучшенная начальная проверка Java
+    """
+    print("🔍 Проверка установленной Java...")
+
+    if not check_java_version():
+        print("❌ Java 17 не найдена")
+
+        # Более информативное сообщение
+        response = messagebox.askyesno(
+            "Требуется Java 17",
+            "Для работы лаунчера требуется Java 17.\n\n"
+            "Без Java игра не запустится.\n\n"
+            "Установить Java 17 автоматически?",
+            icon='warning',
+            default='yes'
+        )
+
+        if response:
+            install_java_with_progress()
+        else:
+            # Предлагаем альтернативу
+            response2 = messagebox.askyesno(
+                "Ручная установка",
+                "Вы можете установить Java 17 вручную:\n\n"
+                "1. Скачайте с adoptium.net\n"
+                "2. Установите как обычную программу\n"
+                "3. Перезапустите лаунчер\n\n"
+                "Открыть сайт для скачивания?",
+                default='yes'
+            )
+            if response2:
+                import webbrowser
+                webbrowser.open("https://adoptium.net/temurin/releases/?version=17")
+            sys.exit()
+    else:
+        print("✅ Правильная версия Java установлена")
 
 
 # Функция установки Java с прогрессом
