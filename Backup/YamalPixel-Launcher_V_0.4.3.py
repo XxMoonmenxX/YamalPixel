@@ -1076,6 +1076,39 @@ def initial_check():
         print("✅ Правильная версия Java установлена")
 
 
+def debug_java_installation():
+    """
+    Функция для диагностики проблем с Java
+    """
+    print("=== ДИАГНОСТИКА JAVA ===")
+
+    # Проверка PATH
+    print("Переменная PATH:", os.environ.get('PATH', '').split(';'))
+
+    # Проверка JAVA_HOME
+    java_home = os.environ.get('JAVA_HOME')
+    print(f"JAVA_HOME: {java_home}")
+
+    if java_home:
+        java_exe = os.path.join(java_home, 'bin', 'java.exe' if os.name == 'nt' else 'java')
+        print(f"Java executable exists: {os.path.exists(java_exe)}")
+
+    # Попытка запуска java -version с подробным выводом
+    try:
+        result = subprocess.run(['java', '-version'],
+                                stderr=subprocess.PIPE,
+                                stdout=subprocess.PIPE,
+                                text=True,
+                                timeout=10)
+        print(f"Java -version stderr: {result.stderr}")
+        print(f"Java -version stdout: {result.stdout}")
+        print(f"Return code: {result.returncode}")
+    except Exception as e:
+        print(f"Error running java -version: {e}")
+
+    print("=== КОНЕЦ ДИАГНОСТИКИ ===")
+debug_java_installation()
+
 # Функция установки Java с прогрессом
 def install_java_with_progress():
     java_window = tk.Toplevel(win)
