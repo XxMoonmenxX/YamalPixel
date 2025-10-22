@@ -25,7 +25,7 @@ import hashlib
 import time
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.4" #обновление
+CURRENT_VERSION = "0.4.41" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -2722,16 +2722,272 @@ def create_diagnostic_panel():
                command=diag_window.destroy).pack(side='left', padx=5)
 
 
+def show_version_info():
+    """Показывает информацию о версии и историю обновлений с GitHub"""
+    try:
+        # Создаем окно информации
+        info_window = tk.Toplevel(win)
+        info_window.title(f"YamalPixel Launcher v{CURRENT_VERSION}")
+        info_window.geometry("700x900")
+        info_window.resizable(True, True)
+        info_window.transient(win)
+        info_window.grab_set()
+
+        # Центрируем окно
+        info_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (700 // 2)
+        y = (win.winfo_screenheight() // 2) - (900 // 2)
+        info_window.geometry(f"700x900+{x}+{y}")
+
+        # Основной фрейм
+        main_frame = ttk.Frame(info_window)
+        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+
+        # Заголовок
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill='x', pady=(0, 15))
+
+        ttk.Label(header_frame,
+                  text=f"YamalPixel Launcher",
+                  font=('Comfortaa', 16, 'bold')).pack()
+
+        ttk.Label(header_frame,
+                  text=f"Текущая версия: {CURRENT_VERSION}",
+                  font=('Comfortaa', 12),
+                  foreground='green' if is_latest_version() else 'orange').pack(pady=(5, 0))
+
+        # Информация о системе
+        sys_frame = ttk.LabelFrame(main_frame, text="📊 Системная информация", padding=10)
+        sys_frame.pack(fill='x', pady=(0, 15))
+
+        sys_info = f"""
+• ОС: {platform.system()} {platform.release()}
+• Архитектура: {platform.machine()}
+• Python: {platform.python_version()}
+• Папка игры: {CONFIG['minecraft_dir']}
+• Java: {'✅ Установлена' if check_java_version() else '❌ Не найдена'}
+• Статус: {'🎯 Актуальная версия' if is_latest_version() else '🔄 Доступно обновление'}
+        """.strip()
+
+        ttk.Label(sys_frame, text=sys_info, font=('Consolas', 9)).pack(anchor='w')
+
+        # Дерево обновлений
+        updates_frame = ttk.LabelFrame(main_frame, text="🔄 История обновлений", padding=10)
+        updates_frame.pack(fill='both', expand=True, pady=(0, 15))
+
+        # Создаем Treeview для отображения версий
+        columns = ('version', 'date', 'type')
+        tree = ttk.Treeview(updates_frame, columns=columns, show='tree headings', height=8)
+
+        # Настраиваем колонки
+        tree.heading('version', text='Версия')
+        tree.heading('date', text='Дата выпуска')
+        tree.heading('type', text='Тип обновления')
+
+        tree.column('version', width=120, anchor='w')
+        tree.column('date', width=120, anchor='center')
+        tree.column('type', width=150, anchor='center')
+
+        # Скроллбар для дерева
+        scrollbar_tree = ttk.Scrollbar(updates_frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar_tree.set)
+
+        tree.pack(side='left', fill='both', expand=True)
+        scrollbar_tree.pack(side='right', fill='y')
+
+        # Детали обновления
+        details_frame = ttk.LabelFrame(main_frame, text="📋 Детали обновления", padding=10)
+        details_frame.pack(fill='x', pady=(0, 15))
+
+        # Текст с прокруткой для деталей
+        text_frame = ttk.Frame(details_frame)
+        text_frame.pack(fill='both', expand=True)
+
+        details_text = tk.Text(text_frame,
+                               wrap='word',
+                               height=6,
+                               font=('Comfortaa', 9),
+                               bg='#f8f9fa',
+                               relief='solid',
+                               borderwidth=1,
+                               padx=10,
+                               pady=10)
+
+        scrollbar_text = ttk.Scrollbar(text_frame, orient='vertical', command=details_text.yview)
+        details_text.configure(yscrollcommand=scrollbar_text.set)
+
+        details_text.pack(side='left', fill='both', expand=True)
+        scrollbar_text.pack(side='right', fill='y')
+
+        # Показываем загрузку
+        details_text.insert('1.0', "🔄 Загружаем историю обновлений...")
+        details_text.configure(state='disabled')
+
+        # Фрейм для кнопок
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+
+        def check_updates():
+            info_window.destroy()
+            check_for_updates()
+
+        def open_github():
+            import webbrowser
+            webbrowser.open("https://github.com/XxMoonmenxX/YamalPixel")
+
+        def open_releases():
+            import webbrowser
+            webbrowser.open("https://github.com/XxMoonmenxX/YamalPixel/releases")
+
+        # Кнопки
+        ttk.Button(button_frame, text="🔄 Проверить обновления",
+                   command=check_updates).pack(side='left', padx=5)
+
+        ttk.Button(button_frame, text="🌐 GitHub",
+                   command=open_github).pack(side='left', padx=5)
+
+        ttk.Button(button_frame, text="📦 Все релизы",
+                   command=open_releases).pack(side='left', padx=5)
+
+        ttk.Button(button_frame, text="❌ Закрыть",
+                   command=info_window.destroy).pack(side='right', padx=5)
+
+        # Функция для обработки выбора версии в дереве
+        def on_tree_select(event):
+            selection = tree.selection()
+            if selection:
+                item = selection[0]
+                changelog = tree.item(item, 'tags')[0] if tree.item(item, 'tags') else "Нет описания"
+
+                details_text.configure(state='normal')
+                details_text.delete('1.0', 'end')
+                details_text.insert('1.0', changelog)
+                details_text.configure(state='disabled')
+
+        tree.bind('<<TreeviewSelect>>', on_tree_select)
+
+        def load_releases_thread():
+            try:
+                response = requests.get(
+                    "https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases",
+                    timeout=10
+                )
+                response.raise_for_status()
+
+                releases = response.json()
+
+                # Берем последние 5 релизов
+                recent_releases = releases[:5]
+
+                # Обновляем дерево в основном потоке
+                info_window.after(0, update_releases_tree, recent_releases)
+
+            except Exception as e:
+                error_text = f"❌ Не удалось загрузить историю обновлений\n\nОшибка: {str(e)}"
+                info_window.after(0, update_releases_tree, [])
+
+        def update_releases_tree(releases):
+            # Очищаем дерево
+            for item in tree.get_children():
+                tree.delete(item)
+
+            if not releases:
+                details_text.configure(state='normal')
+                details_text.delete('1.0', 'end')
+                details_text.insert('1.0', "Не удалось загрузить данные об обновлениях")
+                details_text.configure(state='disabled')
+                return
+
+            # Добавляем релизы в дерево
+            for release in releases:
+                version = release['tag_name'].lstrip('v')
+                date = release['created_at'][:10]  # Берем только дату
+                prerelease = release.get('prerelease', False)
+                draft = release.get('draft', False)
+
+                # Определяем тип обновления
+                if draft:
+                    release_type = "📝 Черновик"
+                elif prerelease:
+                    release_type = "🧪 Пре-релиз"
+                else:
+                    release_type = "🚀 Стабильный"
+
+                # Форматируем changelog
+                changelog = release.get('body', 'Нет описания изменений')
+                changelog = format_changelog(changelog)
+
+                # Добавляем в дерево
+                tree.insert('', 'end', values=(
+                    version,
+                    date,
+                    release_type
+                ), tags=(changelog,))
+
+            # Выбираем первый элемент
+            if tree.get_children():
+                first_item = tree.get_children()[0]
+                tree.selection_set(first_item)
+                tree.focus(first_item)
+                # Вызываем обработчик выбора чтобы показать детали
+                on_tree_select(None)
+
+        # Запускаем загрузку в отдельном потоке
+        threading.Thread(target=load_releases_thread, daemon=True).start()
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть информацию о версии: {str(e)}")
+
+
+def format_changelog(changelog):
+    """Форматирует changelog для красивого отображения"""
+    if not changelog:
+        return "Нет описания изменений"
+
+    # Убираем Markdown-разметку
+    changelog = re.sub(r'#{2,}', '', changelog)
+    changelog = re.sub(r'\- ', '• ', changelog)
+    changelog = re.sub(r'\*\*(.*?)\*\*', r'▸ \1', changelog)
+    changelog = re.sub(r'\*(.*?)\*', r'\1', changelog)
+    changelog = re.sub(r'`(.*?)`', r'\1', changelog)
+
+    # Ограничиваем длину
+    if len(changelog) > 1000:
+        changelog = changelog[:1000] + "...\n\n[Описание обрезано, полная версия на GitHub]"
+
+    return changelog.strip()
+
+
+def is_latest_version():
+    """Проверяет, является ли текущая версия последней"""
+    try:
+        response = requests.get(
+            "https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest",
+            timeout=5
+        )
+        response.raise_for_status()
+
+        latest_release = response.json()
+        latest_version = latest_release['tag_name'].lstrip('v')
+
+        return latest_version == CURRENT_VERSION
+    except:
+        return True  # Если не удалось проверить, считаем что актуальная
+
+
+
 
 menu_bar = tk.Menu(win)
 win.config(menu=menu_bar)
 settings_menu = tk.Menu(menu_bar, tearoff=0)
 settings_menu.add_separator(background='#FFB6C1')
+
 settings_menu.configure(
     tearoffcommand=lambda: None,
     postcommand=lambda: settings_menu.configure(bg='#FFB6C1')
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
+
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
 settings_menu.add_command(label="🎨 Скачать шейдеры", command=download_shaders)  # НОВАЯ КНОПКА
@@ -2748,6 +3004,14 @@ settings_menu.add_command(label="🔄 Полная переустановка", 
 settings_menu.add_separator()
 settings_menu.add_command(label="🔧 Диагностика проблем", command=create_diagnostic_panel)
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
+
+
+# Или если хотите в выпадающем меню "Справка":
+help_menu = tk.Menu(menu_bar, tearoff=0)
+help_menu.add_command(label="О лаунчере", command=show_version_info)
+help_menu.add_separator()
+help_menu.add_command(label="Проверить обновления", command=check_for_updates)
+menu_bar.add_cascade(label="Справка", menu=help_menu)
 
 
 
