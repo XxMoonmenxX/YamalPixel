@@ -23,9 +23,13 @@ import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
+from datetime import datetime
+from collections import deque
+from pathlib import Path
+
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.621" #обновление
+CURRENT_VERSION = "0.4.622" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -50,6 +54,7 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/Uk6BTgjVqByR_A', 'file': 'entityculling-fabric-1.9.1-mc1.20.1.jar'}
     ]
 }
+
 
 
 LAUNCH_IN_PROGRESS = False
@@ -957,54 +962,88 @@ def auto_repair_game_files(silent=False):
             win.after(0, lambda: status_label.config(text="Проверка модов..."))
             win.after(0, lambda: details_label.config(text="Проверяем основные моды"))
 
-            # Проверяем и загружаем моды
-            if os.path.exists(mods_dir) and not os.listdir(mods_dir):
+            # 🔥 УЛУЧШЕННАЯ ПРОВЕРКА МОДОВ - проверяем ВСЕ моды из конфига
+            mods_dir_path = os.path.join(minecraft_dir, 'mods')
+            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+            # Считаем общее количество модов для прогресса
+            total_mods = len(CONFIG['mods'])
+            missing_mods = []
+            existing_mods = []
+
+            # Сначала проверяем какие моды отсутствуют
+            for i, mod in enumerate(CONFIG['mods']):
+                mod_path = os.path.join(mods_dir_path, mod['file'])
+                if not os.path.exists(mod_path):
+                    missing_mods.append(mod)
+                else:
+                    existing_mods.append(mod['file'])
+
+            # Логируем что нашли
+            if existing_mods:
+                add_log(f"📁 Найдено модов: {len(existing_mods)}", 'green')
+                if len(existing_mods) <= 5:  # Показываем только первые 5
+                    for mod_file in existing_mods:
+                        add_log(f"   ✅ {mod_file}", 'green')
+
+            if missing_mods:
+                issues_found.append(f"Отсутствуют {len(missing_mods)} модов")
+                add_log(f"❌ Отсутствует модов: {len(missing_mods)}", 'red')
+
+                # Загружаем отсутствующие моды
+                for i, mod in enumerate(missing_mods):
+                    try:
+                        win.after(0, lambda: details_label.config(
+                            text=f"Загружаем мод: {mod['file']} ({i + 1}/{len(missing_mods)})"
+                        ))
+
+                        # Обновляем прогресс
+                        current_progress = 50 + (i * 30 / len(missing_mods))
+                        progress['value'] = current_progress
+
+                        params = {'public_key': mod['url']}
+                        response = requests.get(base_url, params=params)
+                        response.raise_for_status()
+                        download_url = response.json().get('href')
+
+                        if download_url:
+                            mod_path = os.path.join(mods_dir_path, mod['file'])
+                            with open(mod_path, 'wb') as f:
+                                dl_response = requests.get(download_url, stream=True)
+                                dl_response.raise_for_status()
+                                total_size = int(dl_response.headers.get('content-length', 0))
+                                downloaded = 0
+
+                                for chunk in dl_response.iter_content(chunk_size=8192):
+                                    if chunk:
+                                        f.write(chunk)
+                                        downloaded += len(chunk)
+                                        # Можно добавить прогресс загрузки если хочешь
+
+                            # Распаковываем ZIP если нужно
+                            if mod['file'].endswith('.zip'):
+                                try:
+                                    with zipfile.ZipFile(mod_path, 'r') as zip_file:
+                                        zip_file.extractall(path=mods_dir_path)
+                                    fixes_applied.append(f"Загружен и распакован {mod['file']}")
+                                    add_log(f"✅ Загружен и распакован {mod['file']}", 'green')
+                                except Exception as e:
+                                    fixes_applied.append(f"Загружен {mod['file']} (ошибка распаковки)")
+                                    add_log(f"⚠️ Загружен {mod['file']} (ошибка распаковки: {e})", 'orange')
+                            else:
+                                fixes_applied.append(f"Загружен {mod['file']}")
+                                add_log(f"✅ Загружен {mod['file']}", 'green')
+
+                    except Exception as e:
+                        add_log(f"❌ Ошибка загрузки мода {mod['file']}: {str(e)}", 'red')
+
+            elif not os.path.exists(mods_dir) or not os.listdir(mods_dir):
+                # Старая логика для полностью пустой папки
                 issues_found.append("Папка mods пустая")
                 add_log("❌ Папка mods пустая", 'red')
-                try:
-                    mods_dir_path = os.path.join(minecraft_dir, 'mods')
-                    base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+                # ... (старый код загрузки всех модов)
 
-                    for i, mod in enumerate(CONFIG['mods']):
-                        mod_path = os.path.join(mods_dir_path, mod['file'])
-                        if not os.path.exists(mod_path):
-                            try:
-                                win.after(0, lambda: details_label.config(
-                                    text=f"Загружаем мод: {mod['file']}"
-                                ))
-
-                                params = {'public_key': mod['url']}
-                                response = requests.get(base_url, params=params)
-                                response.raise_for_status()
-                                download_url = response.json().get('href')
-
-                                if download_url:
-                                    with open(mod_path, 'wb') as f:
-                                        dl_response = requests.get(download_url, stream=True)
-                                        dl_response.raise_for_status()
-                                        for chunk in dl_response.iter_content(chunk_size=8192):
-                                            f.write(chunk)
-
-                                    if mod['file'].endswith('.zip'):
-                                        try:
-                                            with zipfile.ZipFile(mod_path, 'r') as zip_file:
-                                                zip_file.extractall(path=mods_dir_path)
-                                            fixes_applied.append(f"Загружен и распакован {mod['file']}")
-                                            add_log(f"✅ Загружен и распакован {mod['file']}", 'green')
-                                        except Exception as e:
-                                            fixes_applied.append(f"Загружен {mod['file']} (ошибка распаковки)")
-                                            add_log(f"⚠️ Загружен {mod['file']} (ошибка распаковки: {e})", 'orange')
-                                    else:
-                                        fixes_applied.append(f"Загружен {mod['file']}")
-                                        add_log(f"✅ Загружен {mod['file']}", 'green')
-
-                            except Exception as e:
-                                add_log(f"❌ Ошибка загрузки мода {mod['file']}: {str(e)}", 'red')
-
-                except Exception as e:
-                    add_log(f"❌ Ошибка загрузки модов: {str(e)}", 'red')
-
-            progress['value'] = 70
+            progress['value'] = 80
             win.after(0, lambda: status_label.config(text="Проверка Fabric..."))
             win.after(0, lambda: details_label.config(text="Проверяем установку Fabric"))
 
@@ -1083,7 +1122,6 @@ def auto_repair_game_files(silent=False):
     threading.Thread(target=repair_thread, daemon=True).start()
 
     return True
-
 def is_discord_installed():
     # Проверяем, установлен ли Discord (пример для Windows)
     if os.name == 'nt':  # Windows
@@ -1915,44 +1953,7 @@ def show_java_install_error(error_msg):
     tk.Button(error_window, text="Закрыть", command=error_window.destroy).pack(pady=10)
 
 
-def initial_check():
-    """
-    Улучшенная начальная проверка Java
-    """
-    print("🔍 Проверка установленной Java...")
 
-    if not check_java_version():
-        print("❌ Java 17 не найдена")
-
-        # Более информативное сообщение
-        response = messagebox.askyesno(
-            "Требуется Java 17",
-            "Для работы лаунчера требуется Java 17.\n\n"
-            "Без Java игра не запустится.\n\n"
-            "Установить Java 17 автоматически?",
-            icon='warning',
-            default='yes'
-        )
-
-        if response:
-            install_java_with_progress()
-        else:
-            # Предлагаем альтернативу
-            response2 = messagebox.askyesno(
-                "Ручная установка",
-                "Вы можете установить Java 17 вручную:\n\n"
-                "1. Скачайте с adoptium.net\n"
-                "2. Установите как обычную программу\n"
-                "3. Перезапустите лаунчер\n\n"
-                "Открыть сайт для скачивания?",
-                default='yes'
-            )
-            if response2:
-                import webbrowser
-                webbrowser.open("https://adoptium.net/temurin/releases/?version=17")
-            sys.exit()
-    else:
-        print("✅ Правильная версия Java установлена")
 
 
 def debug_java_installation():
@@ -2047,29 +2048,7 @@ def install_java_with_progress():
         java_window.destroy()
 
 # Инициализация проверки Java при запуске
-def initial_check():
-    print("🔍 Проверка установленной Java...")
 
-    if not check_java_version():
-        print("❌ Java 17 не найдена")
-
-        choice = messagebox.askyesnocancel(
-            "Требуется Java 17",
-            "Для работы лаунчера рекомендуется Java 17.\n\n"
-            "Выберите действие:\n"
-            "• Да - установить автоматически\n"
-            "• Нет - пропустить проверку\n"
-            "• Отмена - выйти из лаунчера"
-        )
-
-        if choice is None:  # Отмена
-            sys.exit()
-        elif choice:  # Да - установить
-            install_java_with_progress()
-        else:  # Нет - пропустить
-            print("⚠️ Проверка Java пропущена пользователем")
-    else:
-        print("✅ Правильная версия Java установлена")
 def skip_java_check():
     """Пропустить проверку Java (для опытных пользователей)"""
     result = messagebox.askyesno(
@@ -2090,7 +2069,7 @@ win = ThemedTk(theme="arc")
 win.geometry("1920x1080")
 win.title('YamPixel')
 #win.attributes("-fullscreen", True)
-win.after(100, initial_check)
+
 win.after(200, check_for_updates)  # NEW
 
 # Вызываем перед созданием главного окна
@@ -4200,6 +4179,7 @@ label_online = ttk.Label(win, text="Онлайн: 0", style="BW.TLabel")
 label_online.place(relx=0.5, rely=0.61, anchor="c")
 
 
+
 # Функции для управления музыкой
 def mscon():
     mixer.music.play()
@@ -4395,3 +4375,152 @@ win.after(300, update_discord_status)
 
 # Запуск главного цикла
 win.mainloop()
+import json
+from pathlib import Path
+
+# Папка для файла состояния
+JAVA_STATE_FILE = Path.home() / "YamalPixelRes" / "java_state.json"
+
+# Создаем папку если не существует
+JAVA_STATE_FILE.parent.mkdir(exist_ok=True)
+
+
+def load_java_state():
+    """Загружает состояние установки Java из файла"""
+    try:
+        if JAVA_STATE_FILE.exists():
+            with open(JAVA_STATE_FILE, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+                return state.get('java_installed', False)
+        return False
+    except Exception as e:
+        print(f"Ошибка чтения файла состояния Java: {e}")
+        return False
+
+
+def save_java_state(installed=True):
+    """Сохраняет состояние установки Java в файл"""
+    try:
+        state = {
+            'java_installed': installed,
+            'last_check': datetime.now().isoformat(),
+            'version': CURRENT_VERSION
+        }
+        with open(JAVA_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+        print(f"✅ Состояние Java сохранено: {'установлена' if installed else 'не установлена'}")
+    except Exception as e:
+        print(f"❌ Ошибка сохранения файла состояния Java: {e}")
+
+
+def should_skip_java_check():
+    """Проверяет, нужно ли пропускать проверку Java"""
+    return load_java_state()
+
+
+def check_java_version_simple():
+    """
+    Упрощенная проверка Java с системой пропуска
+    """
+    # Если ранее уже устанавливали Java - пропускаем проверку
+    if should_skip_java_check():
+        print("✅ Проверка Java пропущена (ранее уже устанавливали)")
+        return True
+
+    print("🔍 Проверяем установленную Java...")
+
+    try:
+        # Используем твою существующую функцию проверки
+        return check_java_version()
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки Java: {e}")
+        return False
+
+
+def initial_check_simple():
+    """
+    Упрощенная начальная проверка с системой пропуска
+    """
+    print("🎯 Запускаем проверку системы...")
+
+    # Если ранее уже устанавливали Java - просто сообщаем и пропускаем
+    if should_skip_java_check():
+        print("✅ Java ранее уже устанавливалась - проверка пропущена")
+        return True
+
+    # Используем твою существующую проверку Java
+    if not check_java_version():
+        print("❌ Java 17 не найдена")
+
+        # Показываем простое окно выбора
+        choice = messagebox.askyesno(
+            "Требуется Java 17",
+            "Для работы лаунчера нужна Java 17.\n\n"
+            "Установить её автоматически?\n\n"
+            "Если вы уже устанавливали Java, нажмите 'Нет'",
+            icon='info'
+        )
+
+        if choice:
+            # Используем твою существующую установку Java
+            install_java_with_progress()
+
+            # После установки проверяем еще раз
+            if check_java_version():
+                save_java_state(True)  # Сохраняем что установили
+                return True
+            else:
+                return False
+        else:
+            # Пользователь отказался - предлагаем пропустить навсегда
+            skip_forever = messagebox.askyesno(
+                "Пропустить проверку Java",
+                "Пропускать проверку Java в будущем?\n\n"
+                "Вы сможете сбросить это в настройках.",
+                icon='question'
+            )
+            if skip_forever:
+                save_java_state(True)  # Сохраняем как "установлено" чтобы больше не проверять
+            return True
+    else:
+        print("✅ Правильная версия Java установлена")
+        save_java_state(True)  # Сохраняем что Java уже установлена
+        return True
+
+
+def reset_java_state():
+    """Сбрасывает файл состояния Java (для исправления проблем)"""
+    try:
+        if JAVA_STATE_FILE.exists():
+            JAVA_STATE_FILE.unlink()
+            messagebox.showinfo("Сброс", "Файл состояния Java сброшен. Проверка будет выполняться снова.")
+        else:
+            messagebox.showinfo("Информация", "Файл состояния Java не найден.")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось сбросить состояние: {e}")
+
+
+def check_java_now():
+    """Принудительная проверка Java"""
+    if check_java_version():
+        messagebox.showinfo("Java", "✅ Java установлена и работает правильно!")
+    else:
+        messagebox.showwarning("Java", "❌ Java не найдена или устаревшая версия!")
+
+
+def add_java_tools_to_menu():
+    """Добавляет инструменты Java в меню"""
+    # Добавляем в существующее меню "Инструменты"
+    settings_menu.add_separator()
+    settings_menu.add_command(label="🔄 Сбросить проверку Java", command=reset_java_state)
+    settings_menu.add_command(label="ℹ️ Проверить Java сейчас", command=check_java_now)
+
+
+
+
+
+win.after(100, initial_check_simple)
+
+
+win.after(300, add_java_tools_to_menu)
