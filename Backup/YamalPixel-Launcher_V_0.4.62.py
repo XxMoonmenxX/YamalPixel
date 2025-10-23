@@ -25,7 +25,7 @@ import hashlib
 import time
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.61" #обновление
+CURRENT_VERSION = "0.4.62" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -43,6 +43,9 @@ CONFIG = {
     'mods': [
         {'url': 'https://disk.yandex.ru/d/62ECRecsfaGF6Q', 'file': 'mods.zip'},
         {'url': 'https://disk.yandex.ru/d/tUkQALFAJ4Mc_g', 'file': 'iris-1.7.6+mc1.20.1.jar'},
+        {'url': 'https://disk.yandex.ru/d/7jCZKTmnn55-HQ', 'file': 'areas-1.20.1-6.1.jar'},
+        {'url': 'https://disk.yandex.ru/d/h3FFdOjmCLSo5Q', 'file': 'collective-1.20.1-8.12.jar'},
+        {'url': 'https://disk.yandex.ru/d/_ChUdTf53AHgCA', 'file': 'Resourcify (1.20.1-fabric)-1.7.4.jar'},
         {'url': 'https://disk.yandex.ru/d/Uk6BTgjVqByR_A', 'file': 'entityculling-fabric-1.9.1-mc1.20.1.jar'}
     ]
 }
@@ -3542,8 +3545,31 @@ def clear_auth_cache():
             except Exception as e:
                 print(f"Ошибка удаления {cache_file}: {e}")
 
+def show_random_launch_message():
+    import random
+    messages = [
+        "Удачи! (она тебе понадобится)",
+        "Не удивляйся если всё сломается!",
+        "Твой компьютер уже ненавидит тебя...",
+        "Помни: это твой выбор!",
+        "RIP твоему FPS.",
+        "Скажи привет майнеру.",
+        "Спасибо за удаленный доступ.",
+        "Ого сколько у тебя денег...Мало...",
+        "Потрогай траву...",
+        "А ты знаешь как выглядит небо?",
+        "Выпил пива уже?",
+        "Добро пожаловать!",
+        "Люби аксолотлей.",
+        "Может быть всё напрасно?",
+        "У Артёмов нет детей.",
+        "У меня есть дискорд сервер:)",
+        "Sludge life тоже круто!",
+        "Купи мне словарь Русского и Могучего!"
+        ]
 
-# Переместите ЭТУ ФУНКЦИЮ ВЫШЕ, перед созданием кнопки btn
+    return random.choice(messages)
+
 
 def runn():
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
@@ -3757,11 +3783,11 @@ def runn():
 
                         win.after(100, lambda: messagebox.showinfo(
                             "Успешный запуск",
-                            f"✅ Игра успешно запущена!\n\n"
-                            f"• Игрок: {username.get()}\n"
-                            f"• Версия: {selected_version}\n"
-                            f"• Память: {selected_memory}\n\n"
-                            f"Приятной игры! 🎮"
+                            f"✅ Игра успешно запущена!\n\n" +
+                            f"• Игрок: {username.get()}\n" +
+                            f"• Версия: {selected_version}\n" +
+                            f"• Память: {selected_memory}\n\n" +
+                            f"{show_random_launch_message()}"
                         ))
 
                         # Мониторим процесс в фоне
