@@ -1573,6 +1573,7 @@ def cleanup_before_launch():
         os.path.join(launcher_dir, 'Obuse - Menu song.mp3'),
         os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.2.06.exe'),
         os.path.join(launcher_dir, 'YamalPixelLauncer_V_0.3.0.exe'),
+        os.path.join(old_Mods, 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jarr'),
 
         # Старые моды 1.18.2 которые могут конфликтовать
         os.path.join(old_Mods, 'jei-1.18.2-fabric-10.2.1.283.jar'),
