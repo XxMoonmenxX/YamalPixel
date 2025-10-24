@@ -26,10 +26,12 @@ import time
 from datetime import datetime
 from collections import deque
 from pathlib import Path
+import psutil
+import math
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.634" #обновление
+CURRENT_VERSION = "0.5" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -3014,267 +3016,367 @@ def complete_reinstall():
 
     threading.Thread(target=reinstall_thread, daemon=True).start()
 
+
 def create_diagnostic_panel():
-    """Создает панель диагностики проблем"""
+    """Создает панель диагностики с темным стилем"""
     diag_window = tk.Toplevel(win)
     diag_window.title("Диагностика проблем")
-    diag_window.geometry("500x400")
+    diag_window.geometry("700x550")
+    diag_window.configure(bg='#2b2b2b')  # Темный фон окна
 
     # Заголовок
-    ttk.Label(diag_window, text="🔧 Диагностика проблем с запуском",
-              font=('Comfortaa', 14, 'bold')).pack(pady=10)
+    header_frame = ttk.Frame(diag_window)
+    header_frame.pack(fill='x', padx=20, pady=15)
 
-    # Описание проблем
-    problems_text = tk.Text(diag_window, height=12, width=60, wrap='word')
-    problems_text.pack(pady=10, padx=10, fill='both', expand=True)
+    ttk.Label(header_frame,
+              text="Диагностика проблем",
+              font=('Comfortaa', 16, 'bold'),
+              foreground='white',
+              background='#2b2b2b').pack()
 
-    problems_info = """
-    ВАША ПРОБЛЕМА: Игра зависает при подключении к серверу
+    ttk.Label(header_frame,
+              text="Автоматическая проверка и решение проблем",
+              font=('Comfortaa', 10),
+              foreground='#cccccc',
+              background='#2b2b2b').pack(pady=(5, 0))
 
-    ВОЗМОЖНЫЕ ПРИЧИНЫ:
-    1. 🚫 Конфликт модов - некоторые моды несовместимы
-    2. 🔄 Поврежденные файлы игры
-    3. 🔐 Проблемы с аутентификацией
-    4. 💾 Нехватка памяти
+    # Прогресс-бар
+    progress_frame = ttk.Frame(diag_window)
+    progress_frame.pack(fill='x', padx=20, pady=10)
 
-    РЕКОМЕНДУЕМЫЕ РЕШЕНИЯ:
+    progress_label = ttk.Label(progress_frame,
+                               text="Проводим диагностику...",
+                               foreground='white',
+                               background='#2b2b2b')
+    progress_label.pack()
 
-    🎯 БЫСТРОЕ РЕШЕНИЕ (попробуйте по порядку):
-    1. Запуск без модов - определит проблему в модах
-    2. Полная переустановка - чистая установка игры
-    3. Запуск с 2GB памяти - исключит проблемы с памятью
-    """
+    progress_bar = ttk.Progressbar(progress_frame, orient="horizontal",
+                                   length=650, mode="indeterminate")
+    progress_bar.pack(pady=5)
+    progress_bar.start()
 
-    problems_text.insert('1.0', problems_info)
-    problems_text.config(state='disabled')
+    # Окно результатов - ЧЕРНОЕ с цветным текстом
+    results_frame = ttk.Frame(diag_window)
+    results_frame.pack(fill='both', expand=True, padx=20, pady=10)
 
-    # Кнопки решений
+    results_text = tk.Text(results_frame, height=12, wrap='word',
+                           font=('Consolas', 9),
+                           bg='#1a1a1a',  # Черный фон
+                           fg='#00ff88',  # Зеленый текст по умолчанию
+                           relief='solid', borderwidth=1,
+                           padx=10, pady=10)
+
+    scrollbar = ttk.Scrollbar(results_frame, orient='vertical', command=results_text.yview)
+    results_text.configure(yscrollcommand=scrollbar.set)
+
+    results_text.pack(side='left', fill='both', expand=True)
+    scrollbar.pack(side='right', fill='y')
+
+    # Статус
+    status_frame = ttk.Frame(diag_window)
+    status_frame.pack(fill='x', padx=20, pady=5)
+
+    status_label = ttk.Label(status_frame,
+                             text="Начинаем проверку...",
+                             foreground='#ffaa00',
+                             background='#2b2b2b')
+    status_label.pack()
+
+    # Кнопки
     button_frame = ttk.Frame(diag_window)
-    button_frame.pack(pady=10)
+    button_frame.pack(fill='x', padx=20, pady=15)
 
-    ttk.Button(button_frame, text="🚀 Запуск без модов",
-               command=launch_without_mods).pack(side='left', padx=5)
-    ttk.Button(button_frame, text="🔄 Полная переустановка",
-               command=complete_reinstall).pack(side='left', padx=5)
-    ttk.Button(button_frame, text="❌ Закрыть",
-               command=diag_window.destroy).pack(side='left', padx=5)
+    # Первый ряд
+    row1 = ttk.Frame(button_frame)
+    row1.pack(fill='x', pady=5)
+
+    ttk.Button(row1, text="Быстрая починка",
+               command=lambda: auto_repair_game_files(),
+               width=18).pack(side='left', padx=5)
+
+    ttk.Button(row1, text="Запуск без модов",
+               command=launch_without_mods,
+               width=18).pack(side='left', padx=5)
+
+    # Второй ряд
+    row2 = ttk.Frame(button_frame)
+    row2.pack(fill='x', pady=5)
+
+    ttk.Button(row2, text="Полная переустановка",
+               command=complete_reinstall,
+               width=18).pack(side='left', padx=5)
+
+    ttk.Button(row2, text="Создать отчет",
+               command=lambda: create_debug_report(results_text),
+               width=15).pack(side='left', padx=5)
+
+    ttk.Button(row2, text="Закрыть",
+               command=diag_window.destroy,
+               width=12).pack(side='right', padx=5)
+
+    # Функции диагностики с цветным текстом
+    def add_result(text, color='#00ff88'):  # Зеленый по умолчанию
+        results_text.insert('end', f"{text}\n", color)
+        results_text.see('end')
+        diag_window.update()
+
+    def run_diagnostic():
+        try:
+            problems_found = []
+            minecraft_dir = CONFIG['minecraft_dir']
+
+            # Проверка структуры - зеленый
+            for folder in ['mods', 'versions', 'config']:
+                path = os.path.join(minecraft_dir, folder)
+                if os.path.exists(path):
+                    add_result(f"✅ Папка {folder} найдена", '#00ff88')
+                else:
+                    problems_found.append(f"Отсутствует папка {folder}")
+                    add_result(f"❌ Папка {folder} не найдена", '#ff4444')  # Красный для ошибок
+
+            # Проверка модов - голубой
+            mods_dir = os.path.join(minecraft_dir, 'mods')
+            if os.path.exists(mods_dir):
+                mod_files = [f for f in os.listdir(mods_dir) if f.endswith('.jar')]
+                add_result(f"📦 Найдено модов: {len(mod_files)}", '#00ccff')  # Голубой
+
+                if len(mod_files) == 0:
+                    problems_found.append("Папка модов пустая")
+                    add_result("⚠️ Папка модов пуста", '#ffaa00')  # Желтый для предупреждений
+
+            # Проверка ресурсов - зеленый/желтый
+            memory = psutil.virtual_memory()
+            if memory.available < 3 * 1024 * 1024 * 1024:
+                problems_found.append("Мало оперативной памяти")
+                add_result(f"⚠️ Мало ОЗУ: {memory.available // 1024 // 1024}MB свободно", '#ffaa00')
+            else:
+                add_result(f"✅ ОЗУ: {memory.available // 1024 // 1024}MB свободно", '#00ff88')
+
+            disk = psutil.disk_usage(minecraft_dir)
+            if disk.free < 2 * 1024 * 1024 * 1024:
+                problems_found.append("Мало места на диске")
+                add_result(f"⚠️ Мало места: {disk.free // 1024 // 1024}MB свободно", '#ffaa00')
+            else:
+                add_result(f"✅ Диск: {disk.free // 1024 // 1024}MB свободно", '#00ff88')
+
+            # Java - зеленый/красный
+            java_ok = check_java_version()
+            if java_ok:
+                add_result("✅ Java установлена и работает", '#00ff88')
+            else:
+                problems_found.append("Проблемы с Java")
+                add_result("❌ Java не найдена", '#ff4444')
+
+            # Финальный отчет
+            progress_bar.stop()
+
+            if problems_found:
+                add_result(f"\n🚨 Найдено проблем: {len(problems_found)}", '#ff4444')
+                for problem in problems_found:
+                    add_result(f"• {problem}", '#ffaa00')
+                status_label.config(text=f"Обнаружено {len(problems_found)} проблем", foreground='#ff4444')
+            else:
+                add_result("\n🎉 Все системы в норме!", '#00ff88')
+                add_result("Игра должна запускаться без проблем", '#00ccff')
+                status_label.config(text="Проблем не обнаружено", foreground='#00ff88')
+
+        except Exception as e:
+            add_result(f"❌ Ошибка диагностики: {str(e)}", '#ff4444')
+            status_label.config(text="Ошибка при диагностике", foreground='#ff4444')
+
+    # Настройка цветов для текста
+    results_text.tag_configure('#00ff88', foreground='#00ff88')  # Зеленый
+    results_text.tag_configure('#ff4444', foreground='#ff4444')  # Красный
+    results_text.tag_configure('#ffaa00', foreground='#ffaa00')  # Желтый
+    results_text.tag_configure('#00ccff', foreground='#00ccff')  # Голубой
+
+    # Запускаем диагностику
+    diag_window.after(500, run_diagnostic)
+    diag_window.focus_force()
+
+
+def create_debug_report(text_widget):
+    """Создает отчет"""
+    report_path = os.path.join(CONFIG['minecraft_dir'], 'diagnostic_report.txt')
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write(text_widget.get('1.0', 'end'))
+
+    messagebox.showinfo("Отчет создан", f"Отчет сохранен в:\n{report_path}")
 
 
 def show_version_info():
-    """Показывает информацию о версии и историю обновлений с GitHub"""
-    try:
-        # Создаем окно информации
-        info_window = tk.Toplevel(win)
-        info_window.title(f"YamalPixel Launcher v{CURRENT_VERSION}")
-        info_window.geometry("700x900")
-        info_window.resizable(True, True)
-        info_window.transient(win)
-        info_window.grab_set()
+    """Показывает информацию о версии лаунчера"""
+    messagebox.showinfo(
+        "О лаунчере",
+        f"YamalPixel Launcher\nВерсия: {CURRENT_VERSION}\n\n"
+        f"Разработано с ❤️ для комьюнити"
+    )
 
-        # Центрируем окно
-        info_window.update_idletasks()
-        x = (win.winfo_screenwidth() // 2) - (700 // 2)
-        y = (win.winfo_screenheight() // 2) - (900 // 2)
-        info_window.geometry(f"700x900+{x}+{y}")
+def create_diagnostic_panel():
+    """Создает панель диагностики с цветными сообщениями"""
+    diag_window = tk.Toplevel(win)
+    diag_window.title("Диагностика проблем")
+    diag_window.geometry("700x550")
 
-        # Основной фрейм
-        main_frame = ttk.Frame(info_window)
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+    # ВСЕ ОСТАЛЬНОЕ ОБЫЧНОЕ, БЕЗ ТЕМНЫХ ФОНОВ
 
-        # Заголовок
-        header_frame = ttk.Frame(main_frame)
-        header_frame.pack(fill='x', pady=(0, 15))
+    # Заголовок
+    header_frame = ttk.Frame(diag_window)
+    header_frame.pack(fill='x', padx=20, pady=15)
 
-        ttk.Label(header_frame,
-                  text=f"YamalPixel Launcher",
-                  font=('Comfortaa', 16, 'bold')).pack()
+    ttk.Label(header_frame,
+              text="Диагностика проблем",
+              font=('Comfortaa', 16, 'bold')).pack()
 
-        ttk.Label(header_frame,
-                  text=f"Текущая версия: {CURRENT_VERSION}",
-                  font=('Comfortaa', 12),
-                  foreground='green' if is_latest_version() else 'orange').pack(pady=(5, 0))
+    ttk.Label(header_frame,
+              text="Автоматическая проверка и решение проблем",
+              font=('Comfortaa', 10),
+              foreground='gray').pack(pady=(5, 0))
 
-        # Информация о системе
-        sys_frame = ttk.LabelFrame(main_frame, text="📊 Системная информация", padding=10)
-        sys_frame.pack(fill='x', pady=(0, 15))
+    # Прогресс-бар
+    progress_frame = ttk.Frame(diag_window)
+    progress_frame.pack(fill='x', padx=20, pady=10)
 
-        sys_info = f"""
-• ОС: {platform.system()} {platform.release()}
-• Архитектура: {platform.machine()}
-• Python: {platform.python_version()}
-• Папка игры: {CONFIG['minecraft_dir']}
-• Java: {'✅ Установлена' if check_java_version() else '❌ Не найдена'}
-• Статус: {'🎯 Актуальная версия' if is_latest_version() else '🔄 Доступно обновление'}
-        """.strip()
+    progress_label = ttk.Label(progress_frame, text="Проводим диагностику...")
+    progress_label.pack()
 
-        ttk.Label(sys_frame, text=sys_info, font=('Consolas', 9)).pack(anchor='w')
+    progress_bar = ttk.Progressbar(progress_frame, orient="horizontal",
+                                   length=650, mode="indeterminate")
+    progress_bar.pack(pady=5)
+    progress_bar.start()
 
-        # Дерево обновлений
-        updates_frame = ttk.LabelFrame(main_frame, text="🔄 История обновлений", padding=10)
-        updates_frame.pack(fill='both', expand=True, pady=(0, 15))
+    # Окно результатов - ОБЫЧНОЕ, белый фон, черный текст
+    results_frame = ttk.LabelFrame(diag_window, text="Результаты диагностики", padding=10)
+    results_frame.pack(fill='both', expand=True, padx=20, pady=10)
 
-        # Создаем Treeview для отображения версий
-        columns = ('version', 'date', 'type')
-        tree = ttk.Treeview(updates_frame, columns=columns, show='tree headings', height=8)
+    results_text = tk.Text(results_frame, height=12, wrap='word',
+                           font=('Consolas', 9))  # Обычный белый фон
 
-        # Настраиваем колонки
-        tree.heading('version', text='Версия')
-        tree.heading('date', text='Дата выпуска')
-        tree.heading('type', text='Тип обновления')
+    scrollbar = ttk.Scrollbar(results_frame, orient='vertical', command=results_text.yview)
+    results_text.configure(yscrollcommand=scrollbar.set)
 
-        tree.column('version', width=120, anchor='w')
-        tree.column('date', width=120, anchor='center')
-        tree.column('type', width=150, anchor='center')
+    results_text.pack(side='left', fill='both', expand=True)
+    scrollbar.pack(side='right', fill='y')
 
-        # Скроллбар для дерева
-        scrollbar_tree = ttk.Scrollbar(updates_frame, orient='vertical', command=tree.yview)
-        tree.configure(yscrollcommand=scrollbar_tree.set)
+    # Статус
+    status_frame = ttk.Frame(diag_window)
+    status_frame.pack(fill='x', padx=20, pady=5)
 
-        tree.pack(side='left', fill='both', expand=True)
-        scrollbar_tree.pack(side='right', fill='y')
+    status_label = ttk.Label(status_frame, text="Начинаем проверку...")
+    status_label.pack()
 
-        # Детали обновления
-        details_frame = ttk.LabelFrame(main_frame, text="📋 Детали обновления", padding=10)
-        details_frame.pack(fill='x', pady=(0, 15))
+    # Кнопки
+    button_frame = ttk.Frame(diag_window)
+    button_frame.pack(fill='x', padx=20, pady=15)
 
-        # Текст с прокруткой для деталей
-        text_frame = ttk.Frame(details_frame)
-        text_frame.pack(fill='both', expand=True)
+    # Первый ряд
+    row1 = ttk.Frame(button_frame)
+    row1.pack(fill='x', pady=5)
 
-        details_text = tk.Text(text_frame,
-                               wrap='word',
-                               height=6,
-                               font=('Comfortaa', 9),
-                               bg='#f8f9fa',
-                               relief='solid',
-                               borderwidth=1,
-                               padx=10,
-                               pady=10)
+    ttk.Button(row1, text="Быстрая починка",
+               command=lambda: auto_repair_game_files(),
+               width=18).pack(side='left', padx=5)
 
-        scrollbar_text = ttk.Scrollbar(text_frame, orient='vertical', command=details_text.yview)
-        details_text.configure(yscrollcommand=scrollbar_text.set)
+    ttk.Button(row1, text="Запуск без модов",
+               command=launch_without_mods,
+               width=18).pack(side='left', padx=5)
 
-        details_text.pack(side='left', fill='both', expand=True)
-        scrollbar_text.pack(side='right', fill='y')
+    # Второй ряд
+    row2 = ttk.Frame(button_frame)
+    row2.pack(fill='x', pady=5)
 
-        # Показываем загрузку
-        details_text.insert('1.0', "🔄 Загружаем историю обновлений...")
-        details_text.configure(state='disabled')
+    ttk.Button(row2, text="Полная переустановка",
+               command=complete_reinstall,
+               width=18).pack(side='left', padx=5)
 
-        # Фрейм для кнопок
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', pady=(10, 0))
+    ttk.Button(row2, text="Создать отчет",
+               command=lambda: create_debug_report(results_text),
+               width=15).pack(side='left', padx=5)
 
-        def check_updates():
-            info_window.destroy()
-            check_for_updates()
+    ttk.Button(row2, text="Закрыть",
+               command=diag_window.destroy,
+               width=12).pack(side='right', padx=5)
 
-        def open_github():
-            import webbrowser
-            webbrowser.open("https://github.com/XxMoonmenxX/YamalPixel")
 
-        def open_releases():
-            import webbrowser
-            webbrowser.open("https://github.com/XxMoonmenxX/YamalPixel/releases")
+    # Функции диагностики - ТОЛЬКО ЗДЕСЬ ЦВЕТНЫЙ ТЕКСТ
+    def add_result(text, color='black'):  # По умолчанию черный
+        results_text.insert('end', f"{text}\n", color)
+        results_text.see('end')
+        diag_window.update()
 
-        # Кнопки
-        ttk.Button(button_frame, text="🔄 Проверить обновления",
-                   command=check_updates).pack(side='left', padx=5)
+    def run_diagnostic():
+        try:
+            problems_found = []
+            minecraft_dir = CONFIG['minecraft_dir']
 
-        ttk.Button(button_frame, text="🌐 GitHub",
-                   command=open_github).pack(side='left', padx=5)
-
-        ttk.Button(button_frame, text="📦 Все релизы",
-                   command=open_releases).pack(side='left', padx=5)
-
-        ttk.Button(button_frame, text="❌ Закрыть",
-                   command=info_window.destroy).pack(side='right', padx=5)
-
-        # Функция для обработки выбора версии в дереве
-        def on_tree_select(event):
-            selection = tree.selection()
-            if selection:
-                item = selection[0]
-                changelog = tree.item(item, 'tags')[0] if tree.item(item, 'tags') else "Нет описания"
-
-                details_text.configure(state='normal')
-                details_text.delete('1.0', 'end')
-                details_text.insert('1.0', changelog)
-                details_text.configure(state='disabled')
-
-        tree.bind('<<TreeviewSelect>>', on_tree_select)
-
-        def load_releases_thread():
-            try:
-                response = requests.get(
-                    "https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases",
-                    timeout=10
-                )
-                response.raise_for_status()
-
-                releases = response.json()
-
-                # Берем последние 5 релизов
-                recent_releases = releases[:5]
-
-                # Обновляем дерево в основном потоке
-                info_window.after(0, update_releases_tree, recent_releases)
-
-            except Exception as e:
-                error_text = f"❌ Не удалось загрузить историю обновлений\n\nОшибка: {str(e)}"
-                info_window.after(0, update_releases_tree, [])
-
-        def update_releases_tree(releases):
-            # Очищаем дерево
-            for item in tree.get_children():
-                tree.delete(item)
-
-            if not releases:
-                details_text.configure(state='normal')
-                details_text.delete('1.0', 'end')
-                details_text.insert('1.0', "Не удалось загрузить данные об обновлениях")
-                details_text.configure(state='disabled')
-                return
-
-            # Добавляем релизы в дерево
-            for release in releases:
-                version = release['tag_name'].lstrip('v')
-                date = release['created_at'][:10]  # Берем только дату
-                prerelease = release.get('prerelease', False)
-                draft = release.get('draft', False)
-
-                # Определяем тип обновления
-                if draft:
-                    release_type = "📝 Черновик"
-                elif prerelease:
-                    release_type = "🧪 Пре-релиз"
+            # Проверка структуры - зеленый
+            for folder in ['mods', 'versions', 'config']:
+                path = os.path.join(minecraft_dir, folder)
+                if os.path.exists(path):
+                    add_result(f"✅ Папка {folder} найдена", 'green')
                 else:
-                    release_type = "🚀 Стабильный"
+                    problems_found.append(f"Отсутствует папка {folder}")
+                    add_result(f"❌ Папка {folder} не найдена", 'red')
 
-                # Форматируем changelog
-                changelog = release.get('body', 'Нет описания изменений')
-                changelog = format_changelog(changelog)
+            # Проверка модов - синий
+            mods_dir = os.path.join(minecraft_dir, 'mods')
+            if os.path.exists(mods_dir):
+                mod_files = [f for f in os.listdir(mods_dir) if f.endswith('.jar')]
+                add_result(f"📦 Найдено модов: {len(mod_files)}", 'blue')
 
-                # Добавляем в дерево
-                tree.insert('', 'end', values=(
-                    version,
-                    date,
-                    release_type
-                ), tags=(changelog,))
+                if len(mod_files) == 0:
+                    problems_found.append("Папка модов пустая")
+                    add_result("⚠️ Папка модов пуста", 'orange')
 
-            # Выбираем первый элемент
-            if tree.get_children():
-                first_item = tree.get_children()[0]
-                tree.selection_set(first_item)
-                tree.focus(first_item)
-                # Вызываем обработчик выбора чтобы показать детали
-                on_tree_select(None)
+            # Проверка ресурсов
+            memory = psutil.virtual_memory()
+            if memory.available < 3 * 1024 * 1024 * 1024:
+                problems_found.append("Мало оперативной памяти")
+                add_result(f"⚠️ Мало ОЗУ: {memory.available // 1024 // 1024}MB свободно", 'orange')
+            else:
+                add_result(f"✅ ОЗУ: {memory.available // 1024 // 1024}MB свободно", 'green')
 
-        # Запускаем загрузку в отдельном потоке
-        threading.Thread(target=load_releases_thread, daemon=True).start()
+            disk = psutil.disk_usage(minecraft_dir)
+            if disk.free < 2 * 1024 * 1024 * 1024:
+                problems_found.append("Мало места на диске")
+                add_result(f"⚠️ Мало места: {disk.free // 1024 // 1024}MB свободно", 'orange')
+            else:
+                add_result(f"✅ Диск: {disk.free // 1024 // 1024}MB свободно", 'green')
 
-    except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось открыть информацию о версии: {str(e)}")
+            # Java
+            java_ok = check_java_version()
+            if java_ok:
+                add_result("✅ Java установлена и работает", 'green')
+            else:
+                problems_found.append("Проблемы с Java")
+                add_result("❌ Java не найдена", 'red')
+
+            # Финальный отчет
+            progress_bar.stop()
+
+            if problems_found:
+                add_result(f"\n🚨 Найдено проблем: {len(problems_found)}", 'red')
+                for problem in problems_found:
+                    add_result(f"• {problem}", 'orange')
+                status_label.config(text=f"Обнаружено {len(problems_found)} проблем")
+            else:
+                add_result("\n🎉 Все системы в норме!", 'green')
+                add_result("Игра должна запускаться без проблем", 'blue')
+                status_label.config(text="Проблем не обнаружено")
+
+        except Exception as e:
+            add_result(f"❌ Ошибка диагностики: {str(e)}", 'red')
+            status_label.config(text="Ошибка при диагностике")
+
+    # Настройка цветов для текста
+    results_text.tag_configure('green', foreground='green')
+    results_text.tag_configure('red', foreground='red')
+    results_text.tag_configure('orange', foreground='orange')
+    results_text.tag_configure('blue', foreground='blue')
+
+    # Запускаем диагностику
+    diag_window.after(500, run_diagnostic)
+    diag_window.focus_force()
 
 
 def format_changelog(changelog):
@@ -3321,13 +3423,18 @@ def set_launch_state(launching=False):
     if launching:
         LAUNCH_START_TIME = time.time()
         # Блокируем только основные кнопки
-        btn.config(state="disabled", text="🚀 Запускается...")
-        quick_btn.config(state="disabled", text="⏳ Запуск...")
+        launch_btn.config(state="disabled")  # Блокируем кастомную кнопку
+
+        # Для кастомных кнопок меняем текст через их собственные методы
+        quick_btn.itemconfig("text", text="⏳ Запуск...")
+        quick_btn.itemconfig("shadow", text="⏳ Запуск...")
     else:
         # Разблокируем кнопки
-        btn.config(state="normal", text="Войти в игру")
-        quick_btn.config(state="normal", text="🚀 Быстрый запуск (оффлайн)")
+        launch_btn.config(state="normal")  # Разблокируем кастомную кнопку
 
+        # Возвращаем оригинальный текст
+        quick_btn.itemconfig("text", text="🚀 Быстрый запуск (оффлайн)")
+        quick_btn.itemconfig("shadow", text="🚀 Быстрый запуск (оффлайн)")
 
 def is_launch_timeout():
     """Проверяет, не завис ли запуск"""
@@ -4148,9 +4255,212 @@ def monitor_game_process(process):
     except Exception as e:
         print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
+
+class ModernButton(tk.Canvas):
+    def __init__(self, master=None,
+                 text="Кнопка",
+                 width=200,
+                 height=50,
+                 gradient=("#FF6B6B", "#4ECDC4"),
+                 glow_color="#FF6B6B",
+                 animation="pulse",
+                 command=None,
+                 font_size=14,
+                 corner_radius=15,
+                 **kwargs):
+
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, bg='pink', **kwargs)
+
+        self.text = text
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.glow_color = glow_color
+        self.animation_type = animation
+        self.command = command
+        self.font_size = font_size
+        self.corner_radius = corner_radius
+
+        # Состояния кнопки
+        self.is_pressed = False
+        self.animation_running = True
+        self.pulse_phase = 0
+
+        # Цвета для разных состояний
+        self.normal_gradient = gradient
+        self.pressed_gradient = (self.darken_color(gradient[0]),
+                                 self.darken_color(gradient[1]))
+
+        self.bind("<Button-1>", self.on_press)
+        self.bind("<ButtonRelease-1>", self.on_release)
+        self.bind("<Enter>", self.on_hover)
+        self.bind("<Leave>", self.on_leave)
+
+        # Начальная отрисовка
+        self.draw_button()
+
+        # Запускаем анимацию
+        if animation == "pulse":
+            self.animate_pulse()
+        elif animation == "glow":
+            self.animate_glow()
+
+    def draw_button(self):
+        """Отрисовывает кнопку"""
+        self.delete("all")
+
+        # Выбираем градиент в зависимости от состояния
+        if self.is_pressed:
+            grad_colors = self.pressed_gradient
+        else:
+            grad_colors = self.normal_gradient
+
+        # Применяем пульсацию к цветам
+        if self.animation_type == "pulse" and self.animation_running:
+            pulse_factor = 0.1 * math.sin(self.pulse_phase)
+            brightened_colors = (
+                self.lighten_color(grad_colors[0], 0.1 + pulse_factor),
+                self.lighten_color(grad_colors[1], 0.1 + pulse_factor)
+            )
+            grad_colors = brightened_colors
+
+        # Простой прямоугольник со скругленными углами (без сложной геометрии)
+        self.create_rectangle(2, 2, self.width - 2, self.height - 2,
+                              fill=grad_colors[0], outline="",
+                              width=0, tags="bg")
+
+        # Упрощенный градиент
+        steps = 10
+        for i in range(steps):
+            ratio = i / steps
+            r = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[0] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[0])
+            g = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[1] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[1])
+            b = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[2] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[2])
+
+            color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
+            self.create_rectangle(x1, 2, x2, self.height - 2,
+                                  fill=color, outline="", tags="gradient")
+
+        # Добавляем текст
+        text_color = "white"
+        self.create_text(self.width / 2, self.height / 2,
+                         text=self.text,
+                         fill=text_color,
+                         font=('Comfortaa', self.font_size, 'bold'),
+                         tags="text")
+
+        # Добавляем свечение
+        if self.animation_type == "pulse" and self.animation_running:
+            glow_intensity = abs(math.sin(self.pulse_phase)) * 0.3
+            glow_width = 2 + int(glow_intensity * 4)
+            self.create_rectangle(0, 0, self.width, self.height,
+                                  outline=self.glow_color,
+                                  width=glow_width, tags="glow")
+
+    def animate_pulse(self):
+        """Анимация пульсации"""
+        if not self.animation_running:
+            return
+
+        self.pulse_phase += 0.1
+        if self.pulse_phase > 2 * math.pi:
+            self.pulse_phase = 0
+
+        self.draw_button()
+        self.after(50, self.animate_pulse)
+
+    def animate_glow(self):
+        """Анимация свечения"""
+        if not self.animation_running:
+            return
+
+        self.pulse_phase += 0.15
+        self.draw_button()
+        self.after(80, self.animate_glow)
+
+    def on_hover(self, event):
+        """При наведении курсора"""
+        self.draw_button()
+
+    def on_leave(self, event):
+        """При уходе курсора"""
+        self.draw_button()
+
+    def on_press(self, event):
+        """При нажатии"""
+        self.is_pressed = True
+        self.pulse_phase += 0.5
+        self.draw_button()
+
+    def on_release(self, event):
+        """При отпускании"""
+        self.is_pressed = False
+        self.draw_button()
+
+        if self.command:
+            self.command()
+
+    def lighten_color(self, color, factor=0.2):
+        """Осветляет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [min(255, c + int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def darken_color(self, color, factor=0.2):
+        """Затемняет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [max(0, c - int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+    def stop_animation(self):
+        """Останавливает анимацию"""
+        self.animation_running = False
+
+    def start_animation(self):
+        """Запускает анимацию"""
+        self.animation_running = True
+        if self.animation_type == "pulse":
+            self.animate_pulse()
+        elif self.animation_type == "glow":
+            self.animate_glow()
+
 # А затем создавайте кнопку с правильной ссылкой на функцию:
-btn = ttk.Button(win, text="Войти в игру", width=15, style="BW.TLabel", command=runn)
-btn.place(relx=0.5, rely=0.5, width=100, height=50, anchor="c")
+def launch_game():
+    print("🚀 Запускаем игру!")
+    runn()  # Вызываем вашу основную функцию запуска
+
+# Создание кастомной кнопки:
+launch_btn = ModernButton(
+    win,
+    text="🚀 ВОЙТИ В ИГРУ",
+    width=220,
+    height=60,
+    gradient=("#FF6B6B", "#4ECDC4"),  # От красного к бирюзе
+    glow_color="#FF6B6B",
+    animation="pulse",
+    command=launch_game,
+    font_size=16,
+    corner_radius=20
+)
+launch_btn.place(relx=0.5, rely=0.5, anchor="c")
+
+# Запускаем анимацию
+launch_btn.start_animation()
 
 
 def disable_problematic_mods():
@@ -4185,10 +4495,146 @@ def disable_problematic_mods():
                             f"\n\nОни перемещены в: {disabled_dir}")
 
 
-quick_btn = ttk.Button(win, text="🚀 Быстрый запуск (оффлайн)",
-                       width=20, style="BW.TLabel",
-                       command=lambda: quick_launch_offline())
-quick_btn.place(relx=0.5, rely=0.55, width=150, height=30, anchor="c")
+class ModernQuickLaunchButton(tk.Canvas):
+    def __init__(self, master=None,
+                 text="🚀 Быстрый запуск",
+                 width=250,
+                 height=45,
+                 gradient=("#667eea", "#764ba2"),
+                 command=None,
+                 font_size=12,
+                 corner_radius=12,
+                 **kwargs):
+
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, bg='pink', **kwargs)
+
+        self.text = text
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.command = command
+        self.font_size = font_size
+        self.corner_radius = corner_radius
+
+        # Состояния кнопки
+        self.is_pressed = False
+
+        self.bind("<Button-1>", self.on_press)
+        self.bind("<ButtonRelease-1>", self.on_release)
+
+        # Начальная отрисовка
+        self.draw_button()
+
+    def draw_button(self):
+        """Отрисовывает кнопку"""
+        self.delete("all")
+
+        # Создаем скругленный прямоугольник с градиентом
+        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
+                               self.corner_radius,
+                               fill=self.gradient[0], outline="", tags="bg")
+
+        # Добавляем градиентный эффект
+        steps = 8
+        for i in range(steps):
+            ratio = i / steps
+            r = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[0] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[0])
+            g = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[1] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[1])
+            b = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[2] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[2])
+
+            color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
+            self.create_round_rect(x1, 2, x2, self.height - 2,
+                                   self.corner_radius,
+                                   fill=color, outline="", tags="gradient")
+
+        # Добавляем текст
+        text_color = "white"
+
+        # Основной текст
+        self.create_text(self.width / 2, self.height / 2,
+                         text=self.text,
+                         fill=text_color,
+                         font=('Comfortaa', self.font_size, 'bold'),
+                         tags="text")
+
+    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        """Создает скругленный прямоугольник"""
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+
+    def on_press(self, event):
+        """При нажатии"""
+        self.is_pressed = True
+        # Временно затемняем кнопку при нажатии
+        self.itemconfig("bg", fill=self.darken_color(self.gradient[0]))
+        self.itemconfig("gradient", fill=self.darken_color(self.gradient[1]))
+
+    def on_release(self, event):
+        """При отпускании"""
+        self.is_pressed = False
+        # Возвращаем нормальные цвета
+        self.itemconfig("bg", fill=self.gradient[0])
+        self.itemconfig("gradient", fill=self.gradient[1])
+
+        if self.command:
+            self.command()
+
+    def darken_color(self, color, factor=0.1):
+        """Затемняет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [max(0, c - int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+
+
+def quick_launch_action():
+    """Действие для быстрого запуска"""
+    print("🚀 Быстрый запуск игры!")
+    quick_launch_offline()
+
+quick_btn = ModernQuickLaunchButton(
+    win,
+    text="🚀 Быстрый запуск (оффлайн)",
+    width=260,
+    height=48,
+    gradient=("#667eea", "#764ba2"),  # Фиолетовый градиент
+    command=quick_launch_action,
+    font_size=12,
+    corner_radius=15
+)
+
+# Размещаем кнопку
+quick_btn.place(relx=0.5, rely=0.56, anchor="c")
+
+
 
 
 def quick_launch_offline():
@@ -4264,16 +4710,13 @@ ttk.Checkbutton(
     style='BW2.TLabel'
 ).pack(padx=6, pady=6, anchor=tk.NE)
 
-username = ttk.Entry(win, style="BW.TLabel", width=20)
-username.place(relx=.5, rely=0.45, anchor="c")
 
-btn = ttk.Button(win, text="Войти в игру", width=15, style="BW.TLabel", command=runn)
-btn.place(relx=0.5, rely=0.5, width=100, height=50, anchor="c")
+
+
 
 style.configure("CenterText.TLabel", layout=('Center',))
 
-label_online = ttk.Label(win, text="Онлайн: 0", style="BW.TLabel")
-label_online.place(relx=0.5, rely=0.61, anchor="c")
+
 
 
 
@@ -4293,15 +4736,6 @@ ttk.Checkbutton(
 ).pack(padx=6, pady=6, anchor=tk.NE)
 
 
-# Функция для показа онлайн игроков
-def show_online_players():
-    try:
-        server = JavaServer.lookup("90.151.59.120:25565")
-        status = server.status()
-        label_online.config(text=f"Онлайн: {status.players.online}",
-                            background="green" if status.players.online > 0 else "red")
-    except Exception as e:
-        label_online.config(text="Ошибка подключения", background="red")
 
 
 
@@ -4326,109 +4760,455 @@ def update_status():
 win.after(1000, update_status)
 
 
+class ModernEntry(tk.Canvas):
+    def __init__(self, master=None,
+                 placeholder="Введите никнейм",
+                 width=250,
+                 height=45,
+                 gradient=("#667eea", "#764ba2"),
+                 corner_radius=15,
+                 **kwargs):
 
-btn_update_online = ttk.Button(win, text="Показать онлайн", style="BW.TLabel", command=show_online_players)
-btn_update_online.place(relx=.5, rely=0.58, width=150, height=25, anchor="c")
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, bg='pink', **kwargs)
+
+        self.placeholder = placeholder
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.corner_radius = corner_radius
+        self.is_focused = False
+        self.text_value = tk.StringVar()
+
+        # Создаем скрытое текстовое поле
+        self.entry = tk.Entry(master,
+                              textvariable=self.text_value,
+                              font=('Comfortaa', 12),
+                              border=0,
+                              relief='flat',
+                              bg='white',
+                              fg='#2c3e50',
+                              justify='center')
+
+        self.entry_window = self.create_window(width // 2, height // 2, window=self.entry)
+        self.entry.configure(width=20)
+
+        # Бинды
+        self.entry.bind('<FocusIn>', self.on_focus_in)
+        self.entry.bind('<FocusOut>', self.on_focus_out)
+
+        # Начальная отрисовка
+        self.draw_entry()
+        self.update_placeholder()
+
+    def draw_entry(self):
+        """Отрисовывает поле ввода"""
+        self.delete("entry_bg")
+
+        # Основной фон
+        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
+                               self.corner_radius,
+                               fill='white', outline="", tags="entry_bg")
+
+        # Градиентная обводка
+        steps = 6
+        for i in range(steps):
+            ratio = i / steps
+            r = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[0] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[0])
+            g = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[1] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[1])
+            b = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[2] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[2])
+
+            color = self.rgb_to_hex((r, g, b))
+
+            # Рисуем градиентную обводку
+            offset = i * 0.8
+            self.create_round_rect(offset, offset,
+                                   self.width - offset, self.height - offset,
+                                   self.corner_radius,
+                                   outline=color, width=1, tags="entry_bg")
+
+    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        """Создает скругленный прямоугольник"""
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+
+    def on_focus_in(self, event):
+        """При фокусе"""
+        self.is_focused = True
+        self.draw_entry()
+        if self.text_value.get() == self.placeholder:
+            self.entry.configure(fg='#2c3e50')
+            self.text_value.set('')
+
+    def on_focus_out(self, event):
+        """При потере фокуса"""
+        self.is_focused = False
+        self.draw_entry()
+        self.update_placeholder()
+
+    def update_placeholder(self):
+        """Обновляет плейсхолдер"""
+        if not self.text_value.get() and not self.is_focused:
+            self.entry.configure(fg='#95a5a6')
+            self.text_value.set(self.placeholder)
+        else:
+            self.entry.configure(fg='#2c3e50')
+
+    def get(self):
+        """Возвращает текст (без плейсхолдера)"""
+        text = self.text_value.get()
+        return '' if text == self.placeholder else text
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
 
-# Функция для выбора версии игры
-def select_version(event):
-    selected_version = version_combobox.get()
-    if selected_version == "YamalPixel":
-        CONFIG['version'] = '1.20.1'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.7.10":
-        CONFIG['version'] = '1.7.10'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.8.9":
-        CONFIG['version'] = '1.8.9'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.12.2":
-        CONFIG['version'] = '1.12.2'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.14.4":
-        CONFIG['version'] = '1.14.4'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.14.4 + Fabric":
-        CONFIG['version'] = '1.14.4'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.15.2":
-        CONFIG['version'] = '1.15.2'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.15.2 + Fabric":
-        CONFIG['version'] = '1.15.2'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.16.5":
-        CONFIG['version'] = '1.16.5'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.16.5 + Fabric":
-        CONFIG['version'] = '1.16.5'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.17.1":
-        CONFIG['version'] = '1.17.1'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.17.1 + Fabric":
-        CONFIG['version'] = '1.17.1'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.18.2":
-        CONFIG['version'] = '1.18.2'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.18.2 + Fabric":
-        CONFIG['version'] = '1.18.2'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.19.2":
-        CONFIG['version'] = '1.19.2'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.19.2 + Fabric":
-        CONFIG['version'] = '1.19.2'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.20.1":
-        CONFIG['version'] = '1.20.1'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.20.1 + Fabric":
-        CONFIG['version'] = '1.20.1'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.20.2":
-        CONFIG['version'] = '1.20.2'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.20.2 + Fabric":
-        CONFIG['version'] = '1.20.2'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.21":
-        CONFIG['version'] = '1.21'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.21 + Fabric":
-        CONFIG['version'] = '1.21'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.21.1":
-        CONFIG['version'] = '1.21.1'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.21.1 + Fabric":
-        CONFIG['version'] = '1.21.1'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.21.2":
-        CONFIG['version'] = '1.21.2'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.21.2 + Fabric":
-        CONFIG['version'] = '1.21.2'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.21.3":
-        CONFIG['version'] = '1.21.3'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.21.3 + Fabric":
-        CONFIG['version'] = '1.21.3'
-        CONFIG['fabric_loader'] = '0.16.10'
-    elif selected_version == "Minecraft 1.21.4":
-        CONFIG['version'] = '1.21.4'
-        CONFIG['fabric_loader'] = None
-    elif selected_version == "Minecraft 1.21.4 + Fabric":
-        CONFIG['version'] = '1.21.4'
-        CONFIG['fabric_loader'] = '0.16.10'
-
-    messagebox.showinfo("Версия изменена", f"Выбрана версия: {selected_version}")
 
 
-# Добавление выпадающего списка для выбора версии
+# Добавь новую:
+username = ModernEntry(
+    win,
+    placeholder="Введите никнейм",
+    width=280,
+    height=48,
+    gradient=("#667eea", "#764ba2"),
+    corner_radius=20
+)
+username.place(relx=0.5, rely=0.4425, anchor="c")
+
+
+
+class ModernOnlineButton(tk.Canvas):
+    def __init__(self, master=None,
+                 text="🌐 ПОКАЗАТЬ ОНЛАЙН",
+                 width=220,
+                 height=45,
+                 gradient=("#4A90E2", "#357ABD"),  # Синий градиент
+                 glow_color="#4A90E2",
+                 animation="glow",
+                 command=None,
+                 font_size=12,
+                 corner_radius=15,
+                 **kwargs):
+
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, bg='pink', **kwargs)
+
+        self.text = text
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.glow_color = glow_color
+        self.animation_type = animation
+        self.command = command
+        self.font_size = font_size
+        self.corner_radius = corner_radius
+
+        # Состояния кнопки
+        self.is_pressed = False
+        self.animation_running = True
+        self.pulse_phase = 0
+
+        # Цвета для разных состояний
+        self.normal_gradient = gradient
+        self.pressed_gradient = (self.darken_color(gradient[0]),
+                                 self.darken_color(gradient[1]))
+
+        self.bind("<Button-1>", self.on_press)
+        self.bind("<ButtonRelease-1>", self.on_release)
+
+        # Начальная отрисовка
+        self.draw_button()
+
+        # Запускаем анимацию
+        if animation == "glow":
+            self.animate_glow()
+
+    def draw_button(self):
+        """Отрисовывает кнопку"""
+        self.delete("all")
+
+        # Выбираем градиент в зависимости от состояния
+        if self.is_pressed:
+            grad_colors = self.pressed_gradient
+        else:
+            grad_colors = self.normal_gradient
+
+        # Применяем анимацию к цветам
+        if self.animation_type == "glow" and self.animation_running:
+            glow_intensity = abs(math.sin(self.pulse_phase)) * 0.2
+            brightened_colors = (
+                self.lighten_color(grad_colors[0], glow_intensity),
+                self.lighten_color(grad_colors[1], glow_intensity)
+            )
+            grad_colors = brightened_colors
+
+        # Создаем скругленный прямоугольник
+        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
+                               self.corner_radius,
+                               fill=grad_colors[0], outline="", tags="bg")
+
+        # Добавляем градиент
+        steps = 8
+        for i in range(steps):
+            ratio = i / steps
+            r = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[0] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[0])
+            g = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[1] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[1])
+            b = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[2] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[2])
+
+            color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
+            self.create_round_rect(x1, 2, x2, self.height - 2,
+                                   self.corner_radius,
+                                   fill=color, outline="", tags="gradient")
+
+        # Добавляем свечение
+        if self.animation_type == "glow" and self.animation_running:
+            glow_width = 1 + int(abs(math.sin(self.pulse_phase)) * 2)
+            self.create_round_rect(0, 0, self.width, self.height,
+                                   self.corner_radius,
+                                   outline=self.glow_color,
+                                   width=glow_width, tags="glow")
+
+        # Добавляем текст
+        text_color = "white"
+        self.create_text(self.width / 2, self.height / 2,
+                         text=self.text,
+                         fill=text_color,
+                         font=('Comfortaa', self.font_size, 'bold'),
+                         tags="text")
+
+    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        """Создает скругленный прямоугольник"""
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+
+    def animate_glow(self):
+        """Анимация свечения"""
+        if not self.animation_running:
+            return
+
+        self.pulse_phase += 0.15
+        if self.pulse_phase > 2 * math.pi:
+            self.pulse_phase = 0
+
+        self.draw_button()
+        self.after(80, self.animate_glow)
+
+    def on_press(self, event):
+        """При нажатии"""
+        self.is_pressed = True
+        self.draw_button()
+
+    def on_release(self, event):
+        """При отпускании"""
+        self.is_pressed = False
+        self.draw_button()
+
+        if self.command:
+            self.command()
+
+    def lighten_color(self, color, factor=0.2):
+        """Осветляет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [min(255, c + int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def darken_color(self, color, factor=0.2):
+        """Затемняет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [max(0, c - int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+    def stop_animation(self):
+        """Останавливает анимацию"""
+        self.animation_running = False
+
+    def start_animation(self):
+        """Запускает анимацию"""
+        self.animation_running = True
+        self.animate_glow()
+
+
+# Улучшенная функция показа онлайн игроков
+def show_online_players():
+    """Красивое отображение онлайн игроков"""
+    try:
+        # Создаем красивое окно с информацией
+        online_window = tk.Toplevel(win)
+        online_window.title("🌐 Статус сервера")
+        online_window.geometry("300x200")
+        online_window.resizable(False, False)
+        online_window.configure(bg='#2b2b2b')
+        online_window.transient(win)
+        online_window.grab_set()
+
+        # Центрируем окно
+        online_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (300 // 2)
+        y = (win.winfo_screenheight() // 2) - (200 // 2)
+        online_window.geometry(f"300x200+{x}+{y}")
+
+        # Основной фрейм
+        main_frame = ttk.Frame(online_window, padding=20)
+        main_frame.pack(fill='both', expand=True)
+
+        # Заголовок
+        title_label = ttk.Label(main_frame,
+                                text="🌐 Статус сервера",
+                                font=('Comfortaa', 16, 'bold'),
+                                foreground='white',
+                                background='#2b2b2b')
+        title_label.pack(pady=(0, 15))
+
+        # Получаем статус сервера
+        server = JavaServer.lookup("90.151.59.120:25565")
+        status = server.status()
+
+        players_online = status.players.online
+        max_players = status.players.max
+
+        # Определяем цвет статуса
+        if players_online > 0:
+            status_color = "#4CAF50"  # Зеленый
+            status_text = "🟢 СЕРВЕР ОНЛАЙН"
+            players_text = f"👥 Игроков: {players_online}/{max_players}"
+        else:
+            status_color = "#f44336"  # Красный
+            status_text = "🔴 СЕРВЕР ПУСТ"
+            players_text = f"👥 Игроков: {players_online}/{max_players}"
+
+        # Статус сервера
+        status_label = ttk.Label(main_frame,
+                                 text=status_text,
+                                 font=('Comfortaa', 12, 'bold'),
+                                 foreground=status_color,
+                                 background='#2b2b2b')
+        status_label.pack(pady=5)
+
+        # Количество игроков
+        players_label = ttk.Label(main_frame,
+                                  text=players_text,
+                                  font=('Comfortaa', 11),
+                                  foreground='#cccccc',
+                                  background='#2b2b2b')
+        players_label.pack(pady=5)
+
+        # Пинг
+        ping_label = ttk.Label(main_frame,  # ИСПРАВЛЕНО: main_frame вместо main_server
+                               text=f"📡 Пинг: {status.latency:.1f} мс",
+                               font=('Comfortaa', 10),
+                               foreground='#888888',
+                               background='#2b2b2b')
+        ping_label.pack(pady=5)
+
+        # Версия
+        version_label = ttk.Label(main_frame,
+                                  text=f"⚙️ Версия: {status.version.name}",
+                                  font=('Comfortaa', 9),
+                                  foreground='#666666',
+                                  background='#2b2b2b')
+        version_label.pack(pady=5)
+
+        # Кнопка закрытия
+        close_btn = ttk.Button(main_frame,
+                               text="Закрыть",
+                               command=online_window.destroy,
+                               width=15)
+        close_btn.pack(pady=15)
+
+    except Exception as e:
+        # Красивое окно ошибки
+        error_window = tk.Toplevel(win)
+        error_window.title("❌ Ошибка")
+        error_window.geometry("250x150")
+        error_window.configure(bg='#2b2b2b')
+
+        ttk.Label(error_window,
+                  text="❌ Ошибка подключения",
+                  font=('Comfortaa', 12, 'bold'),
+                  foreground='#f44336',
+                  background='#2b2b2b').pack(pady=20)
+
+        ttk.Label(error_window,
+                  text="Сервер недоступен",
+                  font=('Comfortaa', 10),
+                  foreground='#cccccc',
+                  background='#2b2b2b').pack(pady=5)
+
+        ttk.Button(error_window,
+                   text="Закрыть",
+                   command=error_window.destroy).pack(pady=15)
+
+
+
+online_btn = ModernOnlineButton(
+    win,
+    text="🌐 ПОКАЗАТЬ ОНЛАЙН",
+    width=220,
+    height=45,
+    gradient=("#4A90E2", "#357ABD"),  # Синий градиент
+    glow_color="#4A90E2",
+    animation="glow",
+    command=show_online_players,
+    font_size=12,
+    corner_radius=15
+)
+
+# Размещаем кнопку
+online_btn.place(relx=0.5, rely=0.61, anchor="c")
+
+# Запускаем анимацию
+online_btn.start_animation()
+
 versions = [
     "YamalPixel",
     "Minecraft 1.7.10",
@@ -4462,10 +5242,297 @@ versions = [
     "Minecraft 1.21.4 + Fabric"
 ]
 
-version_combobox = ttk.Combobox(win, values=versions, state="readonly")
-version_combobox.current(0)
-version_combobox.place(relx=0.5, rely=0.4, anchor="c")
-version_combobox.bind("<<ComboboxSelected>>", select_version)
+
+class ModernVersionSelector(tk.Canvas):
+    def __init__(self, master=None,
+                 width=300,
+                 height=50,
+                 gradient=("#667eea", "#764ba2"),
+                 corner_radius=15,
+                 versions_list=None,  # Добавляем параметр для списка версий
+                 **kwargs):
+
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, bg='pink', **kwargs)
+
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.corner_radius = corner_radius
+        self.is_open = False
+
+        # Используем переданный список или глобальный
+        self.versions = versions_list if versions_list else versions
+
+        # Создаем скрытый комбобокс
+        self.combobox = ttk.Combobox(master, values=self.versions, state="readonly", font=('Comfortaa', 11))
+        self.combobox.current(0)
+        self.combobox_window = self.create_window(width // 2, height // 2, window=self.combobox)
+        self.combobox.configure(width=22, state="readonly")
+
+        # Скрываем комбобокс, показываем красивый виджет
+        self.combobox.place_forget()
+
+        # Текущее значение
+        self.current_value = tk.StringVar(value=self.versions[0])
+
+        # Бинды
+        self.bind("<Button-1>", self.toggle_dropdown)
+        self.combobox.bind("<<ComboboxSelected>>", self.on_select)
+
+        # Анимация
+        self.arrow_angle = 0
+        self.animation_running = True
+
+        # Начальная отрисовка
+        self.draw_selector()
+        self.animate_arrow()
+
+    def draw_selector(self):
+        """Отрисовывает селектор версий"""
+        self.delete("all")
+
+        # Основной фон
+        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
+                               self.corner_radius,
+                               fill='white', outline="", tags="bg")
+
+        # Градиентная обводка
+        steps = 6
+        for i in range(steps):
+            ratio = i / steps
+            r = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[0] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[0])
+            g = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[1] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[1])
+            b = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[2] +
+                    ratio * self.hex_to_rgb(self.gradient[1])[2])
+
+            color = self.rgb_to_hex((r, g, b))
+
+            # Рисуем градиентную обводку
+            offset = i * 0.8
+            self.create_round_rect(offset, offset,
+                                   self.width - offset, self.height - offset,
+                                   self.corner_radius,
+                                   outline=color, width=1, tags="border")
+
+        # Текст выбранной версии
+        display_text = self.current_value.get()
+        if len(display_text) > 20:
+            display_text = display_text[:20] + "..."
+
+        self.create_text(self.width // 2 - 10, self.height // 2,
+                         text=display_text,
+                         fill='#2c3e50',
+                         font=('Comfortaa', 11),
+                         anchor='e',
+                         tags="text")
+
+        # Стрелка (анимированная)
+        arrow_size = 6
+        center_x = self.width - 20
+        center_y = self.height // 2
+
+        if self.is_open:
+            # Стрелка вверх
+            points = [
+                center_x, center_y - arrow_size // 2,
+                          center_x - arrow_size, center_y + arrow_size // 2,
+                          center_x + arrow_size, center_y + arrow_size // 2
+            ]
+        else:
+            # Стрелка вниз
+            points = [
+                center_x, center_y + arrow_size // 2,
+                          center_x - arrow_size, center_y - arrow_size // 2,
+                          center_x + arrow_size, center_y - arrow_size // 2
+            ]
+
+        self.create_polygon(points, fill='#667eea', tags="arrow")
+
+        # Иконка версии
+        icon_text = "🎮" if "YamalPixel" in self.current_value.get() else "⚙️"
+        self.create_text(25, self.height // 2,
+                         text=icon_text,
+                         fill='#667eea',
+                         font=('Comfortaa', 14),
+                         tags="icon")
+
+    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        """Создает скругленный прямоугольник"""
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+
+    def toggle_dropdown(self, event):
+        """Открывает/закрывает выпадающий список"""
+        if not self.is_open:
+            # Показываем комбобокс
+            self.combobox.place(x=self.winfo_x(), y=self.winfo_y() + self.height,
+                                width=self.width, height=200)
+            self.combobox.focus()
+            self.combobox.event_generate('<Button-1>')
+        else:
+            self.hide_dropdown()
+
+        self.is_open = not self.is_open
+        self.draw_selector()
+
+    def hide_dropdown(self):
+        """Скрывает выпадающий список"""
+        self.combobox.place_forget()
+
+    def on_select(self, event):
+        """Обрабатывает выбор версии"""
+        selected = self.combobox.get()
+        self.current_value.set(selected)
+        self.is_open = False
+        self.hide_dropdown()
+        self.draw_selector()
+
+        # Вызываем оригинальную функцию выбора версии
+        select_version(event)
+
+    def animate_arrow(self):
+        """Анимация стрелки"""
+        if not self.animation_running:
+            return
+
+        self.arrow_angle += 0.1
+        if self.arrow_angle > 2 * math.pi:
+            self.arrow_angle = 0
+
+        # Легкая пульсация когда открыто
+        if self.is_open:
+            self.draw_selector()
+
+        self.after(100, self.animate_arrow)
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+    def get(self):
+        """Возвращает выбранное значение"""
+        return self.current_value.get()
+
+
+# Заменяем старый комбобокс на новый красивый
+version_selector = ModernVersionSelector(
+    win,
+    width=320,
+    height=48,
+    gradient=("#667eea", "#764ba2"),
+    corner_radius=20,
+    versions_list=versions  # Явно передаем список версий
+)
+version_selector.place(relx=0.5, rely=0.4, anchor="c")
+
+
+# Обновляем функцию select_version для работы с новым селектором
+def select_version(event):
+    selected_version = version_selector.get()
+
+    # Обновляем конфигурацию в зависимости от выбранной версии
+    version_configs = {
+        "YamalPixel": ('1.20.1', '0.16.10'),
+        "Minecraft 1.7.10": ('1.7.10', None),
+        "Minecraft 1.8.9": ('1.8.9', None),
+        "Minecraft 1.12.2": ('1.12.2', None),
+        "Minecraft 1.14.4": ('1.14.4', None),
+        "Minecraft 1.14.4 + Fabric": ('1.14.4', '0.16.10'),
+        "Minecraft 1.15.2": ('1.15.2', None),
+        "Minecraft 1.15.2 + Fabric": ('1.15.2', '0.16.10'),
+        "Minecraft 1.16.5": ('1.16.5', None),
+        "Minecraft 1.16.5 + Fabric": ('1.16.5', '0.16.10'),
+        "Minecraft 1.17.1": ('1.17.1', None),
+        "Minecraft 1.17.1 + Fabric": ('1.17.1', '0.16.10'),
+        "Minecraft 1.18.2": ('1.18.2', None),
+        "Minecraft 1.18.2 + Fabric": ('1.18.2', '0.16.10'),
+        "Minecraft 1.19.2": ('1.19.2', None),
+        "Minecraft 1.19.2 + Fabric": ('1.19.2', '0.16.10'),
+        "Minecraft 1.20.1": ('1.20.1', '0.16.10'),
+        "Minecraft 1.20.1 + Fabric": ('1.20.1', '0.16.10'),
+        "Minecraft 1.20.2": ('1.20.2', None),
+        "Minecraft 1.20.2 + Fabric": ('1.20.2', '0.16.10'),
+        "Minecraft 1.21": ('1.21', None),
+        "Minecraft 1.21 + Fabric": ('1.21', '0.16.10'),
+        "Minecraft 1.21.1": ('1.21.1', None),
+        "Minecraft 1.21.1 + Fabric": ('1.21.1', '0.16.10'),
+        "Minecraft 1.21.2": ('1.21.2', None),
+        "Minecraft 1.21.2 + Fabric": ('1.21.2', '0.16.10'),
+        "Minecraft 1.21.3": ('1.21.3', None),
+        "Minecraft 1.21.3 + Fabric": ('1.21.3', '0.16.10'),
+        "Minecraft 1.21.4": ('1.21.4', None),
+        "Minecraft 1.21.4 + Fabric": ('1.21.4', '0.16.10')
+    }
+
+    if selected_version in version_configs:
+        CONFIG['version'], CONFIG['fabric_loader'] = version_configs[selected_version]
+
+        # Красивое сообщение об изменении версии
+        show_version_change_message(selected_version)
+
+
+def show_version_change_message(version_name):
+    """Показывает красивое сообщение об изменении версии"""
+    message_window = tk.Toplevel(win)
+    message_window.title("Версия изменена")
+    message_window.geometry("300x150")
+    message_window.resizable(False, False)
+    message_window.configure(bg='#2b2b2b')
+    message_window.transient(win)
+    message_window.grab_set()
+
+    # Центрируем окно
+    message_window.update_idletasks()
+    x = (win.winfo_screenwidth() // 2) - (300 // 2)
+    y = (win.winfo_screenheight() // 2) - (150 // 2)
+    message_window.geometry(f"300x150+{x}+{y}")
+
+    # Содержимое окна
+    main_frame = ttk.Frame(message_window, padding=20)
+    main_frame.pack(fill='both', expand=True)
+
+    # Иконка
+    icon = "🎮" if "YamalPixel" in version_name else "⚙️"
+    ttk.Label(main_frame, text=icon, font=('Comfortaa', 24),
+              background='#2b2b2b').pack(pady=(0, 10))
+
+    # Текст
+    ttk.Label(main_frame, text="Версия изменена",
+              font=('Comfortaa', 14, 'bold'),
+              foreground='white', background='#2b2b2b').pack()
+
+    ttk.Label(main_frame, text=version_name,
+              font=('Comfortaa', 12),
+              foreground='#4ECDC4', background='#2b2b2b').pack(pady=(5, 15))
+
+    # Кнопка
+    ttk.Button(main_frame, text="OK",
+               command=message_window.destroy,
+               width=10).pack()
+
+    # Автоматическое закрытие через 2 секунды
+    message_window.after(2000, message_window.destroy)
 
 # Вызываем функцию обновления статуса Discord после создания окна
 win.after(300, update_discord_status)
