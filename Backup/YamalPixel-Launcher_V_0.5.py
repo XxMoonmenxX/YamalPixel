@@ -5209,6 +5209,7 @@ online_btn.place(relx=0.5, rely=0.61, anchor="c")
 # Запускаем анимацию
 online_btn.start_animation()
 
+# Список версий для селектора
 versions = [
     "YamalPixel",
     "Minecraft 1.7.10",
@@ -5249,7 +5250,7 @@ class ModernVersionSelector(tk.Canvas):
                  height=50,
                  gradient=("#667eea", "#764ba2"),
                  corner_radius=15,
-                 versions_list=None,  # Добавляем параметр для списка версий
+                 versions_list=None,
                  **kwargs):
 
         super().__init__(master, width=width, height=height,
@@ -5267,7 +5268,6 @@ class ModernVersionSelector(tk.Canvas):
         # Создаем скрытый комбобокс
         self.combobox = ttk.Combobox(master, values=self.versions, state="readonly", font=('Comfortaa', 11))
         self.combobox.current(0)
-        self.combobox_window = self.create_window(width // 2, height // 2, window=self.combobox)
         self.combobox.configure(width=22, state="readonly")
 
         # Скрываем комбобокс, показываем красивый виджет
@@ -5435,19 +5435,19 @@ class ModernVersionSelector(tk.Canvas):
         return self.current_value.get()
 
 
-# Заменяем старый комбобокс на новый красивый
+# Создаем красивый селектор версий
 version_selector = ModernVersionSelector(
     win,
     width=320,
     height=48,
     gradient=("#667eea", "#764ba2"),
     corner_radius=20,
-    versions_list=versions  # Явно передаем список версий
+    versions_list=versions
 )
 version_selector.place(relx=0.5, rely=0.4, anchor="c")
 
 
-# Обновляем функцию select_version для работы с новым селектором
+# Функция выбора версии
 def select_version(event):
     selected_version = version_selector.get()
 
