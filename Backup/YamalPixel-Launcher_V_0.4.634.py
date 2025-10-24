@@ -29,7 +29,7 @@ from pathlib import Path
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.4.633" #обновление
+CURRENT_VERSION = "0.4.634" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -83,6 +83,7 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/Mft3dmbdbHjhHA', 'file': 'sodium-fabric-0.5.13+mc1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/dncEQy1PhTcgrw', 'file': 'TechReborn-5.8.3.jar'},
         {'url': 'https://disk.yandex.ru/d/_c-mQTKC4UB1cw', 'file': 'Terralith_1.20.x_v2.5.4.jar'},
+        {'url': 'https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ', 'file': 'Xaeros_Minimap_25.2.10_Fabric_1.20.jar'},
         {'url': 'https://disk.yandex.ru/d/7ebHrjGobc89Og', 'file': 'travelersbackpack-fabric-1.20.1-9.1.41.jar'}
     ]
 }
@@ -853,6 +854,7 @@ def validate_backup_integrity(backup_path):
 
 
 def auto_repair_game_files(silent=False):
+    cleanup_before_launch()
     global LAUNCH_IN_PROGRESS
 
     # Проверяем, не запущена ли игра
@@ -1634,7 +1636,7 @@ def cleanup_before_launch():
             print(f"Удалено: {item}")
 
 
-cleanup_before_launch()
+
 
 # Функция проверки версии Java
 def check_java_version():
@@ -2957,6 +2959,7 @@ def complete_reinstall():
         {'url': 'https://disk.yandex.ru/d/Mft3dmbdbHjhHA', 'file': 'sodium-fabric-0.5.13+mc1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/dncEQy1PhTcgrw', 'file': 'TechReborn-5.8.3.jar'},
         {'url': 'https://disk.yandex.ru/d/_c-mQTKC4UB1cw', 'file': 'Terralith_1.20.x_v2.5.4.jar'},
+        {'url': 'https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ', 'file': 'Xaeros_Minimap_25.2.10_Fabric_1.20.jar'},
         {'url': 'https://disk.yandex.ru/d/7ebHrjGobc89Og', 'file': 'travelersbackpack-fabric-1.20.1-9.1.41.jar'}
             ]
 
@@ -3735,6 +3738,7 @@ def check_and_download_missing_mods():
         return False
 def runn():
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
+
 
     # УСИЛЕННАЯ проверка - предотвращаем любой повторный запуск
     if LAUNCH_IN_PROGRESS:
