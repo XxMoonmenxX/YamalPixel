@@ -62,7 +62,7 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/PNZi_54Tj4HP3Q', 'file': 'entityculling-fabric-1.9.1-mc1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/GNW5lwib5Xq9Eg', 'file': 'extra-mod-integrations-0.4.7+1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/EHHAo7HSzH2mmg', 'file': 'fabric-api-0.92.6+1.20.1.jar'},
-        {'url': 'https://disk.yandex.ru/d/IHBo3qyqAjR3fQ', 'file': 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jarr'},
+        {'url': 'https://disk.yandex.ru/d/IHBo3qyqAjR3fQ', 'file': 'fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar'},
         {'url': 'https://disk.yandex.ru/d/r8gwsUQF7Wy9BQ', 'file': 'fallingleaves-1.15.6+1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/pddZ2W8za1yiSQ', 'file': 'indium-1.0.36+mc1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/PghcNlFWKcgSeg', 'file': 'InventoryProfilesNext-fabric-1.20-1.10.19.jar'},
