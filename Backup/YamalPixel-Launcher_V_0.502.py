@@ -31,7 +31,7 @@ import math
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.5" #обновление
+CURRENT_VERSION = "0.502" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -3612,7 +3612,7 @@ settings_menu.add_separator()
 # Функция для проверки и загрузки модов
 def checker1():
     """ОБНОВЛЕННАЯ функция проверки и загрузки модов"""
-    if version_combobox.get() != "YamalPixel":
+    if version_selector.get() != "YamalPixel":  # ИСПРАВЛЕНО: version_combobox -> version_selector
         print("Выбрана версия, отличная от YamalPixel. Загрузка модов пропущена.")
         return
 
@@ -3985,7 +3985,7 @@ def runn():
                 clear_auth_cache()
                 update_log("✅ Кэш аутентификации очищен")
 
-                selected_version = version_combobox.get()
+                selected_version = version_selector.get()  # ИСПРАВЛЕНО: version_combobox -> version_selector
                 selected_memory = "4G"
 
                 update_status("Подготовка запуска...", "Формируем команду запуска")
