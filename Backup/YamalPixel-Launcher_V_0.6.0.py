@@ -30,8 +30,28 @@ import psutil
 import math
 
 
+def download_missing_mods_silent():
+    """Тихо докачивает недостающие моды БЕЗ ОКОШЕК ПРОГРЕССА"""
+    missing_mods = []
+
+    for mod in CONFIG['mods']:
+        mod_path = os.path.join(CONFIG['minecraft_dir'], 'mods', mod['file'])
+        if not os.path.exists(mod_path):
+            missing_mods.append(mod)
+
+    if missing_mods:
+        print(f"🔧 Тихо качаем {len(missing_mods)} модов...")
+        # Используем твой TurboDownloader но БЕЗ окон прогресса
+        for mod in missing_mods:
+            download_single_mod_turbo_silent(mod)
+
+
+
+
+
+
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.5.03" #обновление
+CURRENT_VERSION = "0.6.0" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -436,113 +456,329 @@ SHADERS_CONFIG = {
 
 
 def speed_test():
-    """Тест скорости загрузки с исправлениями"""
+    """НОРМАЛЬНЫЙ тест скорости с гарантированно работающими серверами"""
     try:
-        # Список альтернативных серверов для теста скорости
+        # РЕАЛЬНО РАБОТАЮЩИЕ серверы для теста
         test_servers = [
-            "https://proof.ovh.net/files/100Mb.dat",  # Основной
-            "http://ipv4.download.thinkbroadband.com/100MB.zip",  # Резервный (HTTP)
-            "https://ash-speed.hetzner.com/100MB.bin"  # Альтернативный Hetzner
+            {
+                'url': 'https://cdn.windows93.net/img/logo.png',  # Маленький файл - быстро
+                'name': 'Тестовый файл 1',
+                'size': 0.05  # ~50KB
+            },
+            {
+                'url': 'https://httpbin.org/bytes/102400',  # Генерирует 100KB данных
+                'name': 'Тестовые данные 100KB',
+                'size': 0.1
+            },
+            {
+                'url': 'https://httpbin.org/bytes/512000',  # Генерирует 500KB данных
+                'name': 'Тестовые данные 500KB',
+                'size': 0.5
+            }
         ]
 
-        # Пробуем серверы по порядку
-        for test_url in test_servers:
-            try:
-                # Быстрая проверка доступности сервера
-                response = requests.head(test_url, timeout=5)
-                if response.status_code == 200:
-                    break  # Сервер доступен, используем его
-            except:
-                continue  # Пробуем следующий сервер
-        else:
-            # Если все серверы недоступны
-            messagebox.showerror("Ошибка", "Все серверы для теста скорости недоступны")
-            return
-
-        test_file = "test_speed.bin"
         # Создаем окно прогресса
         progress_window = tk.Toplevel(win)
-        progress_window.title("Тест скорости")
-        progress_window.geometry("300x120")
+        progress_window.title("Тест скорости интернета")
+        progress_window.geometry("450x250")
+        progress_window.resizable(False, False)
+        progress_window.transient(win)
+        progress_window.grab_set()
 
-        progress_label = ttk.Label(progress_window, text="Тестирование скорости...")
-        progress_label.pack(pady=10)
+        # Центрируем окно
+        progress_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (450 // 2)
+        y = (win.winfo_screenheight() // 2) - (250 // 2)
+        progress_window.geometry(f"450x250+{x}+{y}")
 
-        progress = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="indeterminate")
+        # Заголовок
+        title_label = ttk.Label(progress_window,
+                                text="🚀 Тест скорости интернета",
+                                font=('Comfortaa', 14, 'bold'))
+        title_label.pack(pady=10)
+
+        # Статус
+        status_label = ttk.Label(progress_window,
+                                 text="Подготовка к тесту...",
+                                 font=('Comfortaa', 10))
+        status_label.pack(pady=5)
+
+        # Прогресс-бар
+        progress = ttk.Progressbar(progress_window,
+                                   orient="horizontal",
+                                   length=380,
+                                   mode="determinate")
         progress.pack(pady=10)
-        progress.start()
 
-        status_label = ttk.Label(progress_window, text="Подготовка...")
-        status_label.pack()
+        # Детали
+        details_label = ttk.Label(progress_window,
+                                  text="Инициализация...",
+                                  font=('Comfortaa', 9),
+                                  foreground='blue')
+        details_label.pack()
+
+        # Время
+        time_label = ttk.Label(progress_window,
+                               text="Время: 0 сек",
+                               font=('Comfortaa', 8))
+        time_label.pack()
+
+        # Кнопка отмены
+        cancel_flag = threading.Event()
+
+        def cancel_test():
+            cancel_flag.set()
+            progress_window.destroy()
+            messagebox.showinfo("Отменено", "Тест скорости отменен")
+
+        cancel_btn = ttk.Button(progress_window,
+                                text="❌ Отменить тест",
+                                command=cancel_test)
+        cancel_btn.pack(pady=10)
 
         def test_thread():
             try:
-                start_time = time.time()
+                best_speed_mbps = 0
+                best_speed_mb_sec = 0
+                test_results = []
 
-                # Используем requests для надежности
-                response = requests.get(test_url, stream=True, timeout=30)
+                for i, server in enumerate(test_servers):
+                    if cancel_flag.is_set():
+                        return
+
+                    win.after(0, lambda: status_label.config(
+                        text=f"Тест {i + 1}/{len(test_servers)}: {server['name']}"
+                    ))
+                    win.after(0, lambda: details_label.config(
+                        text=f"Размер: {server['size']} MB"
+                    ))
+                    win.after(0, lambda: progress.config(value=(i * 100 / len(test_servers))))
+
+                    try:
+                        # Тестируем скорость для этого сервера
+                        speed_mbps, speed_mb_sec = test_single_server(
+                            server['url'],
+                            server['size'],
+                            progress_window,
+                            cancel_flag
+                        )
+
+                        if speed_mbps > best_speed_mbps:
+                            best_speed_mbps = speed_mbps
+                            best_speed_mb_sec = speed_mb_sec
+
+                        test_results.append({
+                            'server': server['name'],
+                            'speed_mbps': speed_mbps,
+                            'speed_mb_sec': speed_mb_sec
+                        })
+
+                        # Небольшая пауза между тестами
+                        time.sleep(1)
+
+                    except Exception as e:
+                        print(f"Ошибка теста {server['name']}: {e}")
+                        continue
+
+                if cancel_flag.is_set():
+                    return
+
+                # Показываем лучший результат
+                if best_speed_mbps > 0:
+                    win.after(0, lambda: show_speed_result(
+                        best_speed_mb_sec, best_speed_mbps, test_results, progress_window
+                    ))
+                else:
+                    win.after(0, lambda: show_speed_error(
+                        "Все тесты завершились ошибкой", progress_window
+                    ))
+
+            except Exception as e:
+                if not cancel_flag.is_set():
+                    win.after(0, lambda: show_speed_error(str(e), progress_window))
+
+        def test_single_server(url, expected_size, window, cancel_flag):
+            """Тестирует скорость для одного сервера"""
+            start_time = time.time()
+            downloaded = 0
+
+            try:
+                response = requests.get(url, stream=True, timeout=15)
                 response.raise_for_status()
 
                 total_size = int(response.headers.get('content-length', 0))
-                downloaded = 0
+                chunk_size = 8192
 
-                with open(test_file, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192 * 8):  # Большой чанк для скорости
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if cancel_flag.is_set():
+                        raise Exception("Тест отменен")
 
-                            # Обновляем прогресс
-                            if total_size > 0:
-                                percent = (downloaded / total_size) * 100
-                                win.after(0, lambda: status_label.config(
-                                    text=f"Скачано: {downloaded // 1024 // 1024}MB/{total_size // 1024 // 1024}MB"
-                                ))
+                    if chunk:
+                        downloaded += len(chunk)
+
+                        # Обновляем прогресс в реальном времени
+                        elapsed = time.time() - start_time
+                        if elapsed > 0:
+                            current_speed_mbps = (downloaded / elapsed) / 125000  # Mbit/s
+
+                            win.after(0, lambda: details_label.config(
+                                text=f"Скорость: {current_speed_mbps:.1f} Mbit/s"
+                            ))
+                            win.after(0, lambda: time_label.config(
+                                text=f"Время: {elapsed:.1f} сек"
+                            ))
+
+                            # Если тест длится больше 10 секунд - прерываем
+                            if elapsed > 10:
+                                break
 
                 end_time = time.time()
+                total_time = end_time - start_time
 
-                # Расчет скорости
-                if os.path.exists(test_file):
-                    file_size_mb = os.path.getsize(test_file) / 1024 / 1024
-                    time_seconds = end_time - start_time
-                    speed_mbps = file_size_mb / time_seconds
-
-                    # Очистка
-                    os.remove(test_file)
-
-                    # Показываем результат
-                    win.after(0, lambda: show_speed_result(speed_mbps, progress_window))
+                if total_time > 0 and downloaded > 0:
+                    speed_mbps = (downloaded / total_time) / 125000  # Mbit/s
+                    speed_mb_sec = (downloaded / total_time) / (1024 * 1024)  # MB/s
+                    return speed_mbps, speed_mb_sec
                 else:
-                    win.after(0, lambda: show_speed_error("Файл не был скачан", progress_window))
+                    return 0, 0
 
+            except requests.exceptions.Timeout:
+                raise Exception("Таймаут соединения")
+            except requests.exceptions.ConnectionError:
+                raise Exception("Ошибка подключения")
             except Exception as e:
-                win.after(0, lambda: show_speed_error(str(e), progress_window))
-                # Очистка при ошибке
-                if os.path.exists(test_file):
-                    os.remove(test_file)
+                raise e
 
-        def show_speed_result(speed, window):
+        def show_speed_result(mb_per_sec, mbit_per_sec, test_results, window):
             window.destroy()
-            messagebox.showinfo(
-                "Результат теста скорости",
-                f"📊 Ваша скорость загрузки:\n\n"
-                f"🚀 {speed:.2f} MB/сек\n"
-                f"💨 {speed * 8:.2f} Mbit/сек\n\n"
-                f"Для сравнения:\n"
-                f"• 1-5 MB/сек - Медленно\n"
-                f"• 5-10 MB/сек - Нормально\n"
-                f"• 10-20 MB/сек - Быстро\n"
-                f"• 20+ MB/сек - Очень быстро"
+
+            # Оценка скорости
+            if mbit_per_sec < 2:
+                rating = "🐢 ОЧЕНЬ МЕДЛЕННО"
+                color = "red"
+                issues = "• Проблемы с интернетом\n• Могут быть лаги в игре"
+            elif mbit_per_sec < 5:
+                rating = "🚶 МЕДЛЕННО"
+                color = "orange"
+                issues = "• Минимально для игры\n• Возможны лаги"
+            elif mbit_per_sec < 15:
+                rating = "👍 НОРМАЛЬНО"
+                color = "green"
+                issues = "• Хорошо для игры\n• Стабильное соединение"
+            elif mbit_per_sec < 30:
+                rating = "🚀 БЫСТРО"
+                color = "blue"
+                issues = "• Отлично для игры\n• Быстрая загрузка"
+            else:
+                rating = "⚡ ОЧЕНЬ БЫСТРО"
+                color = "purple"
+                issues = "• Идеально для игры\n• Максимальная скорость"
+
+            # Создаем окно результатов
+            result_window = tk.Toplevel(win)
+            result_window.title("Результаты теста скорости")
+            result_window.geometry("500x400")
+            result_window.configure(bg='#2b2b2b')
+            result_window.resizable(False, False)
+
+            # Центрируем
+            result_window.update_idletasks()
+            x = (win.winfo_screenwidth() // 2) - (500 // 2)
+            y = (win.winfo_screenheight() // 2) - (400 // 2)
+            result_window.geometry(f"500x400+{x}+{y}")
+
+            # Содержимое
+            main_frame = ttk.Frame(result_window, padding=25)
+            main_frame.pack(fill='both', expand=True)
+
+            # Заголовок
+            ttk.Label(main_frame,
+                      text="🎯 РЕЗУЛЬТАТЫ ТЕСТА СКОРОСТИ",
+                      font=('Comfortaa', 16, 'bold'),
+                      foreground='white',
+                      background='#2b2b2b').pack(pady=(0, 20))
+
+            # Основные метрики
+            metrics_frame = ttk.Frame(main_frame)
+            metrics_frame.pack(fill='x', pady=10)
+
+            ttk.Label(metrics_frame,
+                      text=f"🚀 СКОРОСТЬ ЗАГРУЗКИ: {mb_per_sec:.2f} MB/сек",
+                      font=('Comfortaa', 14, 'bold'),
+                      foreground='#4ECDC4',
+                      background='#2b2b2b').pack()
+
+            ttk.Label(metrics_frame,
+                      text=f"💨 ПРОПУСКНАЯ СПОСОБНОСТЬ: {mbit_per_sec:.2f} Mbit/сек",
+                      font=('Comfortaa', 14, 'bold'),
+                      foreground='#4ECDC4',
+                      background='#2b2b2b').pack(pady=5)
+
+            # Оценка
+            ttk.Label(main_frame,
+                      text=f"🏆 ОЦЕНКА: {rating}",
+                      font=('Comfortaa', 16, 'bold'),
+                      foreground=color,
+                      background='#2b2b2b').pack(pady=15)
+
+            # Детали тестов
+            ttk.Label(main_frame,
+                      text="Результаты по серверам:",
+                      font=('Comfortaa', 10, 'bold'),
+                      foreground='#cccccc',
+                      background='#2b2b2b').pack()
+
+            for result in test_results:
+                ttk.Label(main_frame,
+                          text=f"• {result['server']}: {result['speed_mbps']:.1f} Mbit/s",
+                          font=('Comfortaa', 9),
+                          foreground='#888888',
+                          background='#2b2b2b').pack()
+
+            # Рекомендации
+            ttk.Label(main_frame,
+                      text="💡 РЕКОМЕНДАЦИИ:",
+                      font=('Comfortaa', 11, 'bold'),
+                      foreground='#ffcc00',
+                      background='#2b2b2b').pack(pady=(20, 5))
+
+            ttk.Label(main_frame,
+                      text=issues,
+                      font=('Comfortaa', 9),
+                      foreground='#cccccc',
+                      background='#2b2b2b',
+                      justify='left').pack()
+
+            ttk.Label(main_frame,
+                      text="Для комфортной игры рекомендуется 10+ Mbit/сек",
+                      font=('Comfortaa', 9),
+                      foreground='#666666',
+                      background='#2b2b2b').pack(pady=10)
+
+            ttk.Button(main_frame,
+                       text="✅ Закрыть",
+                       command=result_window.destroy,
+                       width=20).pack(pady=10)
+
+        def show_speed_error(error_msg, window):
+            window.destroy()
+            messagebox.showerror(
+                "Ошибка теста скорости",
+                f"❌ Не удалось измерить скорость!\n\n"
+                f"Причина: {error_msg}\n\n"
+                f"🔧 Проверьте:\n"
+                f"• Подключение к интернету\n"
+                f"• Антивирус/брандмауэр\n"
+                f"• VPN соединение\n"
+                f"• Прокси-настройки\n\n"
+                f"📞 Если проблема повторяется - обратитесь к провайдеру"
             )
 
-        def show_speed_error(error, window):
-            window.destroy()
-            messagebox.showerror("Ошибка теста", f"Не удалось измерить скорость:\n{error}")
-
+        # Запускаем тест в отдельном потоке
         threading.Thread(target=test_thread, daemon=True).start()
 
     except Exception as e:
-        messagebox.showerror("Ошибка", f"Ошибка запуска теста: {str(e)}")
+        messagebox.showerror("Ошибка", f"Не удалось запустить тест скорости: {str(e)}")
 
 
 
@@ -569,16 +805,16 @@ def download_shaders():
     # Создаем окно выбора шейдеров
     shaders_window = tk.Toplevel(win)
     shaders_window.title("📥 Менеджер шейдеров")
-    shaders_window.geometry("700x550")
+    shaders_window.geometry("1200x550")
     shaders_window.resizable(True, True)
     shaders_window.transient(win)
     shaders_window.grab_set()
 
     # Центрируем окно
     shaders_window.update_idletasks()
-    x = (win.winfo_screenwidth() // 2) - (700 // 2)
+    x = (win.winfo_screenwidth() // 2) - (1200 // 2)
     y = (win.winfo_screenheight() // 2) - (550 // 2)
-    shaders_window.geometry(f"700x550+{x}+{y}")
+    shaders_window.geometry(f"1200x550+{x}+{y}")
 
     # Заголовок
     header_frame = ttk.Frame(shaders_window, padding=10)
@@ -719,7 +955,7 @@ def download_shaders():
     ttk.Button(button_frame, text="❌ Снять все",
                command=deselect_all, width=15).pack(side='left', padx=5)
     ttk.Button(button_frame, text="📥 Скачать выбранные",
-               command=download_selected, style="Accent.TButton").pack(side='left', padx=5)
+               command=download_selected).pack(side='left', padx=5)
     ttk.Button(button_frame, text="📁 Открыть папку",
                command=open_shaders_folder, width=15).pack(side='left', padx=5)
     ttk.Button(button_frame, text="❌ Закрыть",
@@ -855,18 +1091,35 @@ def validate_backup_integrity(backup_path):
         return False
 
 
-def auto_repair_game_files(silent=False):
-    cleanup_before_launch()
-    global LAUNCH_IN_PROGRESS
+def auto_repair_game_files(silent=True):  # 👈 ДОБАВЛЯЕМ SILENT ПАРАМЕТР
+    """Автопочинка файлов игры - теперь может работать ТИХО"""
 
-    # Проверяем, не запущена ли игра
-    if LAUNCH_IN_PROGRESS:
+    if not silent:
+        # Старая логика с окошками прогресса
+        return old_repair_with_ui()
+
+    # 🔴 НОВАЯ SILENT-ВЕРСИЯ - БЕЗ ОКОШЕК
+    try:
+        minecraft_dir = CONFIG['minecraft_dir']
+
+        # МОЛЧА создаём папки если их нет
+        for folder in ['mods', 'versions', 'config', 'shaderpacks']:
+            path = os.path.join(minecraft_dir, folder)
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+
+        # МОЛЧА качаем недостающие моды
+        download_missing_mods_silent()
+
+        # МОЛЧА проверяем Fabric
+        if not check_fabric_installed():
+            install_fabric_silent()
+
+        return True
+
+    except Exception as e:
         if not silent:
-            messagebox.showwarning(
-                "Запуск в процессе",
-                "❌ Нельзя чинить файлы во время запуска игры!\n\n"
-                "Дождитесь завершения запуска игры, затем повторите попытку."
-            )
+            messagebox.showerror("Ошибка", f"Не удалось починить: {e}")
         return False
 
     # Создаем окно прогресса
@@ -3843,9 +4096,11 @@ def check_and_download_missing_mods():
     else:
         print("✅ Все моды на месте")
         return False
+
 def runn():
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
-
+    if not auto_pre_launch_check():
+        return  # Не запускаем если проблемы
 
     # УСИЛЕННАЯ проверка - предотвращаем любой повторный запуск
     if LAUNCH_IN_PROGRESS:
@@ -4270,7 +4525,7 @@ class ModernButton(tk.Canvas):
                  **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bg='pink', **kwargs)
+                         highlightthickness=0,**kwargs)
 
         self.text = text
         self.width = width
@@ -4463,6 +4718,32 @@ launch_btn.place(relx=0.5, rely=0.5, anchor="c")
 launch_btn.start_animation()
 
 
+def auto_pre_launch_check():
+    """АВТОМАТИЧЕСКАЯ проверка перед запуском - БЕЗ ДИАЛОГОВ"""
+    issues = []
+
+    # Проверяем КРИТИЧЕСКИЕ вещи
+    if not os.path.exists(os.path.join(CONFIG['minecraft_dir'], 'mods')):
+        issues.append("Папка модов отсутствует")
+
+    if not os.path.exists(os.path.join(CONFIG['minecraft_dir'], 'versions')):
+        issues.append("Папка версий отсутствует")
+
+    # Проверяем моды (считаем сколько должно быть)
+    expected_mods_count = len(CONFIG['mods'])
+    actual_mods = len([f for f in os.listdir(os.path.join(CONFIG['minecraft_dir'], 'mods'))
+                       if f.endswith('.jar')])
+
+    if actual_mods < expected_mods_count * 0.8:  # Меньше 80% модов
+        issues.append(f"Не хватает модов ({actual_mods}/{expected_mods_count})")
+
+    # 🔴 ЕСТЬ ПРОБЛЕМЫ - АВТО-ЧИНИМ БЕЗ СПРОСА
+    if issues:
+        print(f"🔧 Авто-чиним проблемы: {issues}")
+        auto_repair_game_files(silent=True)  # SILENT MODE - БЕЗ ОКОШЕК
+        return True  # Всё починили, можно запускать
+
+    return True  # Проблем нет
 def disable_problematic_mods():
     """Временно отключает потенциально проблемные моды"""
     minecraft_dir = CONFIG['minecraft_dir']
@@ -4507,7 +4788,7 @@ class ModernQuickLaunchButton(tk.Canvas):
                  **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bg='pink', **kwargs)
+                         highlightthickness=0,  **kwargs)
 
         self.text = text
         self.width = width
@@ -4763,14 +5044,16 @@ win.after(1000, update_status)
 class ModernEntry(tk.Canvas):
     def __init__(self, master=None,
                  placeholder="Введите никнейм",
-                 width=250,
-                 height=45,
+                 width=280,
+                 height=48,
                  gradient=("#667eea", "#764ba2"),
                  corner_radius=15,
                  **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bg='pink', **kwargs)
+                         highlightthickness=0, **kwargs)
+
+        self.configure(bg='#2b2b2b')
 
         self.placeholder = placeholder
         self.width = width
@@ -4780,38 +5063,37 @@ class ModernEntry(tk.Canvas):
         self.is_focused = False
         self.text_value = tk.StringVar()
 
-        # Создаем скрытое текстовое поле
-        self.entry = tk.Entry(master,
+        # ВАЖНО: сначала рисуем градиент, потом создаем Entry поверх
+        self.draw_background()
+
+        # Создаем Entry ПОВЕРХ градиента
+        self.entry = tk.Entry(self,
                               textvariable=self.text_value,
                               font=('Comfortaa', 12),
                               border=0,
                               relief='flat',
                               bg='white',
-                              fg='#2c3e50',
-                              justify='center')
+                              fg='#2b2b2b',
+                              justify='center',
+                              insertbackground='#2b2b2b',
+                              highlightthickness=0)
 
-        self.entry_window = self.create_window(width // 2, height // 2, window=self.entry)
-        self.entry.configure(width=20)
+        # Размещаем Entry поверх всего
+        self.entry.place(x=10, y=10, width=width - 20, height=height - 20)
 
         # Бинды
         self.entry.bind('<FocusIn>', self.on_focus_in)
         self.entry.bind('<FocusOut>', self.on_focus_out)
+        self.entry.bind('<KeyRelease>', self.on_key_release)
 
-        # Начальная отрисовка
-        self.draw_entry()
         self.update_placeholder()
 
-    def draw_entry(self):
-        """Отрисовывает поле ввода"""
-        self.delete("entry_bg")
+    def draw_background(self):
+        """Отрисовывает градиентный фон"""
+        self.delete("all")
 
-        # Основной фон
-        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
-                               self.corner_radius,
-                               fill='white', outline="", tags="entry_bg")
-
-        # Градиентная обводка
-        steps = 6
+        # Градиентный фон
+        steps = 12
         for i in range(steps):
             ratio = i / steps
             r = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[0] +
@@ -4822,53 +5104,43 @@ class ModernEntry(tk.Canvas):
                     ratio * self.hex_to_rgb(self.gradient[1])[2])
 
             color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
 
-            # Рисуем градиентную обводку
-            offset = i * 0.8
-            self.create_round_rect(offset, offset,
-                                   self.width - offset, self.height - offset,
-                                   self.corner_radius,
-                                   outline=color, width=1, tags="entry_bg")
+            self.create_rectangle(x1, 0, x2, self.height,
+                                  fill=color, outline="", tags="gradient")
 
-    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
-        """Создает скругленный прямоугольник"""
-        points = [
-            x1 + radius, y1,
-            x2 - radius, y1,
-            x2, y1,
-            x2, y1 + radius,
-            x2, y2 - radius,
-            x2, y2,
-            x2 - radius, y2,
-            x1 + radius, y2,
-            x1, y2,
-            x1, y2 - radius,
-            x1, y1 + radius,
-            x1, y1
-        ]
-        return self.create_polygon(points, smooth=True, **kwargs)
+        # Обводка
+        border_color = '#ffffff' if self.is_focused else self.gradient[1]
+        border_width = 3 if self.is_focused else 2
+        self.create_rectangle(2, 2, self.width - 2, self.height - 2,
+                              outline=border_color, width=border_width, tags="border")
 
     def on_focus_in(self, event):
         """При фокусе"""
         self.is_focused = True
-        self.draw_entry()
+        self.draw_background()
         if self.text_value.get() == self.placeholder:
-            self.entry.configure(fg='#2c3e50')
+            self.entry.configure(fg='#2b2b2b')
             self.text_value.set('')
 
     def on_focus_out(self, event):
         """При потере фокуса"""
         self.is_focused = False
-        self.draw_entry()
+        self.draw_background()
         self.update_placeholder()
+
+    def on_key_release(self, event):
+        """При вводе текста"""
+        pass  # Не нужно перерисовывать
 
     def update_placeholder(self):
         """Обновляет плейсхолдер"""
         if not self.text_value.get() and not self.is_focused:
-            self.entry.configure(fg='#95a5a6')
+            self.entry.configure(fg='#666666')
             self.text_value.set(self.placeholder)
         else:
-            self.entry.configure(fg='#2c3e50')
+            self.entry.configure(fg='#2b2b2b')
 
     def get(self):
         """Возвращает текст (без плейсхолдера)"""
@@ -4885,19 +5157,16 @@ class ModernEntry(tk.Canvas):
         return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
 
-
-
-# Добавь новую:
+# Создание поля ввода
 username = ModernEntry(
     win,
     placeholder="Введите никнейм",
-    width=280,
-    height=48,
+    width=300,
+    height=50,
     gradient=("#667eea", "#764ba2"),
-    corner_radius=20
+    corner_radius=15
 )
-username.place(relx=0.5, rely=0.4425, anchor="c")
-
+username.place(relx=0.5, rely=0.44, anchor="c")
 
 
 class ModernOnlineButton(tk.Canvas):
@@ -4905,7 +5174,7 @@ class ModernOnlineButton(tk.Canvas):
                  text="🌐 ПОКАЗАТЬ ОНЛАЙН",
                  width=220,
                  height=45,
-                 gradient=("#4A90E2", "#357ABD"),  # Синий градиент
+                 gradient=("#4A90E2", "#357ABD"),
                  glow_color="#4A90E2",
                  animation="glow",
                  command=None,
@@ -4914,7 +5183,9 @@ class ModernOnlineButton(tk.Canvas):
                  **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bg='pink', **kwargs)
+                         highlightthickness=0, **kwargs)
+
+        self.configure(bg='#2b2b2b')
 
         self.text = text
         self.width = width
@@ -4947,7 +5218,7 @@ class ModernOnlineButton(tk.Canvas):
             self.animate_glow()
 
     def draw_button(self):
-        """Отрисовывает кнопку"""
+        """Отрисовывает кнопку с градиентом"""
         self.delete("all")
 
         # Выбираем градиент в зависимости от состояния
@@ -4965,13 +5236,8 @@ class ModernOnlineButton(tk.Canvas):
             )
             grad_colors = brightened_colors
 
-        # Создаем скругленный прямоугольник
-        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
-                               self.corner_radius,
-                               fill=grad_colors[0], outline="", tags="bg")
-
-        # Добавляем градиент
-        steps = 8
+        # Создаем градиентный фон
+        steps = 12
         for i in range(steps):
             ratio = i / steps
             r = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[0] +
@@ -4984,17 +5250,16 @@ class ModernOnlineButton(tk.Canvas):
             color = self.rgb_to_hex((r, g, b))
             x1 = i * (self.width / steps)
             x2 = (i + 1) * (self.width / steps)
-            self.create_round_rect(x1, 2, x2, self.height - 2,
-                                   self.corner_radius,
-                                   fill=color, outline="", tags="gradient")
+
+            self.create_rectangle(x1, 2, x2, self.height - 2,
+                                  fill=color, outline="", tags="gradient")
 
         # Добавляем свечение
         if self.animation_type == "glow" and self.animation_running:
-            glow_width = 1 + int(abs(math.sin(self.pulse_phase)) * 2)
-            self.create_round_rect(0, 0, self.width, self.height,
-                                   self.corner_radius,
-                                   outline=self.glow_color,
-                                   width=glow_width, tags="glow")
+            glow_width = 1 + int(abs(math.sin(self.pulse_phase)) * 3)
+            self.create_rectangle(1, 1, self.width - 1, self.height - 1,
+                                  outline=self.glow_color,
+                                  width=glow_width, tags="glow")
 
         # Добавляем текст
         text_color = "white"
@@ -5004,26 +5269,8 @@ class ModernOnlineButton(tk.Canvas):
                          font=('Comfortaa', self.font_size, 'bold'),
                          tags="text")
 
-    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
-        """Создает скругленный прямоугольник"""
-        points = [
-            x1 + radius, y1,
-            x2 - radius, y1,
-            x2, y1,
-            x2, y1 + radius,
-            x2, y2 - radius,
-            x2, y2,
-            x2 - radius, y2,
-            x1 + radius, y2,
-            x1, y2,
-            x1, y2 - radius,
-            x1, y1 + radius,
-            x1, y1
-        ]
-        return self.create_polygon(points, smooth=True, **kwargs)
-
     def animate_glow(self):
-        """Анимация свечения"""
+        """Анимация свечения - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         if not self.animation_running:
             return
 
@@ -5032,6 +5279,7 @@ class ModernOnlineButton(tk.Canvas):
             self.pulse_phase = 0
 
         self.draw_button()
+        # ИСПРАВЛЕНИЕ: передаем ссылку на функцию, а не вызываем её
         self.after(80, self.animate_glow)
 
     def on_press(self, event):
@@ -5254,7 +5502,9 @@ class ModernVersionSelector(tk.Canvas):
                  **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bg='pink', **kwargs)
+                         highlightthickness=0, **kwargs)
+
+        self.configure(bg='#2b2b2b')
 
         self.width = width
         self.height = height
@@ -5262,15 +5512,12 @@ class ModernVersionSelector(tk.Canvas):
         self.corner_radius = corner_radius
         self.is_open = False
 
-        # Используем переданный список или глобальный
         self.versions = versions_list if versions_list else versions
 
         # Создаем скрытый комбобокс
         self.combobox = ttk.Combobox(master, values=self.versions, state="readonly", font=('Comfortaa', 11))
         self.combobox.current(0)
         self.combobox.configure(width=22, state="readonly")
-
-        # Скрываем комбобокс, показываем красивый виджет
         self.combobox.place_forget()
 
         # Текущее значение
@@ -5280,25 +5527,15 @@ class ModernVersionSelector(tk.Canvas):
         self.bind("<Button-1>", self.toggle_dropdown)
         self.combobox.bind("<<ComboboxSelected>>", self.on_select)
 
-        # Анимация
-        self.arrow_angle = 0
-        self.animation_running = True
-
         # Начальная отрисовка
         self.draw_selector()
-        self.animate_arrow()
 
     def draw_selector(self):
         """Отрисовывает селектор версий"""
         self.delete("all")
 
-        # Основной фон
-        self.create_round_rect(2, 2, self.width - 2, self.height - 2,
-                               self.corner_radius,
-                               fill='white', outline="", tags="bg")
-
-        # Градиентная обводка
-        steps = 6
+        # Градиентный фон
+        steps = 12
         for i in range(steps):
             ratio = i / steps
             r = int((1 - ratio) * self.hex_to_rgb(self.gradient[0])[0] +
@@ -5309,13 +5546,11 @@ class ModernVersionSelector(tk.Canvas):
                     ratio * self.hex_to_rgb(self.gradient[1])[2])
 
             color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
 
-            # Рисуем градиентную обводку
-            offset = i * 0.8
-            self.create_round_rect(offset, offset,
-                                   self.width - offset, self.height - offset,
-                                   self.corner_radius,
-                                   outline=color, width=1, tags="border")
+            self.create_rectangle(x1, 2, x2, self.height - 2,
+                                  fill=color, outline="", tags="gradient")
 
         # Текст выбранной версии
         display_text = self.current_value.get()
@@ -5324,12 +5559,12 @@ class ModernVersionSelector(tk.Canvas):
 
         self.create_text(self.width // 2 - 10, self.height // 2,
                          text=display_text,
-                         fill='#2c3e50',
+                         fill='white',
                          font=('Comfortaa', 11),
                          anchor='e',
                          tags="text")
 
-        # Стрелка (анимированная)
+        # Стрелка
         arrow_size = 6
         center_x = self.width - 20
         center_y = self.height // 2
@@ -5349,38 +5584,19 @@ class ModernVersionSelector(tk.Canvas):
                           center_x + arrow_size, center_y - arrow_size // 2
             ]
 
-        self.create_polygon(points, fill='#667eea', tags="arrow")
+        self.create_polygon(points, fill='white', tags="arrow")
 
         # Иконка версии
         icon_text = "🎮" if "YamalPixel" in self.current_value.get() else "⚙️"
         self.create_text(25, self.height // 2,
                          text=icon_text,
-                         fill='#667eea',
+                         fill='white',
                          font=('Comfortaa', 14),
                          tags="icon")
-
-    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
-        """Создает скругленный прямоугольник"""
-        points = [
-            x1 + radius, y1,
-            x2 - radius, y1,
-            x2, y1,
-            x2, y1 + radius,
-            x2, y2 - radius,
-            x2, y2,
-            x2 - radius, y2,
-            x1 + radius, y2,
-            x1, y2,
-            x1, y2 - radius,
-            x1, y1 + radius,
-            x1, y1
-        ]
-        return self.create_polygon(points, smooth=True, **kwargs)
 
     def toggle_dropdown(self, event):
         """Открывает/закрывает выпадающий список"""
         if not self.is_open:
-            # Показываем комбобокс
             self.combobox.place(x=self.winfo_x(), y=self.winfo_y() + self.height,
                                 width=self.width, height=200)
             self.combobox.focus()
@@ -5402,24 +5618,7 @@ class ModernVersionSelector(tk.Canvas):
         self.is_open = False
         self.hide_dropdown()
         self.draw_selector()
-
-        # Вызываем оригинальную функцию выбора версии
         select_version(event)
-
-    def animate_arrow(self):
-        """Анимация стрелки"""
-        if not self.animation_running:
-            return
-
-        self.arrow_angle += 0.1
-        if self.arrow_angle > 2 * math.pi:
-            self.arrow_angle = 0
-
-        # Легкая пульсация когда открыто
-        if self.is_open:
-            self.draw_selector()
-
-        self.after(100, self.animate_arrow)
 
     def hex_to_rgb(self, hex_color):
         """Конвертирует HEX в RGB"""
@@ -5536,6 +5735,1421 @@ def show_version_change_message(version_name):
 
 # Вызываем функцию обновления статуса Discord после создания окна
 win.after(300, update_discord_status)
+
+import datetime
+import json
+
+# Добавляем в конфигурацию
+COLLECTIONS_CONFIG = {
+    'collections_dir': os.path.expanduser("~/YamalPixel/collections"),
+    'current_collection': None
+}
+
+
+# Создаем папку collections при запуске
+def init_collections_dir():
+    """Инициализирует папку для сборок"""
+    collections_dir = COLLECTIONS_CONFIG['collections_dir']
+    if not os.path.exists(collections_dir):
+        os.makedirs(collections_dir, exist_ok=True)
+        print(f"✅ Создана папка для сборок: {collections_dir}")
+
+
+# Вызываем при старте лаунчера
+init_collections_dir()
+def debug_collections_info():
+    collections_dir = COLLECTIONS_CONFIG['collections_dir']
+    print(f"📁 Папка сборок: {collections_dir}")
+    print(f"📁 Существует: {os.path.exists(collections_dir)}")
+    if os.path.exists(collections_dir):
+        files = os.listdir(collections_dir)
+        print(f"📁 Файлы в папке: {files}")
+
+# Вызовите эту функцию после создания менеджера
+debug_collections_info()
+
+
+# Простой API для Modrinth
+class ModrinthAPI:
+    def __init__(self):
+        self.base_url = "https://api.modrinth.com/v2"
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'YamalPixelLauncher/1.0',
+            'Accept': 'application/json'
+        })
+
+    def download_mod(self, project_slug, version_id, filename, mods_dir, max_retries=2):
+        """Правильное скачивание мода через Modrinth API"""
+        for attempt in range(max_retries):
+            try:
+                # ПРАВИЛЬНЫЙ URL для скачивания
+                url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{filename}"
+                print(f"🌐 Попытка {attempt + 1}: Скачивание {filename}")
+                print(f"🔗 URL: {url}")
+
+                response = self.session.get(url, timeout=30, stream=True)
+                response.raise_for_status()
+
+                filepath = os.path.join(mods_dir, filename)
+
+                # Скачиваем с прогрессом
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded_size = 0
+
+                with open(filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            if total_size > 0:
+                                progress = (downloaded_size / total_size) * 100
+                                print(f"📥 Прогресс: {progress:.1f}%", end='\r')
+
+                print(f"\n✅ Успешно скачан: {filename} ({downloaded_size / 1024 / 1024:.1f} MB)")
+                return True
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    print(f"❌ 404 ошибка (попытка {attempt + 1}): {filename}")
+                    # Пробуем альтернативный URL
+                    if attempt == 0:
+                        print("🔄 Пробуем альтернативный URL...")
+                        alternative_url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{filename}"
+                        try:
+                            response = self.session.get(alternative_url, timeout=30, stream=True)
+                            response.raise_for_status()
+
+                            filepath = os.path.join(mods_dir, filename)
+                            with open(filepath, 'wb') as f:
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    if chunk:
+                                        f.write(chunk)
+
+                            print(f"✅ Успешно скачан (альтернативный URL): {filename}")
+                            return True
+                        except:
+                            continue
+                else:
+                    print(f"❌ HTTP ошибка {e.response.status_code}: {filename}")
+            except Exception as e:
+                print(f"❌ Ошибка скачивания {filename}: {e}")
+
+            if attempt < max_retries - 1:
+                wait_time = 2
+                print(f"⏳ Ждем {wait_time} секунд перед повторной попыткой...")
+                time.sleep(wait_time)
+
+        print(f"💥 Не удалось скачать после {max_retries} попыток: {filename}")
+        return False
+
+    def download_mod_direct(self, version_id, filename, mods_dir):
+        """Альтернативный метод скачивания через прямую ссылку"""
+        try:
+            # Сначала получаем информацию о версии
+            version_url = f"{self.base_url}/version/{version_id}"
+            response = self.session.get(version_url, timeout=10)
+            response.raise_for_status()
+            version_data = response.json()
+
+            # Ищем прямую ссылку для скачивания
+            if 'files' in version_data and version_data['files']:
+                for file_info in version_data['files']:
+                    if 'url' in file_info and file_info['url']:
+                        download_url = file_info['url']
+                        print(f"🔗 Прямая ссылка: {download_url}")
+
+                        file_response = self.session.get(download_url, timeout=30, stream=True)
+                        file_response.raise_for_status()
+
+                        filepath = os.path.join(mods_dir, filename)
+                        with open(filepath, 'wb') as f:
+                            for chunk in file_response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+
+                        print(f"✅ Скачан через прямую ссылку: {filename}")
+                        return True
+
+            print(f"❌ Не найдена прямая ссылка для: {filename}")
+            return False
+
+        except Exception as e:
+            print(f"❌ Ошибка прямого скачивания {filename}: {e}")
+            return False
+
+    def search_mods(self, query, limit=50):
+        """Поиск модов на Modrinth"""
+        try:
+            url = f"{self.base_url}/search?query={query}&limit={limit}"
+            print(f"🌐 Запрос: {url}")
+            response = self.session.get(url, timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"❌ Ошибка поиска модов '{query}': {e}")
+            return None
+
+    def get_mod_versions(self, mod_id, version=None, loader=None):
+        """Получение версий мода с улучшенной обработкой"""
+        try:
+            url = f"{self.base_url}/project/{mod_id}/version"
+            params = {}
+            if version:
+                params['game_versions'] = f'["{version}"]'
+            if loader:
+                params['loaders'] = f'["{loader}"]'
+
+            print(f"🌐 Получение версий для {mod_id}")
+            response = self.session.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            versions = response.json()
+
+            if not versions:
+                print(f"⚠️ Нет версий для {mod_id}")
+                return None
+
+            print(f"📦 Найдено {len(versions)} версий")
+
+            # Выводим информацию о первой версии для отладки
+            first_version = versions[0]
+            print(f"🔍 Первая версия: ID={first_version['id']}")
+            if 'files' in first_version and first_version['files']:
+                file_info = first_version['files'][0]
+                print(f"📄 Файл: {file_info['filename']}")
+                if 'url' in file_info:
+                    print(f"🔗 URL: {file_info['url']}")
+
+            return versions
+
+        except Exception as e:
+            print(f"❌ Ошибка получения версий {mod_id}: {e}")
+            return None
+
+
+
+
+
+
+# Функция создания новой сборки с выбором модов
+def create_new_collection():
+    global current_sort_col, current_sort_reverse
+    current_sort_col = 'downloads'
+    current_sort_reverse = False
+    collection_window = tk.Toplevel(win)
+    collection_window.title("Создать сборку")
+    collection_window.geometry("900x1080")
+    collection_window.transient(win)
+    collection_window.grab_set()
+
+    main_frame = ttk.Frame(collection_window, padding=20)
+    main_frame.pack(fill='both', expand=True)
+
+    ttk.Label(main_frame, text="📦 Новая сборка модов", font=('Comfortaa', 16, 'bold')).pack(pady=(0, 20))
+
+    # Основные настройки
+    settings_frame = ttk.Frame(main_frame)
+    settings_frame.pack(fill='x', pady=(0, 20))
+
+    ttk.Label(settings_frame, text="Название:").pack(anchor='w')
+    name_var = tk.StringVar()
+    ttk.Entry(settings_frame, textvariable=name_var, width=50).pack(fill='x', pady=(0, 10))
+
+    # Версия и загрузчик
+    meta_frame = ttk.Frame(settings_frame)
+    meta_frame.pack(fill='x')
+
+    ttk.Label(meta_frame, text="Версия:").pack(side='left')
+    version_var = tk.StringVar(value="1.20.1")
+    version_combo = ttk.Combobox(meta_frame, textvariable=version_var,
+                                 values=["1.20.1", "1.19.2", "1.18.2", "1.17.1", "1.16.5"],
+                                 state="readonly", width=12)
+    version_combo.pack(side='left', padx=(5, 20))
+
+    ttk.Label(meta_frame, text="Загрузчик:").pack(side='left')
+    loader_var = tk.StringVar(value="Fabric")
+    loader_combo = ttk.Combobox(meta_frame, textvariable=loader_var,
+                                values=["Fabric", "Forge", "Quilt"],
+                                state="readonly", width=12)
+    loader_combo.pack(side='left', padx=5)
+
+    # Вкладки выбора модов
+    notebook = ttk.Notebook(main_frame)
+    notebook.pack(fill='both', expand=True, pady=(0, 20))
+
+    # Вкладка 1: Локальные моды
+    local_frame = ttk.Frame(notebook, padding=10)
+    notebook.add(local_frame, text="📁 Мои моды")
+
+    # Поиск в локальных модах
+    local_search_frame = ttk.Frame(local_frame)
+    local_search_frame.pack(fill='x', pady=(0, 10))
+
+    ttk.Label(local_search_frame, text="Поиск:").pack(side='left')
+    local_search_var = tk.StringVar()
+    local_search_entry = ttk.Entry(local_search_frame, textvariable=local_search_var, width=30)
+    local_search_entry.pack(side='left', padx=(5, 10))
+
+    def search_local_mods():
+        query = local_search_var.get().lower()
+        load_local_mods(query)
+
+    ttk.Button(local_search_frame, text="🔍 Поиск", command=search_local_mods).pack(side='left', padx=(0, 10))
+    ttk.Button(local_search_frame, text="🔄 Обновить", command=lambda: load_local_mods()).pack(side='left')
+
+    # Список локальных модов
+    local_tree_frame = ttk.Frame(local_frame)
+    local_tree_frame.pack(fill='both', expand=True)
+
+    local_mods_tree = ttk.Treeview(local_tree_frame, columns=('name', 'file', 'size'), show='headings', height=10)
+    local_mods_tree.heading('name', text='Название')
+    local_mods_tree.heading('file', text='Файл')
+    local_mods_tree.heading('size', text='Размер')
+
+    local_mods_tree.column('name', width=250)
+    local_mods_tree.column('file', width=200)
+    local_mods_tree.column('size', width=80)
+
+    # Загрузка локальных модов
+    def load_local_mods(search_query=None):
+        local_mods_tree.delete(*local_mods_tree.get_children())
+        mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
+
+        if not os.path.exists(mods_dir):
+            return
+
+        for file in os.listdir(mods_dir):
+            if file.endswith('.jar'):
+                if search_query and search_query not in file.lower():
+                    continue
+
+                file_path = os.path.join(mods_dir, file)
+                try:
+                    size = os.path.getsize(file_path) / 1024 / 1024
+                    name = ' '.join([word.capitalize() for word in
+                                     file.replace('.jar', '').replace('_', ' ').replace('-', ' ').split()])
+
+                    local_mods_tree.insert('', 'end',
+                                           values=(name, file, f"{size:.1f} MB"),
+                                           tags=(file,))
+                except:
+                    pass
+
+    local_scrollbar = ttk.Scrollbar(local_tree_frame, orient='vertical', command=local_mods_tree.yview)
+    local_mods_tree.configure(yscrollcommand=local_scrollbar.set)
+
+    local_mods_tree.pack(side='left', fill='both', expand=True)
+    local_scrollbar.pack(side='right', fill='y')
+
+    load_local_mods()
+
+    # Вкладка 2: Поиск на Modrinth
+    modrinth_frame = ttk.Frame(notebook, padding=10)
+    notebook.add(modrinth_frame, text="🌐 Modrinth")
+
+    # Поиск
+    search_frame = ttk.Frame(modrinth_frame)
+    search_frame.pack(fill='x', pady=(0, 10))
+
+    ttk.Label(search_frame, text="Поиск модов:").pack(side='left')
+    search_var = tk.StringVar()
+    search_entry = ttk.Entry(search_frame, textvariable=search_var, width=30)
+    search_entry.pack(side='left', padx=(5, 10))
+
+    def search_modrinth():
+        query = search_var.get().strip()
+        if not query:
+            messagebox.showwarning("Поиск", "Введите название мода")
+            return
+
+        # Показываем прогресс
+        progress_window = tk.Toplevel(collection_window)
+        progress_window.title("Поиск")
+        progress_window.geometry("300x100")
+        progress_window.transient(collection_window)
+        progress_window.grab_set()
+
+        ttk.Label(progress_window, text="Ищем моды на Modrinth...").pack(pady=10)
+        progress = ttk.Progressbar(progress_window, orient="horizontal", mode="indeterminate")
+        progress.pack(pady=10)
+        progress.start()
+
+        def do_search():
+            api = ModrinthAPI()
+            results = api.search_mods(query)
+
+            collection_window.after(0, progress_window.destroy)
+
+            if results and 'hits' in results:
+                collection_window.after(0, lambda: display_modrinth_results(results['hits']))
+            else:
+                collection_window.after(0, lambda: messagebox.showinfo("Результат", "Моды не найдены"))
+
+        threading.Thread(target=do_search, daemon=True).start()
+
+    def display_modrinth_results(mods):
+        modrinth_tree.delete(*modrinth_tree.get_children())
+
+        # Сортируем моды по количеству загрузок (по убыванию)
+        sorted_mods = sorted(mods, key=lambda x: x.get('downloads', 0), reverse=True)
+
+        for mod in sorted_mods:
+            # Форматируем число загрузок с разделителями тысяч
+            downloads = f"{mod.get('downloads', 0):,}"
+
+            modrinth_tree.insert('', 'end',
+                                 values=(mod['title'], mod['author'], downloads, mod['description']),
+                                 tags=(mod['project_id'],))
+
+    # Добавляем возможность сортировки по клику на заголовок
+    def on_treeview_sort(col):
+        """Функция для сортировки Treeview по столбцу"""
+        global current_sort_col, current_sort_reverse
+
+        # Получаем все элементы
+        items = [(modrinth_tree.set(item, col), item) for item in modrinth_tree.get_children('')]
+
+        # Определяем тип данных для сортировки
+        if col == 'downloads':
+            # Для загрузок преобразуем в числа (убираем разделители)
+            items = [(int(item[0].replace(',', '')), item[1]) for item in items]
+        else:
+            # Для текстовых колонок оставляем как есть
+            items = [(item[0].lower(), item[1]) for item in items]
+
+        # Сортируем
+        items.sort(reverse=current_sort_reverse)
+
+        # Переставляем элементы в Treeview
+        for index, (_, item) in enumerate(items):
+            modrinth_tree.move(item, '', index)
+
+        # Меняем направление сортировки для следующего клика
+        current_sort_reverse = not current_sort_reverse
+
+        # Обновляем заголовки для показа направления сортировки
+        update_sort_indicators(col)
+
+    def update_sort_indicators(sorted_col):
+        """Обновляет заголовки для показа направления сортировки"""
+        for col in modrinth_tree['columns']:
+            current_text = modrinth_tree.heading(col)['text']
+            # Убираем предыдущие индикаторы сортировки
+            clean_text = current_text.replace(' ▲', '').replace(' ▼', '')
+
+            if col == sorted_col:
+                # Добавляем индикатор направления сортировки
+                indicator = ' ▼' if current_sort_reverse else ' ▲'
+                modrinth_tree.heading(col, text=clean_text + indicator)
+            else:
+                modrinth_tree.heading(col, text=clean_text)
+
+    # Переменные для отслеживания сортировки
+    current_sort_col = 'downloads'  # По умолчанию сортируем по загрузкам
+    current_sort_reverse = False  # По убыванию (самые популярные сначала)
+
+    ttk.Button(search_frame, text="🔍 Поиск", command=search_modrinth).pack(side='left', padx=(0, 10))
+
+    # Список модов Modrinth
+    modrinth_tree_frame = ttk.Frame(modrinth_frame)
+    modrinth_tree_frame.pack(fill='both', expand=True)
+
+    modrinth_tree = ttk.Treeview(modrinth_tree_frame,
+                                 columns=('name', 'author', 'downloads', 'description'),
+                                 show='headings', height=10)
+    modrinth_tree.heading('name', text='Название')
+    modrinth_tree.heading('author', text='Автор')
+    modrinth_tree.heading('downloads', text='Загрузки')
+    modrinth_tree.heading('description', text='Описание')
+
+    # Привязываем клик по заголовкам к функции сортировки
+    modrinth_tree.heading('name', text='Название', command=lambda: on_treeview_sort('name'))
+    modrinth_tree.heading('author', text='Автор', command=lambda: on_treeview_sort('author'))
+    modrinth_tree.heading('downloads', text='Загрузки', command=lambda: on_treeview_sort('downloads'))
+    modrinth_tree.heading('description', text='Описание', command=lambda: on_treeview_sort('description'))
+
+    modrinth_tree.column('name', width=200)
+    modrinth_tree.column('author', width=120)
+    modrinth_tree.column('downloads', width=100)  # Увеличим ширину для чисел
+    modrinth_tree.column('description', width=280)
+
+    modrinth_scrollbar = ttk.Scrollbar(modrinth_tree_frame, orient='vertical', command=modrinth_tree.yview)
+    modrinth_tree.configure(yscrollcommand=modrinth_scrollbar.set)
+
+    modrinth_tree.pack(side='left', fill='both', expand=True)
+    modrinth_scrollbar.pack(side='right', fill='y')
+
+    # Список выбранных модов
+    selected_frame = ttk.LabelFrame(main_frame, text="✅ Выбранные моды", padding=10)
+    selected_frame.pack(fill='x', pady=(0, 20))
+
+    selected_tree = ttk.Treeview(selected_frame, columns=('source', 'name', 'file'), show='headings', height=4)
+    selected_tree.heading('source', text='Источник')
+    selected_tree.heading('name', text='Название')
+    selected_tree.heading('file', text='Файл')
+
+    selected_tree.column('source', width=80)
+    selected_tree.column('name', width=250)
+    selected_tree.column('file', width=200)
+
+    selected_scrollbar = ttk.Scrollbar(selected_frame, orient='vertical', command=selected_tree.yview)
+    selected_tree.configure(yscrollcommand=selected_scrollbar.set)
+
+    selected_tree.pack(side='left', fill='both', expand=True)
+    selected_scrollbar.pack(side='right', fill='y')
+
+    # Кнопки управления выбранными модами
+    selected_buttons = ttk.Frame(selected_frame)
+    selected_buttons.pack(fill='x', pady=(10, 0))
+
+    def add_selected_mods():
+        current_tab = notebook.index(notebook.select())
+
+        if current_tab == 0:  # Локальные моды
+            for item in local_mods_tree.selection():
+                values = local_mods_tree.item(item)['values']
+                # Проверяем, нет ли уже такого мода
+                existing = False
+                for sel_item in selected_tree.get_children():
+                    sel_values = selected_tree.item(sel_item)['values']
+                    if sel_values[2] == values[1]:  # Сравниваем по имени файла
+                        existing = True
+                        break
+
+                if not existing:
+                    selected_tree.insert('', 'end',
+                                         values=('Локальный', values[0], values[1]),
+                                         tags=('local', values[1]))
+
+        elif current_tab == 1:  # Modrinth
+            for item in modrinth_tree.selection():
+                values = modrinth_tree.item(item)['values']
+                mod_id = modrinth_tree.item(item)['tags'][0]
+                filename = f"{values[0]}.jar"
+
+                # Проверяем, нет ли уже такого мода
+                existing = False
+                for sel_item in selected_tree.get_children():
+                    sel_values = selected_tree.item(sel_item)['values']
+                    if sel_values[1] == values[0]:  # Сравниваем по названию
+                        existing = True
+                        break
+
+                if not existing:
+                    selected_tree.insert('', 'end',
+                                         values=('Modrinth', values[0], filename),
+                                         tags=('modrinth', mod_id, filename))
+
+    def remove_selected_mods():
+        for item in selected_tree.selection():
+            selected_tree.delete(item)
+
+    def clear_all_mods():
+        if selected_tree.get_children():
+            if messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
+                selected_tree.delete(*selected_tree.get_children())
+
+    ttk.Button(selected_buttons, text="➕ Добавить выбранные",
+               command=add_selected_mods, width=18).pack(side='left', padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Удалить выбранные",
+               command=remove_selected_mods, width=18).pack(side='left', padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Очистить все",
+               command=clear_all_mods, width=15).pack(side='left', padx=5)
+
+    # Создание сборки
+    def create_collection():
+        name = name_var.get().strip()
+        if not name:
+            messagebox.showerror("Ошибка", "Введите название сборки!")
+            return
+
+        # Собираем информацию о модах
+        mods = []
+        failed_mods = []
+
+        # Окно прогресса для обработки модов
+        progress_window = tk.Toplevel(collection_window)
+        progress_window.title("Обработка модов")
+        progress_window.geometry("500x300")
+        progress_window.transient(collection_window)
+        progress_window.grab_set()
+
+        ttk.Label(progress_window, text="Получение информации о модах...", font=('Comfortaa', 12)).pack(pady=10)
+
+        progress = ttk.Progressbar(progress_window, orient="horizontal", mode="determinate")
+        progress.pack(fill='x', padx=20, pady=10)
+
+        status_var = tk.StringVar(value="Подготовка...")
+        status_label = ttk.Label(progress_window, textvariable=status_var)
+        status_label.pack()
+
+        log_text = tk.Text(progress_window, height=10, width=60)
+        log_text.pack(fill='both', expand=True, padx=20, pady=10)
+
+        def process_mods_thread():
+            nonlocal mods, failed_mods
+
+            api = ModrinthAPI()
+            total_mods = len(selected_tree.get_children())
+
+            for i, item in enumerate(selected_tree.get_children()):
+                values = selected_tree.item(item)['values']
+                tags = selected_tree.item(item)['tags']
+
+                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))
+                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))
+
+                mod_info = {
+                    'source': tags[0],
+                    'name': values[1],
+                    'filename': values[2]
+                }
+
+                if tags[0] == 'local':
+                    # Для локальных модов ищем на Modrinth
+                    progress_window.after(0, lambda: log_text.insert('end', f"🔍 Ищем на Modrinth: {values[1]}...\n"))
+                    progress_window.after(0, lambda: log_text.see('end'))
+
+                    modrinth_info = find_mod_on_modrinth(api, values[1], version_var.get(), loader_var.get())
+                    if modrinth_info:
+                        mod_info.update({
+                            'source': 'modrinth',
+                            'modrinth_id': modrinth_info['id'],
+                            'modrinth_slug': modrinth_info['slug'],
+                            'correct_filename': modrinth_info['filename']
+                        })
+                        mods.append(mod_info)
+                        progress_window.after(0,
+                                              lambda: log_text.insert('end', f"✅ Найден: {modrinth_info['title']}\n"))
+                    else:
+                        failed_mods.append(values[1])
+                        progress_window.after(0,
+                                              lambda: log_text.insert('end', f"❌ Не найден на Modrinth: {values[1]}\n"))
+
+                elif tags[0] == 'modrinth':
+                    # Для модов с Modrinth просто сохраняем информацию
+                    mod_info['modrinth_id'] = tags[1]
+                    mods.append(mod_info)
+                    progress_window.after(0, lambda: log_text.insert('end', f"✅ Modrinth мод: {values[1]}\n"))
+
+                progress_window.after(0, lambda: log_text.see('end'))
+
+            # Завершаем обработку
+            progress_window.after(0, progress_window.destroy)
+            progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
+
+        def finalize_collection_creation(name, mods, failed_mods):
+            if not mods:
+                messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
+                return
+
+            # Показываем предупреждение о ненайденных модах
+            if failed_mods:
+                messagebox.showwarning("Внимание",
+                                       f"Следующие моды не найдены на Modrinth и будут пропущены:\n" +
+                                       "\n".join(failed_mods))
+
+            # Создаем данные сборки
+            collection_data = {
+                'name': name,
+                'minecraft_version': version_var.get(),
+                'loader': loader_var.get(),
+                'created_at': datetime.datetime.now().isoformat(),
+                'mods': mods,
+                'mod_count': len(mods)
+            }
+
+            # Сохраняем файл
+            safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
+            filename = f"{safe_name}.json"
+            filepath = os.path.join(COLLECTIONS_CONFIG['collections_dir'], filename)
+
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(collection_data, f, indent=2, ensure_ascii=False)
+
+                message = (f"Сборка '{name}' создана!\n\n"
+                           f"• Модов: {len(mods)}\n"
+                           f"• Версия: {version_var.get()}\n"
+                           f"• Загрузчик: {loader_var.get()}")
+
+                if failed_mods:
+                    message += f"\n• Пропущено: {len(failed_mods)}"
+
+                messagebox.showinfo("Успех", message)
+                collection_window.destroy()
+                show_collection_manager()
+
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось создать сборку: {e}")
+
+        threading.Thread(target=process_mods_thread, daemon=True).start()
+
+    # Кнопки создания/отмены
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill='x')
+
+    ttk.Button(button_frame, text="✅ Создать сборку",
+               command=create_collection).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="❌ Отмена",
+               command=collection_window.destroy).pack(side='right', padx=5)
+
+
+
+
+
+def find_mod_on_modrinth(api, mod_name, minecraft_version, loader):
+    """Улучшенный поиск модов на Modrinth"""
+    try:
+        print(f"🔍 Улучшенный поиск: '{mod_name}' для {minecraft_version} {loader}")
+
+        # Более агрессивная очистка названия
+        clean_name = aggressive_clean_name(mod_name)
+        print(f"🧹 Очищенное название: '{clean_name}'")
+
+        # Расширенный список поисковых запросов
+        search_queries = generate_search_queries(mod_name, clean_name)
+        print(f"📋 Запросы поиска: {search_queries[:5]}")  # Показываем первые 5
+
+        # Пробуем найти по точному названию файла
+        exact_match = try_find_by_filename(api, mod_name, minecraft_version, loader)
+        if exact_match:
+            return exact_match
+
+        # Поиск по всем запросам
+        for query in search_queries:
+            if not query or len(query) < 2:
+                continue
+
+            print(f"🔎 Ищем: '{query}'")
+            results = api.search_mods(query, limit=20)
+
+            if not results or 'hits' not in results or not results['hits']:
+                continue
+
+            print(f"📦 Найдено результатов: {len(results['hits'])}")
+
+            # Проверяем все результаты
+            best_match = find_best_match(results['hits'], mod_name, clean_name,
+                                         minecraft_version, loader, api)
+            if best_match:
+                return best_match
+
+        # Последняя попытка: поиск по ключевым словам
+        return try_keyword_search(api, mod_name, minecraft_version, loader)
+
+    except Exception as e:
+        print(f"💥 Ошибка поиска мода {mod_name}: {e}")
+        return None
+
+
+def aggressive_clean_name(mod_name):
+    """Более агрессивная очистка названия мода"""
+    import re
+
+    # Удаляем версии, загрузчики и другие мусорные слова
+    patterns_to_remove = [
+        r'[\d\.\-_]+(?:fabric|forge|quilt|mc|minecraft)',
+        r'\b(?:fabric|forge|quilt|mc|minecraft|mod|jar)\b',
+        r'[\(\\)\[\]\{\}]',
+        r'\s+'
+    ]
+
+    cleaned = mod_name.lower()
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, ' ', cleaned, flags=re.IGNORECASE)
+
+    # Удаляем лишние пробелы и возвращаем
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # Если после очистки ничего не осталось, используем оригинал
+    return cleaned if cleaned else mod_name.lower()
+
+
+def generate_search_queries(original_name, clean_name):
+    """Генерирует расширенный список поисковых запросов"""
+    queries = set()
+
+    # Добавляем различные варианты
+    variants = [
+        clean_name,
+        original_name,
+        clean_name.replace(' ', ''),
+        clean_name.replace(' ', '-'),
+        clean_name.replace(' ', '_'),
+        extract_core_name(original_name),
+        remove_version_info(original_name),
+        get_acronym(clean_name)
+    ]
+
+    # Добавляем отдельные слова из названия
+    words = clean_name.split()
+    for word in words:
+        if len(word) > 3 and not word.isdigit():
+            queries.add(word)
+
+    # Добавляем комбинации слов
+    if len(words) > 1:
+        queries.add(' '.join(words[:2]))  # Первые два слова
+        queries.add(' '.join(words[-2:]))  # Последние два слова
+
+    # Фильтруем и возвращаем
+    return [q for q in variants if q and len(q) > 1]
+
+
+def extract_core_name(mod_name):
+    """Извлекает ядро названия мода"""
+    # Удаляем все, что выглядит как версия
+    import re
+    core = re.sub(r'[\d\.\-_]+.*$', '', mod_name)
+    return core.strip()
+
+
+def remove_version_info(mod_name):
+    """Удаляет информацию о версии"""
+    import re
+    # Удаляем паттерны версий типа 1.2.3, 1.2.3+1.20.1 и т.д.
+    cleaned = re.sub(r'[\d\.\-_]+\+?[\d\.\-_]*', '', mod_name)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
+def get_acronym(mod_name):
+    """Создает акроним из названия"""
+    words = mod_name.split()
+    if len(words) > 1:
+        return ''.join(word[0].upper() for word in words if word)
+    return ''
+
+
+def try_find_by_filename(api, filename, minecraft_version, loader):
+    """Пытается найти мод по точному имени файла"""
+    try:
+        # Извлекаем название из имени файла (без .jar и версии)
+        base_name = filename.replace('.jar', '')
+
+        # Удаляем информацию о версии и загрузчике
+        clean_file_name = re.sub(r'[\d\.\-_]+(?:fabric|forge|quilt).*$', '', base_name)
+        clean_file_name = re.sub(r'\s+', ' ', clean_file_name).strip()
+
+        if len(clean_file_name) > 3:
+            print(f"📁 Поиск по имени файла: '{clean_file_name}'")
+            results = api.search_mods(clean_file_name, limit=10)
+
+            if results and 'hits' in results and results['hits']:
+                for mod in results['hits']:
+                    similarity = calculate_similarity(mod['title'].lower(), clean_file_name.lower())
+                    if similarity > 0.4:
+                        versions = api.get_mod_versions(
+                            mod['project_id'], minecraft_version, loader.lower()
+                        )
+                        if versions:
+                            latest_version = versions[0]
+                            file = latest_version['files'][0]
+                            print(f"✅ Найден по имени файла: {mod['title']}")
+                            return {
+                                'id': mod['project_id'],
+                                'slug': mod['slug'],
+                                'title': mod['title'],
+                                'filename': file['filename']
+                            }
+    except Exception as e:
+        print(f"⚠️ Ошибка поиска по файлу: {e}")
+
+    return None
+
+
+def find_best_match(mods, original_name, clean_name, minecraft_version, loader, api):
+    """Находит лучший совпадающий мод"""
+    best_similarity = 0
+    best_mod = None
+
+    for mod in mods:
+        mod_title = mod['title'].lower()
+
+        # Вычисляем несколько метрик схожести
+        similarity1 = calculate_similarity(mod_title, original_name.lower())
+        similarity2 = calculate_similarity(mod_title, clean_name)
+        similarity3 = calculate_word_overlap(mod_title, clean_name)
+
+        # Общая схожесть (максимум из всех метрик)
+        total_similarity = max(similarity1, similarity2, similarity3)
+
+        print(f"  📊 '{mod['title']}' - схожесть: {total_similarity:.2f}")
+
+        if total_similarity > best_similarity:
+            # Проверяем поддержку версии
+            versions = api.get_mod_versions(mod['project_id'], minecraft_version, loader.lower())
+            if versions:
+                best_similarity = total_similarity
+                latest_version = versions[0]
+                file = latest_version['files'][0]
+                best_mod = {
+                    'id': mod['project_id'],
+                    'slug': mod['slug'],
+                    'title': mod['title'],
+                    'filename': file['filename']
+                }
+
+    # Понижаем порог для принятия решения
+    if best_mod and best_similarity > 0.2:  # Был 0.6
+        print(f"✅ Лучшее совпадение: {best_mod['title']} (схожесть: {best_similarity:.2f})")
+        return best_mod
+
+    return None
+
+
+def calculate_word_overlap(str1, str2):
+    """Вычисляет пересечение слов между строками"""
+    words1 = set(str1.lower().split())
+    words2 = set(str2.lower().split())
+
+    if not words1 or not words2:
+        return 0.0
+
+    common_words = words1.intersection(words2)
+    return len(common_words) / min(len(words1), len(words2))
+
+
+def try_keyword_search(api, mod_name, minecraft_version, loader):
+    """Поиск по ключевым словам когда точный поиск не сработал"""
+    print(f"🔍 Переходим к поиску по ключевым словам: {mod_name}")
+
+    # Ключевые слова для специфичных модов
+    keyword_map = {
+        'appliedenergistics': 'applied energistics 2',
+        'xaeros': 'xaero',
+        'inventoryprofiles': 'inventory profiles next',
+        'travelersbackpack': 'traveler backpack',
+        'lambdynamiclights': 'lamb dynamic lights',
+        'fallingleaves': 'falling leaves',
+        'ironchests': 'iron chests',
+        'techreborn': 'tech reborn',
+        'reborncore': 'reborn core',
+        'mavapi': 'more axolotl variants api',
+        'mavm': 'more axolotl variants mod',
+        'noindium': 'no indium'
+    }
+
+    # Проверяем по ключевым словам
+    for key, search_term in keyword_map.items():
+        if key in mod_name.lower():
+            print(f"🔑 Используем ключевое слово: {search_term}")
+            results = api.search_mods(search_term, limit=5)
+
+            if results and 'hits' in results and results['hits']:
+                mod = results['hits'][0]
+                versions = api.get_mod_versions(mod['project_id'], minecraft_version, loader.lower())
+                if versions:
+                    latest_version = versions[0]
+                    file = latest_version['files'][0]
+                    print(f"✅ Найден по ключевому слову: {mod['title']}")
+                    return {
+                        'id': mod['project_id'],
+                        'slug': mod['slug'],
+                        'title': mod['title'],
+                        'filename': file['filename']
+                    }
+
+    return None
+
+
+MANUAL_MOD_MAPPINGS = {
+    'appliedenergistics2 fabric 15.4.9': 'ae2',
+    'xaeros minimap 25.2.10 fabric 1.20': 'xaeros-minimap',
+    'xaerosworldmap 1.39.12 fabric 1.20': 'xaeros-world-map',
+    'travelersbackpack fabric 1.20.1 9.1.41': 'travelers-backpack',
+    'ironchests 5.0.2 fabric': 'iron-chests',
+    'fallingleaves 1.15.6+1.20.1': 'falling-leaves',
+    'lambdynamiclights 4.4.0+1.20.1': 'lambdynamiclights',
+    'techreborn 5.8.3': 'techreborn',
+    'reborncore 5.8.3': 'reborn-core',
+    'inventoryprofilesnext fabric 1.20 1.10.19': 'inventory-profiles-next',
+    'noindium 1.1.0+1.20': 'no-indium',
+    'mavapi 1.1.4 mc1.20.1': 'more-axolotl-variants-api',
+    'mavm 1.2.6 mc1.20.1': 'more-axolotl-variants-mod'
+}
+
+
+def try_manual_mapping(api, mod_name, minecraft_version, loader):
+    """Пробует найти мод по ручным сопоставлениям"""
+    clean_mod_name = mod_name.lower().strip()
+
+    for key, slug in MANUAL_MOD_MAPPINGS.items():
+        if key in clean_mod_name:
+            print(f"🔧 Используем ручное сопоставление: {slug}")
+            try:
+                # Прямой запрос к API по slug
+                project_url = f"{api.base_url}/project/{slug}"
+                response = api.session.get(project_url)
+
+                if response.status_code == 200:
+                    project_data = response.json()
+                    versions = api.get_mod_versions(
+                        project_data['id'], minecraft_version, loader.lower()
+                    )
+                    if versions:
+                        latest_version = versions[0]
+                        file = latest_version['files'][0]
+                        print(f"✅ Найден через ручное сопоставление: {project_data['title']}")
+                        return {
+                            'id': project_data['id'],
+                            'slug': project_data['slug'],
+                            'title': project_data['title'],
+                            'filename': file['filename']
+                        }
+            except Exception as e:
+                print(f"⚠️ Ошибка ручного сопоставления: {e}")
+
+    return None
+
+def clean_mod_name(mod_name):
+    """Очищает название мода от версий и лишних частей"""
+    # Удаляем версии типа 1.20.1, 1.19.2 и т.д.
+    import re
+    cleaned = re.sub(r'[\d\.\-_]+(?:fabric|forge|quilt)?', ' ', mod_name, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\b(?:fabric|forge|quilt|mc|minecraft|mod)\b', ' ', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # Если после очистки ничего не осталось, возвращаем оригинал
+    return cleaned if cleaned else mod_name
+
+
+def extract_main_words(mod_name):
+    """Извлекает основные слова из названия"""
+    words = mod_name.split()
+    # Оставляем только слова длиной > 3 символов и не являющиеся версиями
+    main_words = [word for word in words if len(word) > 3 and not re.match(r'^[\d\.\-_]+$', word)]
+    return ' '.join(main_words[:3])  # Берем до 3 слов
+
+
+def calculate_similarity(str1, str2):
+    """Вычисляет схожесть между двумя строками"""
+    # Простой алгоритм схожести
+    str1, str2 = str1.lower(), str2.lower()
+
+    # Если одна строка содержится в другой
+    if str1 in str2 or str2 in str1:
+        return 0.8
+
+    # Считаем совпадающие слова
+    words1 = set(str1.split())
+    words2 = set(str2.split())
+
+    if not words1 or not words2:
+        return 0.0
+
+    common_words = words1.intersection(words2)
+    similarity = len(common_words) / max(len(words1), len(words2))
+
+    return similarity
+
+# Функция показа менеджера сборок
+def show_collection_manager():
+    manager_window = tk.Toplevel(win)
+    manager_window.title("Менеджер  (Бета)")
+    manager_window.geometry("1000x500")
+    manager_window.transient(win)
+    manager_window.grab_set()
+
+    main_frame = ttk.Frame(manager_window, padding=20)
+    main_frame.pack(fill='both', expand=True)
+
+    ttk.Label(main_frame, text="📦 Менеджер сборок модов", font=('Comfortaa', 16, 'bold')).pack(pady=(0, 20))
+
+    # Информация о папке
+    collections_dir = COLLECTIONS_CONFIG['collections_dir']
+    info_label = ttk.Label(main_frame, text=f"Папка: {collections_dir}", foreground='gray')
+    info_label.pack(pady=(0, 10))
+
+    # Список сборок
+    tree = ttk.Treeview(main_frame, columns=('name', 'version', 'loader', 'mods', 'created'), show='headings')
+    tree.heading('name', text='Название')
+    tree.heading('version', text='Версия')
+    tree.heading('loader', text='Загрузчик')
+    tree.heading('mods', text='Модов')
+    tree.heading('created', text='Создана')
+
+    tree.column('name', width=200)
+    tree.column('version', width=100)
+    tree.column('loader', width=80)
+    tree.column('mods', width=60)
+    tree.column('created', width=100)
+
+    # Статус сборок
+    status_var = tk.StringVar(value="Загрузка...")
+    status_label = ttk.Label(main_frame, textvariable=status_var, foreground='blue')
+    status_label.pack(pady=5)
+
+    def load_collections():
+        tree.delete(*tree.get_children())
+        collections_dir = COLLECTIONS_CONFIG['collections_dir']
+
+        if not os.path.exists(collections_dir):
+            status_var.set("Папка сборок не существует!")
+            return
+
+        try:
+            files = os.listdir(collections_dir)
+            json_files = [f for f in files if f.endswith('.json')]
+            status_var.set(f"Найдено сборок: {len(json_files)}")
+
+            for file in json_files:
+                filepath = os.path.join(collections_dir, file)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+
+                    # Проверяем структуру данных
+                    if all(field in data for field in
+                           ['name', 'minecraft_version', 'loader', 'mod_count', 'created_at']):
+                        created = datetime.datetime.fromisoformat(data['created_at']).strftime("%d.%m.%Y")
+                        tree.insert('', 'end',
+                                    values=(data['name'], data['minecraft_version'], data['loader'],
+                                            data['mod_count'], created),
+                                    tags=(file,))
+                    else:
+                        print(f"Неполные данные в файле {file}")
+
+                except Exception as e:
+                    print(f"Ошибка загрузки {file}: {e}")
+
+        except Exception as e:
+            status_var.set(f"Ошибка: {e}")
+
+    tree.pack(fill='both', expand=True)
+    load_collections()
+
+    # Кнопки управления
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill='x', pady=10)
+
+    def refresh_collections():
+        status_var.set("Обновление...")
+        load_collections()
+
+    def open_collections_folder():
+        os.makedirs(COLLECTIONS_CONFIG['collections_dir'], exist_ok=True)
+        if os.name == 'nt':
+            os.startfile(COLLECTIONS_CONFIG['collections_dir'])
+        else:
+            subprocess.Popen(['xdg-open', COLLECTIONS_CONFIG['collections_dir']])
+
+    def load_to_game():
+        selection = tree.selection()
+        if selection:
+            filename = tree.item(selection[0])['tags'][0]
+            load_collection_to_game(filename)
+        else:
+            messagebox.showwarning("Выбор", "Выберите сборку для загрузки")
+
+    def delete_collection():
+        selection = tree.selection()
+        if selection:
+            filename = tree.item(selection[0])['tags'][0]
+            filepath = os.path.join(COLLECTIONS_CONFIG['collections_dir'], filename)
+            if messagebox.askyesno("Подтверждение", "Удалить сборку?"):
+                try:
+                    os.remove(filepath)
+                    load_collections()
+                    messagebox.showinfo("Успех", "Сборка удалена")
+                except Exception as e:
+                    messagebox.showerror("Ошибка", f"Не удалось удалить: {e}")
+
+    ttk.Button(button_frame, text="🔄 Обновить", command=refresh_collections).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="📁 Открыть папку", command=open_collections_folder).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="🎮 Загрузить в игру", command=load_to_game).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="🗑️ Удалить", command=delete_collection).pack(side='left', padx=5)
+    ttk.Button(button_frame, text="➕ Новая сборка",
+               command=lambda: (manager_window.destroy(), create_new_collection())).pack(side='right', padx=5)
+    ttk.Button(button_frame, text="❌ Закрыть", command=manager_window.destroy).pack(side='right', padx=5)
+
+
+# Функция загрузки сборки в игру
+def load_collection_to_game(filename):
+    filepath = os.path.join(COLLECTIONS_CONFIG['collections_dir'], filename)
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            collection = json.load(f)
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось загрузить сборку: {e}")
+        return
+
+    # Создаем окно прогресса с логом
+    progress_window = tk.Toplevel(win)
+    progress_window.title(f"Загрузка сборки: {collection['name']}")
+    progress_window.geometry("700x500")
+    progress_window.transient(win)
+    progress_window.grab_set()
+
+    main_frame = ttk.Frame(progress_window, padding=15)
+    main_frame.pack(fill='both', expand=True)
+
+    ttk.Label(main_frame, text=f"📦 Загрузка сборки: {collection['name']}",
+              font=('Comfortaa', 14, 'bold')).pack(pady=(0, 10))
+
+    # Информация о сборке
+    info_text = f"Версия: {collection['minecraft_version']} | Загрузчик: {collection['loader']} | Модов: {collection['mod_count']}"
+    ttk.Label(main_frame, text=info_text).pack(pady=(0, 15))
+
+    # Прогресс-бар
+    progress = ttk.Progressbar(main_frame, orient="horizontal", length=600, mode="determinate")
+    progress.pack(fill='x', pady=5)
+
+    # Статус и счетчик
+    status_frame = ttk.Frame(main_frame)
+    status_frame.pack(fill='x', pady=5)
+
+    status_var = tk.StringVar(value="Подготовка...")
+    status_label = ttk.Label(status_frame, textvariable=status_var, font=('Comfortaa', 10))
+    status_label.pack(side='left')
+
+    counter_var = tk.StringVar(value="0/0")
+    counter_label = ttk.Label(status_frame, textvariable=counter_var, font=('Comfortaa', 10))
+    counter_label.pack(side='right')
+
+    # Детальный лог
+    log_frame = ttk.LabelFrame(main_frame, text="Детальный лог загрузки", padding=10)
+    log_frame.pack(fill='both', expand=True, pady=(10, 0))
+
+    log_text = tk.Text(log_frame, height=15, width=80, font=('Consolas', 9))
+    log_scrollbar = ttk.Scrollbar(log_frame, orient='vertical', command=log_text.yview)
+    log_text.configure(yscrollcommand=log_scrollbar.set)
+
+    log_text.pack(side='left', fill='both', expand=True)
+    log_scrollbar.pack(side='right', fill='y')
+
+    def log_message(message):
+        win.after(0, lambda: log_text.insert('end', f"{message}\n"))
+        win.after(0, lambda: log_text.see('end'))
+
+    def download_thread():
+        mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
+        os.makedirs(mods_dir, exist_ok=True)
+
+        log_message(f"📁 Папка модов: {mods_dir}")
+        log_message(f"🔄 Начинаем загрузку {len(collection['mods'])} модов...")
+
+        # Бэкап и очистка
+        backup_path = create_mods_backup(collection['name'])
+        if backup_path:
+            log_message(f"📂 Создан бэкап: {os.path.basename(backup_path)}")
+
+        cleared_count = clear_mods_directory(mods_dir)
+        log_message(f"🗑️ Очищено модов: {cleared_count}")
+
+        # Скачиваем моды
+        success_count = 0
+        total_mods = len(collection['mods'])
+        api = ModrinthAPI()
+
+        for i, mod in enumerate(collection['mods']):
+            # Обновляем UI
+            win.after(0, lambda idx=i, total=total_mods: progress.config(value=(idx * 100) // total))
+            win.after(0, lambda m=mod: status_var.set(f"Загрузка: {m['name']}"))
+            win.after(0, lambda s=success_count, t=total_mods: counter_var.set(f"{s}/{t}"))
+
+            log_message(f"\n🔍 Мод {i + 1}/{total_mods}: {mod['name']}")
+
+            if mod['source'] == 'modrinth':
+                log_message(f"   📡 Источник: Modrinth (ID: {mod.get('modrinth_id', 'N/A')})")
+
+                # Получаем версии мода
+                versions = api.get_mod_versions(
+                    mod['modrinth_id'],
+                    collection['minecraft_version'],
+                    collection['loader'].lower()
+                )
+
+                if not versions:
+                    log_message("   ❌ Не найдены версии мода")
+                    continue
+
+                log_message(f"   📦 Найдено версий: {len(versions)}")
+
+                # Берем последнюю версию
+                latest_version = versions[0]
+                file = latest_version['files'][0]
+                filename = file['filename']
+
+                # Получаем slug проекта
+                project_slug = mod.get('modrinth_slug', mod['modrinth_id'])
+                version_id = latest_version['id']
+
+                log_message(f"   ⬇️  Скачиваем: {filename}")
+                log_message(f"   🔗 Project: {project_slug}")
+                log_message(f"   🆔 Version: {version_id}")
+
+                # ИСПРАВЛЕННЫЙ ВЫЗОВ - передаем все 4 аргумента
+                if api.download_mod(project_slug, version_id, filename, mods_dir):
+                    success_count += 1
+                    log_message("   ✅ Успешно скачан")
+                else:
+                    log_message("   ❌ Ошибка скачивания")
+            else:
+                log_message(f"   ⚠️  Неподдерживаемый источник: {mod['source']}")
+
+        # Завершение
+        log_message(f"\n🎉 ЗАВЕРШЕНО! Успешно: {success_count}/{total_mods}")
+        win.after(0, lambda: finish_loading(progress_window, collection, success_count, total_mods, backup_path))
+
+    def show_download_result(collection, success_count, total_mods, backup_path):
+        message = (f"Загрузка сборки '{collection['name']}' завершена!\n\n"
+                   f"✅ Успешно загружено: {success_count}/{total_mods} модов")
+
+        if backup_path:
+            message += f"\n\n📂 Создан бэкап предыдущих модов"
+
+        if success_count == 0:
+            message += "\n\n❌ Не удалось загрузить ни одного мода!\nПроверьте подключение к интернету и логи."
+        elif success_count < total_mods:
+            message += f"\n\n⚠️  Не загружено {total_mods - success_count} модов\nПроверьте детальный лог для информации."
+
+        messagebox.showinfo("Результат загрузки", message)
+
+    threading.Thread(target=download_thread, daemon=True).start()
+
+
+# Добавляем в меню
+settings_menu.add_separator()
+settings_menu.add_command(label="📦 Сборки модов (Бета)", command=show_collection_manager)
+
+
+def create_mods_backup(collection_name):
+    """Создание бэкапа модов"""
+    mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
+    backup_dir = os.path.join(CONFIG['minecraft_dir'], 'mods_backup')
+    os.makedirs(backup_dir, exist_ok=True)
+
+    if os.path.exists(mods_dir) and any(f.endswith('.jar') for f in os.listdir(mods_dir)):
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"backup_{collection_name}_{timestamp}"
+        backup_path = os.path.join(backup_dir, backup_name)
+        try:
+            shutil.copytree(mods_dir, backup_path)
+            return backup_path
+        except Exception as e:
+            print(f"Ошибка бэкапа: {e}")
+    return None
+
+
+def clear_mods_directory(mods_dir):
+    """Очистка папки модов"""
+    count = 0
+    if os.path.exists(mods_dir):
+        for file in os.listdir(mods_dir):
+            if file.endswith('.jar'):
+                try:
+                    os.remove(os.path.join(mods_dir, file))
+                    count += 1
+                except Exception as e:
+                    print(f"Не удалось удалить {file}: {e}")
+    return count
+
+
+def handle_local_mod(mod, mods_dir):
+    """Обработка локального мода"""
+    # Пробуем найти файл в нескольких местах
+    possible_paths = [
+        os.path.join(CONFIG['minecraft_dir'], 'mods', mod['filename']),
+        os.path.join(COLLECTIONS_CONFIG['collections_dir'], 'mods', mod['filename']),
+        os.path.join(os.path.dirname(CONFIG['minecraft_dir']), 'mods', mod['filename'])
+    ]
+
+    for src_path in possible_paths:
+        if os.path.exists(src_path):
+            try:
+                shutil.copy2(src_path, os.path.join(mods_dir, mod['filename']))
+                return True
+            except Exception as e:
+                print(f"Ошибка копирования {src_path}: {e}")
+
+    print(f"Локальный файл не найден: {mod['filename']}")
+    return False
+
+
+def handle_modrinth_mod(mod, collection, api, mods_dir, log_callback):
+    """Обработка мода с Modrinth с правильным скачиванием"""
+    try:
+        log_callback(f"🔍 Получаем информацию о {mod['name']}...")
+
+        versions = api.get_mod_versions(
+            mod['modrinth_id'],
+            collection['minecraft_version'],
+            collection['loader'].lower()
+        )
+
+        if not versions:
+            log_callback(f"❌ Не найдены версии для {mod['name']}")
+            return False
+
+        # Выбираем последнюю версию
+        latest_version = versions[0]
+        version_id = latest_version['id']
+
+        if 'files' not in latest_version or not latest_version['files']:
+            log_callback(f"❌ Нет информации о файлах для {mod['name']}")
+            return False
+
+        file_info = latest_version['files'][0]
+        filename = file_info['filename']
+
+        # Получаем slug проекта для скачивания
+        project_slug = mod.get('modrinth_slug') or mod['modrinth_id']
+
+        log_callback(f"📥 Скачиваем {filename}...")
+        log_callback(f"🆔 Version ID: {version_id}")
+        log_callback(f"🔗 Project: {project_slug}")
+
+        # Скачиваем мод
+        if api.download_mod(project_slug, version_id, filename, mods_dir):
+            log_callback(f"✅ Успешно скачан: {filename}")
+            return True
+        else:
+            # Пробуем через прямой URL из file_info
+            if 'url' in file_info and file_info['url']:
+                log_callback(f"🔄 Пробуем прямую ссылку...")
+                direct_url = file_info['url']
+                try:
+                    response = api.session.get(direct_url, timeout=30, stream=True)
+                    response.raise_for_status()
+
+                    filepath = os.path.join(mods_dir, filename)
+                    with open(filepath, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+
+                    log_callback(f"✅ Успешно скачан (прямая ссылка): {filename}")
+                    return True
+                except Exception as e:
+                    log_callback(f"❌ Ошибка прямой ссылки: {str(e)}")
+
+            log_callback(f"❌ Не удалось скачать: {filename}")
+            return False
+
+    except Exception as e:
+        log_callback(f"💥 Критическая ошибка {mod['name']}: {str(e)}")
+        return False
+
+
+def finish_loading(progress_window, collection, success_count, total_mods, backup_path):
+    """Завершение загрузки"""
+    progress_window.destroy()
+
+    message = (f"Сборка '{collection['name']}' загружена!\n\n"
+               f"✅ Успешно: {success_count}/{total_mods} модов")
+
+    if backup_path:
+        message += f"\n\n📂 Бэкап создан: {os.path.basename(backup_path)}"
+
+    if success_count < total_mods:
+        message += "\n\n⚠️ Некоторые моды не удалось загрузить. Проверьте лог для деталей."
+
+    messagebox.showinfo("Загрузка завершена", message)
+
+
 
 # Запуск главного цикла
 win.mainloop()
