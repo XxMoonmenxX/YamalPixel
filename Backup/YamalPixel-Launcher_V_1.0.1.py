@@ -30,28 +30,20 @@ import psutil
 import math
 
 
-def download_missing_mods_silent():
-    """Тихо докачивает недостающие моды БЕЗ ОКОШЕК ПРОГРЕССА"""
-    missing_mods = []
-
-    for mod in CONFIG['mods']:
-        mod_path = os.path.join(CONFIG['minecraft_dir'], 'mods', mod['file'])
-        if not os.path.exists(mod_path):
-            missing_mods.append(mod)
-
-    if missing_mods:
-        print(f"🔧 Тихо качаем {len(missing_mods)} модов...")
-        # Используем твой TurboDownloader но БЕЗ окон прогресса
-        for mod in missing_mods:
-            download_single_mod_turbo_silent(mod)
 
 
+def old_repair_with_ui():
+    """Старая версия починки с UI (заглушка)"""
+    return auto_repair_game_files(silent=False)
 
-
+def auto_repair_game_files(silent=True):
+    """Автопочинка файлов игры - ТОЛЬКО РУЧНАЯ ВЕРСИЯ С UI"""
+    # ВСЕГДА показываем UI, независимо от параметра silent
+    return old_repair_with_ui()
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.0" #обновление
+CURRENT_VERSION = "1.0.1" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -4121,9 +4113,7 @@ def runn():
         # НЕМЕДЛЕННО блокируем интерфейс
         set_launch_state(True)
 
-        # 🔧 ДОБАВЛЕН ВЫЗОВ АВТОПОЧИНКИ ПЕРЕД ЗАПУСКОМ - БЕЗ SILENT MODE
-        # Проверяем и восстанавливаем файлы, включая отсутствующие моды
-        auto_repair_game_files(silent=False)  # ИЗМЕНЕНО: silent=False для загрузки модов
+
 
         # Создаем окно прогресса запуска
         progress_window = tk.Toplevel(win)
@@ -4739,9 +4729,8 @@ def auto_pre_launch_check():
 
     # 🔴 ЕСТЬ ПРОБЛЕМЫ - АВТО-ЧИНИМ БЕЗ СПРОСА
     if issues:
-        print(f"🔧 Авто-чиним проблемы: {issues}")
-        auto_repair_game_files(silent=True)  # SILENT MODE - БЕЗ ОКОШЕК
-        return True  # Всё починили, можно запускать
+        print(f"🔧 Обнаружены проблемы: {issues}")
+        return False  # Всё починили, можно запускать
 
     return True  # Проблем нет
 def disable_problematic_mods():
