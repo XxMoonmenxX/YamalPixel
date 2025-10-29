@@ -28,7 +28,7 @@ from collections import deque
 from pathlib import Path
 import psutil
 import math
-
+import json
 
 
 import socket
@@ -202,7 +202,7 @@ def old_repair_with_ui():
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.4" #обновление
+CURRENT_VERSION = "0.6.41" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -2327,72 +2327,119 @@ win.title('YamPixel')
 LAST_SESSION_FILE = os.path.expanduser("~/YamalPixel/last_session.json")
 
 
-
 def load_last_session():
     """Загружает последние настройки"""
     try:
         if os.path.exists(LAST_SESSION_FILE):
             with open(LAST_SESSION_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except:
-        pass
+                data = json.load(f)
+                print(f"📁 Загружена сессия: {len(data)} параметров")
+                return data
+    except Exception as e:
+        print(f"❌ Ошибка загрузки сессии: {e}")
     return None
+
 
 def save_last_session():
     """Сохраняет последние настройки"""
     try:
-        session = {
-            'username': username.get() if 'username' in globals() else '',
-            'version': version_selector.get() if 'version_selector' in globals() else 'YamalPixel',
-            'fullscreen': enabled.get() if 'enabled' in globals() else False,
-            'music': enabled1.get() if 'enabled1' in globals() else False,
-            'memory': CONFIG.get('jvm_memory', '4G'),  # ← ДОБАВЛЯЕМ ПАМЯТЬ
-            'timestamp': datetime.datetime.now().isoformat()
-        }
+        session_data = {}
 
-        with open(LAST_SESSION_FILE, 'w', encoding='utf-8') as f:
-            json.dump(session, f, indent=2)
-        print("✅ Настройки сохранены")
+        # Сохраняем имя пользователя
+        if 'username' in globals() and hasattr(username, 'text_value'):
+            current_username = username.text_value.get()
+            if current_username and current_username != "Введите никнейм":
+                session_data['username'] = current_username
+
+        # Сохраняем выбранную версию
+        if 'version_selector' in globals() and hasattr(version_selector, 'current_value'):
+            current_version = version_selector.current_value.get()
+            if current_version:
+                session_data['version'] = current_version
+
+        # Сохраняем настройки памяти
+        session_data['memory'] = CONFIG.get('jvm_memory', '4G')
+
+        # Сохраняем настройки полноэкранного режима
+        if 'enabled' in globals():
+            session_data['fullscreen'] = bool(enabled.get())
+
+        # Сохраняем настройки музыки
+        if 'enabled1' in globals():
+            session_data['music'] = bool(enabled1.get())
+
+        # Добавляем временную метку
+        session_data['launcher_version'] = CURRENT_VERSION
+
+        # Сохраняем только если есть что сохранять
+        if session_data:
+            # Создаем папку если не существует
+            os.makedirs(os.path.dirname(LAST_SESSION_FILE), exist_ok=True)
+
+            with open(LAST_SESSION_FILE, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+
+            print(f"✅ Настройки сохранены: {len(session_data)} параметров")
+            return True
+        else:
+            print("⚠️ Нечего сохранять - сессия пустая")
+            return False
+
     except Exception as e:
         print(f"❌ Ошибка сохранения настроек: {e}")
+        return False
 
 
 def apply_session_settings(session):
     """Применяет настройки сессии когда все элементы готовы"""
+    if not session:
+        return
+
     try:
+        print("🔄 Восстанавливаем предыдущую сессию...")
+
+        applied_count = 0
+
         # Восстанавливаем никнейм
         if 'username' in globals() and session.get('username'):
             username.text_value.set(session['username'])
             username.entry.configure(fg='#2b2b2b')
             print(f"👤 Восстановлен ник: {session['username']}")
+            applied_count += 1
 
         # Восстанавливаем версию
         if 'version_selector' in globals() and session.get('version'):
             try:
-                version_selector.current_value.set(session['version'])
+                target_version = session['version']
+                # Устанавливаем значение напрямую
+                version_selector.current_value.set(target_version)
                 version_selector.draw_selector()
-                print(f"🎯 Восстановлена версия: {session['version']}")
-            except:
-                pass
+                print(f"🎯 Восстановлена версия: {target_version}")
+                applied_count += 1
+            except Exception as e:
+                print(f"⚠️ Ошибка восстановления версии: {e}")
 
         # Восстанавливаем память
         if session.get('memory'):
             CONFIG['jvm_memory'] = session['memory']
             print(f"💾 Восстановлена память: {session['memory']}")
+            applied_count += 1
 
         # Восстанавливаем полноэкранный режим
-        if 'enabled' in globals():
-            enabled.set(session.get('fullscreen', False))
-            if session.get('fullscreen'):
-                fullsc()
-                print("🖥️ Восстановлен полноэкранный режим")
+        if 'enabled' in globals() and session.get('fullscreen'):
+            enabled.set(True)
+            fullsc()
+            print("🖥️ Восстановлен полноэкранный режим")
+            applied_count += 1
 
         # Восстанавливаем музыку
-        if 'enabled1' in globals():
-            enabled1.set(session.get('music', False))
-            if session.get('music'):
-                mscon()
-                print("🎵 Восстановлена музыка")
+        if 'enabled1' in globals() and session.get('music'):
+            enabled1.set(True)
+            mscon()
+            print("🎵 Восстановлена музыка")
+            applied_count += 1
+
+        print(f"✅ Сессия восстановлена: {applied_count} параметров")
 
     except Exception as e:
         print(f"⚠️ Не удалось применить некоторые настройки: {e}")
@@ -2402,7 +2449,15 @@ def on_closing():
     """При закрытии окна"""
     print("💾 Сохраняем настройки...")
     save_last_session()
+
+    # Останавливаем музыку
+    try:
+        mixer.music.stop()
+    except:
+        pass
+
     win.destroy()
+    sys.exit(0)
 
 
 # Вешаем обработчик закрытия
@@ -2411,18 +2466,19 @@ win.protocol("WM_DELETE_WINDOW", on_closing)
 
 def load_session_on_start():
     """Загружает сессию после полной инициализации интерфейса"""
-    session = load_last_session()
-    if session:
-        print("🔄 Восстанавливаем предыдущую сессию...")
-        # Даем время на создание всех элементов интерфейса
-        win.after(2000, lambda: apply_session_settings(session))
-    else:
-        print("🔰 Сессия не найдена, используем настройки по умолчанию")
-
+    try:
+        session = load_last_session()
+        if session:
+            print(f"🔄 Восстанавливаем сессию от {session.get('timestamp', 'неизвестно')}")
+            # Даем время на создание всех элементов интерфейса
+            win.after(3000, lambda: apply_session_settings(session))
+        else:
+            print("🔰 Сессия не найдена, используем настройки по умолчанию")
+    except Exception as e:
+        print(f"❌ Ошибка загрузки сессии: {e}")
 
 # Запускаем загрузку сессии после полной инициализации
-win.after(2500, load_session_on_start)
-# === КОНЕЦ БЛОКА СЕССИИ ===
+win.after(3500, load_session_on_start)
 
 win.after(200, check_for_updates)  # NEW
 
