@@ -31,19 +31,178 @@ import math
 
 
 
+import socket
+
+def fix_network_issues():
+    """Исправление сетевых проблем"""
+    try:
+        # Принудительное обновление DNS
+        socket.getaddrinfo('api.github.com', 443)
+        print("✅ DNS работает нормально")
+        return True
+    except:
+        print("⚠️ Проблемы с DNS, пробуем альтернативные методы")
+        return False
 
 def old_repair_with_ui():
-    """Старая версия починки с UI (заглушка)"""
-    return auto_repair_game_files(silent=False)
+    """Полная версия починки с UI"""
+    try:
+        # Создаем окно прогресса
+        progress_window = tk.Toplevel(win)
+        progress_window.title("🔧 Автопочинка файлов")
+        progress_window.geometry("500x400")
+        progress_window.resizable(False, False)
+        progress_window.transient(win)
+        progress_window.grab_set()
 
-def auto_repair_game_files(silent=True):
-    """Автопочинка файлов игры - ТОЛЬКО РУЧНАЯ ВЕРСИЯ С UI"""
-    # ВСЕГДА показываем UI, независимо от параметра silent
-    return old_repair_with_ui()
+        # Центрируем окно
+        progress_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (500 // 2)
+        y = (win.winfo_screenheight() // 2) - (400 // 2)
+        progress_window.geometry(f"500x400+{x}+{y}")
+
+        main_frame = ttk.Frame(progress_window, padding=25)
+        main_frame.pack(fill='both', expand=True)
+
+        # Заголовок
+        ttk.Label(main_frame, text="🔧 Автопочинка файлов игры",
+                  font=('Comfortaa', 16, 'bold')).pack(pady=(0, 10))
+
+        ttk.Label(main_frame, text="Проверяем и восстанавливаем игровые файлы",
+                  font=('Comfortaa', 11), foreground='gray').pack(pady=(0, 20))
+
+        # Прогресс-бар
+        progress = ttk.Progressbar(main_frame, orient="horizontal",
+                                   length=400, mode="determinate")
+        progress.pack(pady=10)
+
+        status_label = ttk.Label(main_frame, text="Начинаем проверку...",
+                                 font=('Comfortaa', 10))
+        status_label.pack()
+
+        details_label = ttk.Label(main_frame, text="",
+                                  font=('Comfortaa', 9), foreground='blue')
+        details_label.pack()
+
+        # Список найденных проблем и исправлений
+        log_frame = ttk.Frame(main_frame)
+        log_frame.pack(fill='both', expand=True, pady=10)
+
+        log_text = tk.Text(log_frame, height=8, width=60, wrap='word',
+                           font=('Consolas', 8), state='disabled')
+        scrollbar = ttk.Scrollbar(log_frame, orient='vertical', command=log_text.yview)
+        log_text.configure(yscrollcommand=scrollbar.set)
+
+        log_text.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        def add_log(message, color='black'):
+            log_text.configure(state='normal')
+            log_text.insert('end', f"• {message}\n", color)
+            log_text.see('end')
+            log_text.configure(state='disabled')
+            progress_window.update()
+
+        issues_found = []
+        fixes_applied = []
+
+        def repair_thread():
+            nonlocal issues_found, fixes_applied
+
+            try:
+                minecraft_dir = CONFIG['minecraft_dir']
+                mods_dir = os.path.join(minecraft_dir, 'mods')
+                versions_dir = os.path.join(minecraft_dir, 'versions')
+                config_dir = os.path.join(minecraft_dir, 'config')
+
+                # Проверка папок
+                win.after(0, lambda: status_label.config(text="Проверка папок..."))
+                win.after(0, lambda: details_label.config(text="Проверяем структуру папок"))
+                progress['value'] = 10
+
+                for folder, path in [('mods', mods_dir), ('versions', versions_dir), ('config', config_dir)]:
+                    if not os.path.exists(path):
+                        issues_found.append(f"Папка {folder} отсутствует")
+                        add_log(f"❌ Папка {folder} отсутствует", 'red')
+                        os.makedirs(path, exist_ok=True)
+                        fixes_applied.append(f"Создана папка {folder}")
+                        add_log(f"✅ Создана папка {folder}", 'green')
+
+                # Проверка модов
+                progress['value'] = 50
+                win.after(0, lambda: status_label.config(text="Проверка модов..."))
+
+                missing_mods = []
+                for mod in CONFIG['mods']:
+                    mod_path = os.path.join(mods_dir, mod['file'])
+                    if not os.path.exists(mod_path):
+                        missing_mods.append(mod)
+
+                if missing_mods:
+                    issues_found.append(f"Отсутствуют {len(missing_mods)} модов")
+                    add_log(f"❌ Отсутствует модов: {len(missing_mods)}", 'red')
+
+                    # Загружаем моды
+                    for i, mod in enumerate(missing_mods):
+                        win.after(0, lambda: details_label.config(
+                            text=f"Загружаем мод: {mod['file']} ({i + 1}/{len(missing_mods)})"
+                        ))
+                        if download_single_mod_turbo(mod):
+                            fixes_applied.append(f"Загружен {mod['file']}")
+                            add_log(f"✅ Загружен {mod['file']}", 'green')
+                        else:
+                            add_log(f"❌ Ошибка загрузки {mod['file']}", 'red')
+
+                # Проверка Fabric
+                progress['value'] = 80
+                win.after(0, lambda: status_label.config(text="Проверка Fabric..."))
+
+                if not check_fabric_installed():
+                    issues_found.append("Fabric не установлен")
+                    add_log("❌ Fabric не установлен", 'red')
+                    if install_fabric_silent():
+                        fixes_applied.append("Установлен Fabric")
+                        add_log("✅ Установлен Fabric", 'green')
+
+                progress['value'] = 100
+                win.after(0, lambda: status_label.config(text="Проверка завершена!"))
+
+                # Показываем результат
+                win.after(1000, lambda: show_repair_result(issues_found, fixes_applied, progress_window))
+
+            except Exception as e:
+                win.after(0, progress_window.destroy)
+                messagebox.showerror("Ошибка", f"❌ Ошибка автопочинки: {str(e)}")
+
+        def show_repair_result(issues, fixes, window):
+            window.destroy()
+
+            report = "🔧 Автопочинка завершена!\n\n"
+
+            if issues:
+                report += "📋 Найдены проблемы:\n• " + "\n• ".join(issues) + "\n\n"
+
+            if fixes:
+                report += "✅ Исправления:\n• " + "\n• ".join(fixes) + "\n\n"
+
+            if not issues and not fixes:
+                report += "✅ Проблем не обнаружено! Все файлы в порядке.\n\n"
+
+            messagebox.showinfo("Автопочинка", report)
+
+        # Запускаем починку в отдельном потоке
+        threading.Thread(target=repair_thread, daemon=True).start()
+        return True
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось запустить автопочинку: {e}")
+        return False
+
+
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "1.0.1" #обновление
+CURRENT_VERSION = "0.6.4" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -158,6 +317,20 @@ class TurboDownloader:
     def __init__(self):
         self.cache = {}
         self.cache_manager = LauncherCache()
+        self._session = None  # Будем переиспользовать сессию
+
+    @property
+    def session(self):
+        if self._session is None:
+            timeout = aiohttp.ClientTimeout(total=300)
+            self._session = aiohttp.ClientSession(timeout=timeout)
+        return self._session
+
+    async def cleanup(self):
+        """Закрывает сессию при завершении"""
+        if self._session:
+            await self._session.close()
+            self._session = None
 
     async def get_turbo_link(self, public_key):
         """Быстрое получение ссылки через асинхронность"""
@@ -166,16 +339,15 @@ class TurboDownloader:
 
         api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.get(api_url, params={"public_key": public_key}) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        direct_link = data.get('href')
-                        self.cache[public_key] = direct_link
-                        return direct_link
-                    else:
-                        logging.error(f"Ошибка API Яндекс: {response.status}")
-                        return None
+            async with self.session.get(api_url, params={"public_key": public_key}) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    direct_link = data.get('href')
+                    self.cache[public_key] = direct_link
+                    return direct_link
+                else:
+                    logging.error(f"Ошибка API Яндекс: {response.status}")
+                    return None
         except asyncio.TimeoutError:
             logging.error("Таймаут получения ссылки Яндекс")
             return None
@@ -186,42 +358,49 @@ class TurboDownloader:
     async def download_file_async(self, url, file_path, progress_callback=None):
         """Турбо-загрузка с прогрессом"""
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
-                async with session.get(url) as response:
-                    if response.status != 200:
-                        raise Exception(f"HTTP {response.status}")
+            async with self.session.get(url) as response:
+                if response.status != 200:
+                    raise Exception(f"HTTP {response.status}")
 
-                    total_size = int(response.headers.get('content-length', 0))
+                total_size = int(response.headers.get('content-length', 0))
 
-                    with open(file_path, 'wb') as f:
-                        downloaded = 0
-                        async for chunk in response.content.iter_chunked(8192 * 8):  # Ещё больше буфер
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_callback and total_size > 0:
-                                progress_callback(downloaded, total_size)
+                with open(file_path, 'wb') as f:
+                    downloaded = 0
+                    async for chunk in response.content.iter_chunked(8192 * 8):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size > 0:
+                            progress_callback(downloaded, total_size)
 
-                    return True
+                return True
         except Exception as e:
             logging.error(f"Ошибка загрузки {url}: {e}")
             return False
 
     def download_file_sync(self, url, file_path, progress_callback=None):
         """Синхронная версия для использования в потоках"""
-        return asyncio.run(self.download_file_async(url, file_path, progress_callback))
+        try:
+            return asyncio.run(self.download_file_async(url, file_path, progress_callback))
+        finally:
+            # Закрываем сессию после завершения
+            asyncio.run(self.cleanup())
 
-
-# 🔥 ОБНОВЛЕННЫЕ ФУНКЦИИ ДЛЯ МОДОВ:
 
 def download_single_mod_turbo(mod_info):
-    """Турбо-загрузка одного мода"""
+    """Турбо-загрузка одного мода с правильным закрытием ресурсов"""
     try:
+        print(f"🔍 Начинаем загрузку мода: {mod_info['file']}")
+
+        # Создаем новый загрузчик для каждого мода
         downloader = TurboDownloader()
 
         # Получаем прямую ссылку
         direct_link = asyncio.run(downloader.get_turbo_link(mod_info['url']))
+        print(f"🔗 Прямая ссылка получена: {direct_link is not None}")
+
         if not direct_link:
             logging.error(f"Не удалось получить ссылку для {mod_info['file']}")
+            asyncio.run(downloader.cleanup())
             return False
 
         # Путь для сохранения
@@ -231,20 +410,28 @@ def download_single_mod_turbo(mod_info):
 
         # Загружаем файл
         success = downloader.download_file_sync(direct_link, file_path)
+        print(f"📥 Результат загрузки {mod_info['file']}: {'✅ Успех' if success else '❌ Ошибка'}")
 
         if success and mod_info['file'].endswith('.zip'):
             # Распаковываем ZIP
             try:
                 with zipfile.ZipFile(file_path, 'r') as zip_ref:
                     zip_ref.extractall(mods_dir)
-                logging.info(f"Мод распакован: {mod_info['file']}")
+                print(f"📦 Мод распакован: {mod_info['file']}")
             except Exception as e:
                 logging.error(f"Ошибка распаковки {mod_info['file']}: {e}")
 
+        # Явно закрываем загрузчик
+        asyncio.run(downloader.cleanup())
         return success
 
     except Exception as e:
         logging.error(f"Ошибка загрузки мода {mod_info['file']}: {e}")
+        # Пытаемся закрыть загрузчик даже при ошибке
+        try:
+            asyncio.run(downloader.cleanup())
+        except:
+            pass
         return False
 
 
@@ -1083,325 +1270,110 @@ def validate_backup_integrity(backup_path):
         return False
 
 
-def auto_repair_game_files(silent=True):  # 👈 ДОБАВЛЯЕМ SILENT ПАРАМЕТР
-    """Автопочинка файлов игры - теперь может работать ТИХО"""
-
-    if not silent:
-        # Старая логика с окошками прогресса
-        return old_repair_with_ui()
-
-    # 🔴 НОВАЯ SILENT-ВЕРСИЯ - БЕЗ ОКОШЕК
+def download_missing_mods_silent():
+    """Тихая загрузка отсутствующих модов без UI"""
     try:
         minecraft_dir = CONFIG['minecraft_dir']
+        mods_dir = os.path.join(minecraft_dir, 'mods')
+        os.makedirs(mods_dir, exist_ok=True)
 
-        # МОЛЧА создаём папки если их нет
-        for folder in ['mods', 'versions', 'config', 'shaderpacks']:
-            path = os.path.join(minecraft_dir, folder)
-            if not os.path.exists(path):
-                os.makedirs(path, exist_ok=True)
+        # Проверяем какие моды отсутствуют
+        missing_mods = []
+        for mod in CONFIG['mods']:
+            mod_path = os.path.join(mods_dir, mod['file'])
+            if not os.path.exists(mod_path):
+                missing_mods.append(mod)
 
-        # МОЛЧА качаем недостающие моды
-        download_missing_mods_silent()
-
-        # МОЛЧА проверяем Fabric
-        if not check_fabric_installed():
-            install_fabric_silent()
+        if missing_mods:
+            print(f"🔧 Скачиваем {len(missing_mods)} отсутствующих модов...")
+            # Используем существующую функцию загрузки
+            for mod in missing_mods:
+                download_single_mod_turbo(mod)
 
         return True
-
     except Exception as e:
-        if not silent:
-            messagebox.showerror("Ошибка", f"Не удалось починить: {e}")
+        print(f"❌ Ошибка загрузки модов: {e}")
         return False
 
-    # Создаем окно прогресса
-    progress_window = tk.Toplevel(win)
-    progress_window.title("🔧 Автопочинка файлов")
-    progress_window.geometry("500x400")
-    progress_window.resizable(False, False)
-    progress_window.transient(win)
-    progress_window.grab_set()
 
-    # Центрируем окно
-    progress_window.update_idletasks()
-    x = (win.winfo_screenwidth() // 2) - (500 // 2)
-    y = (win.winfo_screenheight() // 2) - (400 // 2)
-    progress_window.geometry(f"500x400+{x}+{y}")
+def check_fabric_installed():
+    """Проверяет установлен ли Fabric"""
+    try:
+        minecraft_dir = CONFIG['minecraft_dir']
+        versions_dir = os.path.join(minecraft_dir, 'versions')
+        fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
+        fabric_version_dir = os.path.join(versions_dir, fabric_version)
+        return os.path.exists(fabric_version_dir)
+    except:
+        return False
 
-    main_frame = ttk.Frame(progress_window, padding=25)
-    main_frame.pack(fill='both', expand=True)
 
-    # Заголовок
-    ttk.Label(main_frame, text="🔧 Автопочинка файлов игры",
-              font=('Comfortaa', 16, 'bold')).pack(pady=(0, 10))
+def install_fabric_silent():
+    """Тихая установка Fabric"""
+    try:
+        print("🔧 Устанавливаем Fabric...")
+        minecraft_launcher_lib.fabric.install_fabric(
+            minecraft_version=CONFIG['version'],
+            loader_version=CONFIG['fabric_loader'],
+            minecraft_directory=CONFIG['minecraft_dir']
+        )
+        print("✅ Fabric установлен")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка установки Fabric: {e}")
+        return False
+def download_missing_mods_silent():
+    """Тихая загрузка отсутствующих модов без UI"""
+    try:
+        minecraft_dir = CONFIG['minecraft_dir']
+        mods_dir = os.path.join(minecraft_dir, 'mods')
+        os.makedirs(mods_dir, exist_ok=True)
 
-    ttk.Label(main_frame, text="Проверяем и восстанавливаем игровые файлы",
-              font=('Comfortaa', 11), foreground='gray').pack(pady=(0, 20))
+        # Проверяем какие моды отсутствуют
+        missing_mods = []
+        for mod in CONFIG['mods']:
+            mod_path = os.path.join(mods_dir, mod['file'])
+            if not os.path.exists(mod_path):
+                missing_mods.append(mod)
 
-    # Прогресс-бар
-    progress = ttk.Progressbar(main_frame, orient="horizontal",
-                               length=400, mode="determinate")
-    progress.pack(pady=10)
+        if missing_mods:
+            print(f"🔧 Скачиваем {len(missing_mods)} отсутствующих модов...")
+            # Используем существующую функцию загрузки
+            for mod in missing_mods:
+                download_single_mod_turbo(mod)
 
-    status_label = ttk.Label(main_frame, text="Начинаем проверку...",
-                             font=('Comfortaa', 10))
-    status_label.pack()
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка загрузки модов: {e}")
+        return False
 
-    details_label = ttk.Label(main_frame, text="",
-                              font=('Comfortaa', 9), foreground='blue')
-    details_label.pack()
+def check_fabric_installed():
+    """Проверяет установлен ли Fabric"""
+    try:
+        minecraft_dir = CONFIG['minecraft_dir']
+        versions_dir = os.path.join(minecraft_dir, 'versions')
+        fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
+        fabric_version_dir = os.path.join(versions_dir, fabric_version)
+        return os.path.exists(fabric_version_dir)
+    except:
+        return False
 
-    # Список найденных проблем и исправлений
-    log_frame = ttk.Frame(main_frame)
-    log_frame.pack(fill='both', expand=True, pady=10)
+def install_fabric_silent():
+    """Тихая установка Fabric"""
+    try:
+        print("🔧 Устанавливаем Fabric...")
+        minecraft_launcher_lib.fabric.install_fabric(
+            minecraft_version=CONFIG['version'],
+            loader_version=CONFIG['fabric_loader'],
+            minecraft_directory=CONFIG['minecraft_dir']
+        )
+        print("✅ Fabric установлен")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка установки Fabric: {e}")
+        return False
 
-    log_text = tk.Text(log_frame, height=8, width=60, wrap='word',
-                       font=('Consolas', 8), state='disabled')
-    scrollbar = ttk.Scrollbar(log_frame, orient='vertical', command=log_text.yview)
-    log_text.configure(yscrollcommand=scrollbar.set)
 
-    log_text.pack(side='left', fill='both', expand=True)
-    scrollbar.pack(side='right', fill='y')
-
-    def add_log(message, color='black'):
-        log_text.configure(state='normal')
-        log_text.insert('end', f"• {message}\n", color)
-        log_text.see('end')
-        log_text.configure(state='disabled')
-        progress_window.update()
-
-    # Кнопка отмены
-    cancel_btn = ttk.Button(main_frame, text="❌ Отменить починку",
-                            state='disabled')  # Пока отключена
-    cancel_btn.pack(pady=10)
-
-    issues_found = []
-    fixes_applied = []
-
-    def repair_thread():
-        nonlocal issues_found, fixes_applied
-
-        try:
-            minecraft_dir = CONFIG['minecraft_dir']
-            mods_dir = os.path.join(minecraft_dir, 'mods')
-            versions_dir = os.path.join(minecraft_dir, 'versions')
-            config_dir = os.path.join(minecraft_dir, 'config')
-
-            win.after(0, lambda: status_label.config(text="Проверка папок..."))
-            win.after(0, lambda: details_label.config(text="Проверяем структуру папок"))
-            progress['value'] = 10
-
-            # Проверяем наличие основных папок
-            if not os.path.exists(mods_dir):
-                issues_found.append("Папка mods отсутствует")
-                add_log("❌ Папка mods отсутствует", 'red')
-                os.makedirs(mods_dir, exist_ok=True)
-                fixes_applied.append("Создана папка mods")
-                add_log("✅ Создана папка mods", 'green')
-
-            if not os.path.exists(versions_dir):
-                issues_found.append("Папка versions отсутствует")
-                add_log("❌ Папка versions отсутствует", 'red')
-                os.makedirs(versions_dir, exist_ok=True)
-                fixes_applied.append("Создана папка versions")
-                add_log("✅ Создана папка versions", 'green')
-
-            if not os.path.exists(config_dir):
-                issues_found.append("Папка config отсутствует")
-                add_log("❌ Папка config отсутствует", 'red')
-                os.makedirs(config_dir, exist_ok=True)
-                fixes_applied.append("Создана папка config")
-                add_log("✅ Создана папка config", 'green')
-
-            progress['value'] = 30
-            win.after(0, lambda: status_label.config(text="Проверка servers.dat..."))
-            win.after(0, lambda: details_label.config(text="Проверяем файл серверов"))
-
-            # Проверяем servers.dat
-            servers_file = os.path.join(minecraft_dir, 'servers.dat')
-            if not os.path.exists(servers_file):
-                issues_found.append("Файл servers.dat отсутствует")
-                add_log("❌ Файл servers.dat отсутствует", 'red')
-                try:
-                    # Восстанавливаем servers.dat
-                    params = {'public_key': 'https://disk.yandex.ru/d/WM_flS--BathOQ'}
-                    base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
-                    response = requests.get(base_url, params=params)
-                    download_url = response.json().get('href')
-
-                    if download_url:
-                        with open(servers_file, 'wb') as f:
-                            dl_response = requests.get(download_url, stream=True)
-                            for chunk in dl_response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-                        fixes_applied.append("Восстановлен файл servers.dat")
-                        add_log("✅ Восстановлен файл servers.dat", 'green')
-                except Exception as e:
-                    add_log(f"⚠️ Не удалось восстановить servers.dat: {str(e)}", 'orange')
-
-            progress['value'] = 50
-            win.after(0, lambda: status_label.config(text="Проверка модов..."))
-            win.after(0, lambda: details_label.config(text="Проверяем основные моды"))
-
-            # 🔥 ВАЖНОЕ ИЗМЕНЕНИЕ: ВСЕГДА ПРОВЕРЯЕМ И ЗАГРУЖАЕМ ОТСУТСТВУЮЩИЕ МОДЫ
-            mods_dir_path = os.path.join(minecraft_dir, 'mods')
-            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
-
-            # Считаем общее количество модов для прогресса
-            total_mods = len(CONFIG['mods'])
-            missing_mods = []
-            existing_mods = []
-
-            # Сначала проверяем какие моды отсутствуют
-            for i, mod in enumerate(CONFIG['mods']):
-                mod_path = os.path.join(mods_dir_path, mod['file'])
-                if not os.path.exists(mod_path):
-                    missing_mods.append(mod)
-                else:
-                    existing_mods.append(mod['file'])
-
-            # Логируем что нашли
-            if existing_mods:
-                add_log(f"📁 Найдено модов: {len(existing_mods)}", 'green')
-                if len(existing_mods) <= 5:  # Показываем только первые 5
-                    for mod_file in existing_mods:
-                        add_log(f"   ✅ {mod_file}", 'green')
-
-            if missing_mods:
-                issues_found.append(f"Отсутствуют {len(missing_mods)} модов")
-                add_log(f"❌ Отсутствует модов: {len(missing_mods)}", 'red')
-
-                # ВСЕГДА загружаем отсутствующие моды, независимо от silent режима
-                for i, mod in enumerate(missing_mods):
-                    try:
-                        win.after(0, lambda: details_label.config(
-                            text=f"Загружаем мод: {mod['file']} ({i + 1}/{len(missing_mods)})"
-                        ))
-
-                        # Обновляем прогресс
-                        current_progress = 50 + (i * 30 / len(missing_mods))
-                        progress['value'] = current_progress
-
-                        params = {'public_key': mod['url']}
-                        response = requests.get(base_url, params=params)
-                        response.raise_for_status()
-                        download_url = response.json().get('href')
-
-                        if download_url:
-                            mod_path = os.path.join(mods_dir_path, mod['file'])
-                            with open(mod_path, 'wb') as f:
-                                dl_response = requests.get(download_url, stream=True)
-                                dl_response.raise_for_status()
-                                total_size = int(dl_response.headers.get('content-length', 0))
-                                downloaded = 0
-
-                                for chunk in dl_response.iter_content(chunk_size=8192):
-                                    if chunk:
-                                        f.write(chunk)
-                                        downloaded += len(chunk)
-
-                            # Распаковываем ZIP если нужно
-                            if mod['file'].endswith('.zip'):
-                                try:
-                                    with zipfile.ZipFile(mod_path, 'r') as zip_file:
-                                        zip_file.extractall(path=mods_dir_path)
-                                    fixes_applied.append(f"Загружен и распакован {mod['file']}")
-                                    add_log(f"✅ Загружен и распакован {mod['file']}", 'green')
-                                except Exception as e:
-                                    fixes_applied.append(f"Загружен {mod['file']} (ошибка распаковки)")
-                                    add_log(f"⚠️ Загружен {mod['file']} (ошибка распаковки: {e})", 'orange')
-                            else:
-                                fixes_applied.append(f"Загружен {mod['file']}")
-                                add_log(f"✅ Загружен {mod['file']}", 'green')
-
-                    except Exception as e:
-                        add_log(f"❌ Ошибка загрузки мода {mod['file']}: {str(e)}", 'red')
-
-            elif not os.path.exists(mods_dir) or not os.listdir(mods_dir):
-                # Старая логика для полностью пустой папки
-                issues_found.append("Папка mods пустая")
-                add_log("❌ Папка mods пустая", 'red')
-                # ... (старый код загрузки всех модов)
-
-            progress['value'] = 80
-            win.after(0, lambda: status_label.config(text="Проверка Fabric..."))
-            win.after(0, lambda: details_label.config(text="Проверяем установку Fabric"))
-
-            # Проверяем Fabric
-            fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
-            fabric_version_dir = os.path.join(versions_dir, fabric_version)
-            if not os.path.exists(fabric_version_dir):
-                issues_found.append("Fabric не установлен")
-                add_log("❌ Fabric не установлен", 'red')
-                try:
-                    minecraft_launcher_lib.fabric.install_fabric(
-                        minecraft_version=CONFIG['version'],
-                        loader_version=CONFIG['fabric_loader'],
-                        minecraft_directory=CONFIG['minecraft_dir']
-                    )
-                    fixes_applied.append("Установлен Fabric")
-                    add_log("✅ Установлен Fabric", 'green')
-                except Exception as e:
-                    add_log(f"❌ Ошибка установки Fabric: {str(e)}", 'red')
-
-            progress['value'] = 90
-            win.after(0, lambda: status_label.config(text="Проверка Minecraft..."))
-            win.after(0, lambda: details_label.config(text="Проверяем версию Minecraft"))
-
-            # Проверяем версию Minecraft
-            minecraft_version_dir = os.path.join(versions_dir, CONFIG['version'])
-            if not os.path.exists(minecraft_version_dir):
-                issues_found.append(f"Версия Minecraft {CONFIG['version']} не установлена")
-                add_log(f"❌ Версия Minecraft {CONFIG['version']} не установлена", 'red')
-                try:
-                    minecraft_launcher_lib.install.install_minecraft_version(
-                        versionid=CONFIG['version'],
-                        minecraft_directory=CONFIG['minecraft_dir']
-                    )
-                    fixes_applied.append(f"Установлена версия Minecraft {CONFIG['version']}")
-                    add_log(f"✅ Установлена версия Minecraft {CONFIG['version']}", 'green')
-                except Exception as e:
-                    add_log(f"❌ Ошибка установки Minecraft: {str(e)}", 'red')
-
-            progress['value'] = 100
-            win.after(0, lambda: status_label.config(text="Проверка завершена!"))
-
-            # Формируем отчет
-            win.after(1000, lambda: show_repair_result(issues_found, fixes_applied, progress_window))
-
-        except Exception as e:
-            win.after(0, progress_window.destroy)
-            if not silent:
-                messagebox.showerror("Ошибка", f"❌ Ошибка автопочинки: {str(e)}")
-
-    def show_repair_result(issues, fixes, window):
-        window.destroy()
-
-        report = "🔧 Автопочинка завершена!\n\n"
-
-        if issues:
-            report += "📋 Найдены проблемы:\n• " + "\n• ".join(issues) + "\n\n"
-
-        if fixes:
-            report += "✅ Исправления:\n• " + "\n• ".join(fixes) + "\n\n"
-
-        if not issues and not fixes:
-            report += "✅ Проблем не обнаружено! Все файлы в порядке.\n\n"
-
-        report += "🎯 Рекомендации:\n"
-        if issues and not fixes:
-            report += "• Попробуйте полную переустановку\n"
-            report += "• Проверьте подключение к интернету\n"
-        elif not issues:
-            report += "• Игра готова к запуску!\n"
-
-        if not silent:
-            messagebox.showinfo("Автопочинка", report)
-
-    # Запускаем починку в отдельном потоке
-    threading.Thread(target=repair_thread, daemon=True).start()
-
-    return True
 def is_discord_installed():
     # Проверяем, установлен ли Discord (пример для Windows)
     if os.name == 'nt':  # Windows
@@ -2349,7 +2321,108 @@ mixer.music.set_volume(0.1)
 win = ThemedTk(theme="arc")
 win.geometry("1920x1080")
 win.title('YamPixel')
-#win.attributes("-fullscreen", True)
+# win.attributes("-fullscreen", True)
+
+# === ПЕРЕМЕЩАЕМ СЮДА ВСЁ ОТНОСИТЕЛЬНО СЕССИИ ===
+LAST_SESSION_FILE = os.path.expanduser("~/YamalPixel/last_session.json")
+
+
+
+def load_last_session():
+    """Загружает последние настройки"""
+    try:
+        if os.path.exists(LAST_SESSION_FILE):
+            with open(LAST_SESSION_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except:
+        pass
+    return None
+
+def save_last_session():
+    """Сохраняет последние настройки"""
+    try:
+        session = {
+            'username': username.get() if 'username' in globals() else '',
+            'version': version_selector.get() if 'version_selector' in globals() else 'YamalPixel',
+            'fullscreen': enabled.get() if 'enabled' in globals() else False,
+            'music': enabled1.get() if 'enabled1' in globals() else False,
+            'memory': CONFIG.get('jvm_memory', '4G'),  # ← ДОБАВЛЯЕМ ПАМЯТЬ
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+
+        with open(LAST_SESSION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(session, f, indent=2)
+        print("✅ Настройки сохранены")
+    except Exception as e:
+        print(f"❌ Ошибка сохранения настроек: {e}")
+
+
+def apply_session_settings(session):
+    """Применяет настройки сессии когда все элементы готовы"""
+    try:
+        # Восстанавливаем никнейм
+        if 'username' in globals() and session.get('username'):
+            username.text_value.set(session['username'])
+            username.entry.configure(fg='#2b2b2b')
+            print(f"👤 Восстановлен ник: {session['username']}")
+
+        # Восстанавливаем версию
+        if 'version_selector' in globals() and session.get('version'):
+            try:
+                version_selector.current_value.set(session['version'])
+                version_selector.draw_selector()
+                print(f"🎯 Восстановлена версия: {session['version']}")
+            except:
+                pass
+
+        # Восстанавливаем память
+        if session.get('memory'):
+            CONFIG['jvm_memory'] = session['memory']
+            print(f"💾 Восстановлена память: {session['memory']}")
+
+        # Восстанавливаем полноэкранный режим
+        if 'enabled' in globals():
+            enabled.set(session.get('fullscreen', False))
+            if session.get('fullscreen'):
+                fullsc()
+                print("🖥️ Восстановлен полноэкранный режим")
+
+        # Восстанавливаем музыку
+        if 'enabled1' in globals():
+            enabled1.set(session.get('music', False))
+            if session.get('music'):
+                mscon()
+                print("🎵 Восстановлена музыка")
+
+    except Exception as e:
+        print(f"⚠️ Не удалось применить некоторые настройки: {e}")
+
+
+def on_closing():
+    """При закрытии окна"""
+    print("💾 Сохраняем настройки...")
+    save_last_session()
+    win.destroy()
+
+
+# Вешаем обработчик закрытия
+win.protocol("WM_DELETE_WINDOW", on_closing)
+
+
+def load_session_on_start():
+    """Загружает сессию после полной инициализации интерфейса"""
+    session = load_last_session()
+    if session:
+        print("🔄 Восстанавливаем предыдущую сессию...")
+        # Даем время на создание всех элементов интерфейса
+        win.after(2000, lambda: apply_session_settings(session))
+    else:
+        print("🔰 Сессия не найдена, используем настройки по умолчанию")
+
+
+# Запускаем загрузку сессии после полной инициализации
+win.after(2500, load_session_on_start)
+# === КОНЕЦ БЛОКА СЕССИИ ===
 
 win.after(200, check_for_updates)  # NEW
 
@@ -2365,10 +2438,6 @@ mixer.music.set_volume(0.1)
 bag = tk.PhotoImage(file=str(RESOURCE_DIR / "logo.png"))
 img = ttk.Label(win, image=bag)
 img.place(x=0, y=-1)
-
-
-
-
 
 
 
@@ -2996,35 +3065,195 @@ def fig1():
 
 
 def repair_game_with_options():
-    """Расширенная функция починки игры с выбором действия"""
+    """Упрощенная версия починки - только то, что работает"""
     choice_window = tk.Toplevel(win)
     choice_window.title("Починить игру")
-    choice_window.geometry("400x300")
-    choice_window.configure(bg='#2b2b2b')
-    choice_window.transient(win)
-    choice_window.grab_set()
+    choice_window.geometry("400x200")
 
-    title_label = ttk.Label(choice_window,
-                            text="Выберите действие:",
-                            font=('Comfortaa', 14, 'bold'))
-    title_label.pack(pady=20)
+    ttk.Label(choice_window, text="Выберите действие:",
+              font=('Comfortaa', 14)).pack(pady=20)
+
+    def simple_repair():
+        choice_window.destroy()
+        auto_repair_game_files()  # Наша новая простая функция
 
     def cleanup_only():
         choice_window.destroy()
         fig1()  # Старая функция очистки
 
+    ttk.Button(choice_window, text="🔧 Проверить и починить файлы",
+               command=simple_repair, width=25).pack(pady=10)
 
-
-    def cancel():
-        choice_window.destroy()
-
-    # Кнопки действий
     ttk.Button(choice_window, text="🧹 Очистить игру (удалить моды и версии)",
-               command=cleanup_only, width=30).pack(pady=10)
-
+               command=cleanup_only, width=25).pack(pady=10)
 
     ttk.Button(choice_window, text="❌ Отмена",
-               command=cancel, width=20).pack(pady=20)
+               command=choice_window.destroy).pack(pady=10)
+
+
+def auto_repair_game_files():
+    """Починка файлов игры с прогресс-баром"""
+    try:
+        minecraft_dir = CONFIG['minecraft_dir']
+
+        # 1. Создаем папки если их нет
+        for folder in ['mods', 'versions', 'config', 'shaderpacks']:
+            path = os.path.join(minecraft_dir, folder)
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+                print(f"✅ Создана папка: {folder}")
+
+        # 2. Проверяем и скачиваем моды ТОЛЬКО для YamalPixel с прогресс-баром
+        if version_selector.get() == "YamalPixel":
+            repair_missing_mods_with_progress()
+        else:
+            print(f"🚫 Версия {version_selector.get()} - моды не проверяются")
+
+        # 3. Проверяем Fabric
+        if not check_fabric_installed():
+            print("🔧 Устанавливаем Fabric...")
+            install_fabric_silent()
+
+        messagebox.showinfo("✅ Готово", "Проверка и починка завершены!")
+        return True
+
+    except Exception as e:
+        messagebox.showerror("❌ Ошибка", f"Не удалось починить игру: {e}")
+        return False
+
+
+def repair_missing_mods_with_progress():
+    """Загрузка отсутствующих модов с прогресс-баром"""
+    # Создаем окно прогресса (аналогично checker1)
+    progress_window = tk.Toplevel(win)
+    progress_window.title("Починка модов")
+    progress_window.geometry("500x200")
+    progress_window.resizable(False, False)
+    progress_window.transient(win)
+    progress_window.grab_set()
+
+    # Центрируем окно
+    progress_window.update_idletasks()
+    x = (win.winfo_screenwidth() // 2) - (500 // 2)
+    y = (win.winfo_screenheight() // 2) - (200 // 2)
+    progress_window.geometry(f"500x200+{x}+{y}")
+
+    # Элементы UI
+    main_frame = ttk.Frame(progress_window, padding=20)
+    main_frame.pack(fill='both', expand=True)
+
+    title_label = ttk.Label(main_frame, text="🔧 Починка модов",
+                            font=('Comfortaa', 14, 'bold'))
+    title_label.pack(pady=(0, 15))
+
+    total_progress_label = ttk.Label(main_frame, text="Общий прогресс: 0%")
+    total_progress_label.pack()
+
+    total_progress = ttk.Progressbar(main_frame, orient="horizontal",
+                                     length=400, mode="determinate")
+    total_progress.pack(pady=5)
+
+    current_mod_label = ttk.Label(main_frame, text="Подготовка к загрузке...")
+    current_mod_label.pack()
+
+    status_label = ttk.Label(main_frame, text="Инициализация...",
+                             font=('Comfortaa', 9), foreground='blue')
+    status_label.pack(pady=10)
+
+    def update_progress(current, total, mod_name="", status=""):
+        """Обновляет прогресс в UI"""
+        try:
+            total_percent = (current * 100) // total if total > 0 else 0
+            total_progress['value'] = total_percent
+            total_progress_label.config(text=f"Общий прогресс: {total_percent}%")
+            current_mod_label.config(text=f"Текущий мод: {mod_name}")
+            if status:
+                status_label.config(text=status)
+            progress_window.update()
+        except:
+            pass
+
+    def download_thread():
+        """Поток загрузки модов"""
+        try:
+            mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
+            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+            # Определяем какие моды нужно скачать
+            mods_to_download = []
+            for mod in CONFIG['mods']:
+                mod_path = os.path.join(mods_dir, mod['file'])
+                if not os.path.exists(mod_path):
+                    mods_to_download.append(mod)
+
+            total_mods = len(mods_to_download)
+            success_count = 0
+
+            if total_mods == 0:
+                win.after(0, lambda: progress_window.destroy())
+                return
+
+            win.after(0, lambda: update_progress(0, total_mods, "Подготовка..."))
+
+            for i, mod in enumerate(mods_to_download):
+                try:
+                    win.after(0, lambda idx=i, m=mod: update_progress(
+                        idx, total_mods, m['file'], "Получение ссылки..."
+                    ))
+
+                    # Получаем прямую ссылку
+                    params = {'public_key': mod['url']}
+                    response = requests.get(base_url, params=params, timeout=30)
+                    response.raise_for_status()
+                    download_url = response.json().get('href')
+
+                    if not download_url:
+                        continue
+
+                    # Загружаем файл
+                    mod_path = os.path.join(mods_dir, mod['file'])
+
+                    with requests.get(download_url, stream=True, timeout=60) as dl_response:
+                        dl_response.raise_for_status()
+
+                        total_size = int(dl_response.headers.get('content-length', 0))
+                        downloaded_size = 0
+
+                        with open(mod_path, 'wb') as f:
+                            for chunk in dl_response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                                    downloaded_size += len(chunk)
+
+                                    # Обновляем прогресс
+                                    win.after(0, lambda: update_progress(
+                                        i, total_mods, mod['file'],
+                                        f"Загружено: {downloaded_size / (1024 * 1024):.1f}MB"
+                                    ))
+
+                        if os.path.exists(mod_path) and os.path.getsize(mod_path) > 0:
+                            success_count += 1
+                            win.after(0, lambda: update_progress(
+                                i + 1, total_mods, mod['file'], "✅ Успешно"
+                            ))
+                        else:
+                            win.after(0, lambda: update_progress(
+                                i + 1, total_mods, mod['file'], "❌ Ошибка"
+                            ))
+
+                except Exception as e:
+                    win.after(0, lambda: update_progress(
+                        i + 1, total_mods, mod['file'], f"❌ Ошибка: {str(e)[:30]}"
+                    ))
+
+            # Закрываем окно
+            win.after(1000, lambda: progress_window.destroy())
+
+        except Exception as e:
+            win.after(0, lambda: progress_window.destroy())
+
+    # Запускаем загрузку в отдельном потоке
+    threading.Thread(target=download_thread, daemon=True).start()
 def launch_without_mods():
     """Запуск игры полностью без модов"""
     result = messagebox.askyesno(
@@ -3856,27 +4085,204 @@ settings_menu.add_separator()
 
 # Функция для проверки и загрузки модов
 def checker1():
-    """ОБНОВЛЕННАЯ функция проверки и загрузки модов"""
-    if version_selector.get() != "YamalPixel":  # ИСПРАВЛЕНО: version_combobox -> version_selector
+    """НАДЕЖНАЯ функция проверки и загрузки модов с прогресс-баром"""
+    if version_selector.get() != "YamalPixel":
         print("Выбрана версия, отличная от YamalPixel. Загрузка модов пропущена.")
         return
 
-    mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
-    os.makedirs(mods_dir, exist_ok=True)
+    # Создаем окно прогресса
+    progress_window = tk.Toplevel(win)
+    progress_window.title("Загрузка модов")
+    progress_window.geometry("500x200")
+    progress_window.resizable(False, False)
+    progress_window.transient(win)
+    progress_window.grab_set()
 
-    # Проверяем какие моды отсутствуют
-    missing_mods = []
-    for mod in CONFIG['mods']:
-        mod_path = os.path.join(mods_dir, mod['file'])
-        if not os.path.exists(mod_path):
-            missing_mods.append(mod)
+    # Центрируем окно
+    progress_window.update_idletasks()
+    x = (win.winfo_screenwidth() // 2) - (500 // 2)
+    y = (win.winfo_screenheight() // 2) - (200 // 2)
+    progress_window.geometry(f"500x200+{x}+{y}")
 
-    if missing_mods:
-        print(f"Найдено отсутствующих модов: {len(missing_mods)}")
-        # Запускаем турбо-загрузку
-        download_mods_turbo_ui(missing_mods)
-    else:
-        print("Все моды установлены")
+    # Элементы UI
+    main_frame = ttk.Frame(progress_window, padding=20)
+    main_frame.pack(fill='both', expand=True)
+
+    # Заголовок
+    title_label = ttk.Label(main_frame, text="📥 Загрузка модов",
+                            font=('Comfortaa', 14, 'bold'))
+    title_label.pack(pady=(0, 15))
+
+    # Общий прогресс-бар
+    total_progress_label = ttk.Label(main_frame, text="Общий прогресс: 0%")
+    total_progress_label.pack()
+
+    total_progress = ttk.Progressbar(main_frame, orient="horizontal",
+                                     length=400, mode="determinate")
+    total_progress.pack(pady=5)
+
+    # Прогресс текущего мода
+    current_mod_label = ttk.Label(main_frame, text="Подготовка к загрузке...")
+    current_mod_label.pack()
+
+    current_progress = ttk.Progressbar(main_frame, orient="horizontal",
+                                       length=400, mode="determinate")
+    current_progress.pack(pady=5)
+
+    # Счетчик
+    counter_label = ttk.Label(main_frame, text="Мод 0/0")
+    counter_label.pack()
+
+    # Статус
+    status_label = ttk.Label(main_frame, text="Инициализация...",
+                             font=('Comfortaa', 9), foreground='blue')
+    status_label.pack(pady=10)
+
+    def update_progress(current, total, mod_name="", file_progress=0, file_total=1):
+        """Обновляет прогресс в UI"""
+        try:
+            # Общий прогресс
+            total_percent = (current * 100) // total if total > 0 else 0
+            total_progress['value'] = total_percent
+            total_progress_label.config(text=f"Общий прогресс: {total_percent}%")
+
+            # Прогресс текущего файла
+            file_percent = (file_progress * 100) // file_total if file_total > 0 else 0
+            current_progress['value'] = file_percent
+
+            # Тексты
+            current_mod_label.config(text=f"Текущий мод: {mod_name}")
+            counter_label.config(text=f"Мод {current}/{total}")
+            status_label.config(
+                text=f"Загрузка: {file_progress / (1024 * 1024):.1f}MB / {file_total / (1024 * 1024):.1f}MB"
+                if file_total > 0 else "Подготовка...")
+
+            progress_window.update()
+        except:
+            pass
+
+    def download_thread():
+        """Поток загрузки модов"""
+        nonlocal progress_window
+
+        try:
+            mods_dir = os.path.join(CONFIG['minecraft_dir'], 'mods')
+            os.makedirs(mods_dir, exist_ok=True)
+            base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+            # Определяем какие моды нужно скачать
+            mods_to_download = []
+            for mod in CONFIG['mods']:
+                mod_path = os.path.join(mods_dir, mod['file'])
+                if not os.path.exists(mod_path):
+                    mods_to_download.append(mod)
+
+            total_mods = len(mods_to_download)
+            success_count = 0
+
+            if total_mods == 0:
+                win.after(0, lambda: show_completion_result(progress_window, 0, 0, True))
+                return
+
+            win.after(0, lambda: update_progress(0, total_mods, "Подготовка..."))
+
+            for i, mod in enumerate(mods_to_download):
+                try:
+                    mod_path = os.path.join(mods_dir, mod['file'])
+
+                    win.after(0, lambda idx=i, m=mod: update_progress(
+                        idx, total_mods, m['file'], 0, 1
+                    ))
+
+                    print(f"⬇️  Загружаем мод ({i + 1}/{total_mods}): {mod['file']}")
+
+                    # Получаем ссылку для скачивания
+                    params = {'public_key': mod['url']}
+                    response = requests.get(base_url, params=params, timeout=30)
+                    response.raise_for_status()
+                    download_url = response.json().get('href')
+
+                    if not download_url:
+                        print(f"❌ Не удалось получить ссылку для {mod['file']}")
+                        continue
+
+                    # Загружаем файл с прогрессом
+                    with requests.get(download_url, stream=True, timeout=60) as dl_response:
+                        dl_response.raise_for_status()
+
+                        total_size = int(dl_response.headers.get('content-length', 0))
+                        downloaded_size = 0
+
+                        with open(mod_path, 'wb') as f:
+                            for chunk in dl_response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                                    downloaded_size += len(chunk)
+
+                                    # Обновляем прогресс текущего файла
+                                    win.after(0, lambda idx=i, m=mod, ds=downloaded_size, ts=total_size:
+                                    update_progress(idx, total_mods, m['file'], ds, ts))
+
+                        print(f"✅ Мод {mod['file']} успешно установлен")
+                        success_count += 1
+
+                except Exception as e:
+                    print(f"❌ Ошибка загрузки мода {mod['file']}: {str(e)}")
+                    win.after(0, lambda: status_label.config(
+                        text=f"Ошибка: {str(e)[:50]}..."
+                    ))
+
+            # Распаковываем ZIP-файлы
+            win.after(0, lambda: status_label.config(text="Распаковка архивов..."))
+            zip_count = 0
+            for mod in mods_to_download:
+                if mod['file'].endswith('.zip'):
+                    zip_path = os.path.join(mods_dir, mod['file'])
+                    if os.path.exists(zip_path):
+                        try:
+                            with zipfile.ZipFile(zip_path, 'r') as zip_file:
+                                zip_file.extractall(path=mods_dir)
+                            print(f"📦 Содержимое архива {mod['file']} успешно извлечено")
+                            zip_count += 1
+                        except Exception as e:
+                            print(f"❌ Ошибка распаковки архива {mod['file']}: {str(e)}")
+
+            # Показываем результат
+            win.after(0, lambda: show_completion_result(
+                progress_window, success_count, total_mods, False
+            ))
+
+        except Exception as e:
+            print(f"💥 Критическая ошибка в потоке загрузки: {e}")
+            win.after(0, lambda: show_completion_result(progress_window, 0, 0, True))
+
+    def show_completion_result(window, success, total, all_exist):
+        """Показывает результат загрузки"""
+        window.destroy()
+
+        if all_exist:
+            messagebox.showinfo("Загрузка модов", "✅ Все моды уже установлены!")
+        elif success == total:
+            messagebox.showinfo("Загрузка модов",
+                                f"🎉 Все моды успешно загружены!\n\n"
+                                f"• Загружено: {success} модов\n"
+                                f"Запускайте игру!")
+        elif success > 0:
+            messagebox.showwarning("Загрузка модов",
+                                   f"📊 Загрузка завершена с ошибками\n\n"
+                                   f"• Успешно: {success} модов\n"
+                                   f"• Всего: {total} модов\n"
+                                   f"• Не загружено: {total - success} модов")
+        else:
+            messagebox.showerror("Ошибка загрузки",
+                                 "❌ Не удалось загрузить ни одного мода!\n\n"
+                                 "Возможные причины:\n"
+                                 "• Проблемы с интернет-соединением\n"
+                                 "• Яндекс.Диск блокирует загрузки\n"
+                                 "• Антивирус блокирует загрузки")
+
+    # Запускаем загрузку в отдельном потоке
+    threading.Thread(target=download_thread, daemon=True).start()
 
 
 # Функция для проверки установки Minecraft и Fabric
@@ -4089,7 +4495,14 @@ def check_and_download_missing_mods():
         print("✅ Все моды на месте")
         return False
 
+
 def runn():
+    # ЗАГРУЗКА МОДОВ ТОЛЬКО ДЛЯ YamalPixel
+    if version_selector.get() == "YamalPixel":
+        checker1()
+    else:
+        print(f"🚫 Версия {version_selector.get()} - загрузка модов пропущена")
+
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
     if not auto_pre_launch_check():
         return  # Не запускаем если проблемы
@@ -4112,8 +4525,6 @@ def runn():
 
         # НЕМЕДЛЕННО блокируем интерфейс
         set_launch_state(True)
-
-
 
         # Создаем окно прогресса запуска
         progress_window = tk.Toplevel(win)
@@ -4230,11 +4641,18 @@ def runn():
                 clear_auth_cache()
                 update_log("✅ Кэш аутентификации очищен")
 
-                selected_version = version_selector.get()  # ИСПРАВЛЕНО: version_combobox -> version_selector
-                selected_memory = "4G"
+                selected_version = version_selector.get()
+                selected_memory = CONFIG.get('jvm_memory', '4G')
+
+                # Если память в формате -Xmx4G, извлекаем только число
+                if selected_memory.startswith('-Xmx'):
+                    selected_memory = selected_memory[4:]  # Убираем -Xmx
+                elif selected_memory.startswith('-Xms'):
+                    selected_memory = selected_memory[4:]  # Убираем -Xms
 
                 update_status("Подготовка запуска...", "Формируем команду запуска")
                 update_log(f"🎯 Запускаем версию: {selected_version}")
+                update_log(f"💾 Выделено памяти: {selected_memory}")
 
                 # Оптимизированные настройки запуска
                 jvm_args = [
@@ -5725,200 +6143,6 @@ def show_version_change_message(version_name):
 # Вызываем функцию обновления статуса Discord после создания окна
 win.after(300, update_discord_status)
 
-import datetime
-import json
-
-# Добавляем в конфигурацию
-COLLECTIONS_CONFIG = {
-    'collections_dir': os.path.expanduser("~/YamalPixel/collections"),
-    'current_collection': None
-}
-
-
-# Создаем папку collections при запуске
-def init_collections_dir():
-    """Инициализирует папку для сборок"""
-    collections_dir = COLLECTIONS_CONFIG['collections_dir']
-    if not os.path.exists(collections_dir):
-        os.makedirs(collections_dir, exist_ok=True)
-        print(f"✅ Создана папка для сборок: {collections_dir}")
-
-
-# Вызываем при старте лаунчера
-init_collections_dir()
-def debug_collections_info():
-    collections_dir = COLLECTIONS_CONFIG['collections_dir']
-    print(f"📁 Папка сборок: {collections_dir}")
-    print(f"📁 Существует: {os.path.exists(collections_dir)}")
-    if os.path.exists(collections_dir):
-        files = os.listdir(collections_dir)
-        print(f"📁 Файлы в папке: {files}")
-
-# Вызовите эту функцию после создания менеджера
-debug_collections_info()
-
-
-# Простой API для Modrinth
-class ModrinthAPI:
-    def __init__(self):
-        self.base_url = "https://api.modrinth.com/v2"
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'YamalPixelLauncher/1.0',
-            'Accept': 'application/json'
-        })
-
-    def download_mod(self, project_slug, version_id, filename, mods_dir, max_retries=2):
-        """Правильное скачивание мода через Modrinth API"""
-        for attempt in range(max_retries):
-            try:
-                # ПРАВИЛЬНЫЙ URL для скачивания
-                url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{filename}"
-                print(f"🌐 Попытка {attempt + 1}: Скачивание {filename}")
-                print(f"🔗 URL: {url}")
-
-                response = self.session.get(url, timeout=30, stream=True)
-                response.raise_for_status()
-
-                filepath = os.path.join(mods_dir, filename)
-
-                # Скачиваем с прогрессом
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded_size = 0
-
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            if total_size > 0:
-                                progress = (downloaded_size / total_size) * 100
-                                print(f"📥 Прогресс: {progress:.1f}%", end='\r')
-
-                print(f"\n✅ Успешно скачан: {filename} ({downloaded_size / 1024 / 1024:.1f} MB)")
-                return True
-
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 404:
-                    print(f"❌ 404 ошибка (попытка {attempt + 1}): {filename}")
-                    # Пробуем альтернативный URL
-                    if attempt == 0:
-                        print("🔄 Пробуем альтернативный URL...")
-                        alternative_url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{filename}"
-                        try:
-                            response = self.session.get(alternative_url, timeout=30, stream=True)
-                            response.raise_for_status()
-
-                            filepath = os.path.join(mods_dir, filename)
-                            with open(filepath, 'wb') as f:
-                                for chunk in response.iter_content(chunk_size=8192):
-                                    if chunk:
-                                        f.write(chunk)
-
-                            print(f"✅ Успешно скачан (альтернативный URL): {filename}")
-                            return True
-                        except:
-                            continue
-                else:
-                    print(f"❌ HTTP ошибка {e.response.status_code}: {filename}")
-            except Exception as e:
-                print(f"❌ Ошибка скачивания {filename}: {e}")
-
-            if attempt < max_retries - 1:
-                wait_time = 2
-                print(f"⏳ Ждем {wait_time} секунд перед повторной попыткой...")
-                time.sleep(wait_time)
-
-        print(f"💥 Не удалось скачать после {max_retries} попыток: {filename}")
-        return False
-
-    def download_mod_direct(self, version_id, filename, mods_dir):
-        """Альтернативный метод скачивания через прямую ссылку"""
-        try:
-            # Сначала получаем информацию о версии
-            version_url = f"{self.base_url}/version/{version_id}"
-            response = self.session.get(version_url, timeout=10)
-            response.raise_for_status()
-            version_data = response.json()
-
-            # Ищем прямую ссылку для скачивания
-            if 'files' in version_data and version_data['files']:
-                for file_info in version_data['files']:
-                    if 'url' in file_info and file_info['url']:
-                        download_url = file_info['url']
-                        print(f"🔗 Прямая ссылка: {download_url}")
-
-                        file_response = self.session.get(download_url, timeout=30, stream=True)
-                        file_response.raise_for_status()
-
-                        filepath = os.path.join(mods_dir, filename)
-                        with open(filepath, 'wb') as f:
-                            for chunk in file_response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-
-                        print(f"✅ Скачан через прямую ссылку: {filename}")
-                        return True
-
-            print(f"❌ Не найдена прямая ссылка для: {filename}")
-            return False
-
-        except Exception as e:
-            print(f"❌ Ошибка прямого скачивания {filename}: {e}")
-            return False
-
-    def search_mods(self, query, limit=50):
-        """Поиск модов на Modrinth"""
-        try:
-            url = f"{self.base_url}/search?query={query}&limit={limit}"
-            print(f"🌐 Запрос: {url}")
-            response = self.session.get(url, timeout=15)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            print(f"❌ Ошибка поиска модов '{query}': {e}")
-            return None
-
-    def get_mod_versions(self, mod_id, version=None, loader=None):
-        """Получение версий мода с улучшенной обработкой"""
-        try:
-            url = f"{self.base_url}/project/{mod_id}/version"
-            params = {}
-            if version:
-                params['game_versions'] = f'["{version}"]'
-            if loader:
-                params['loaders'] = f'["{loader}"]'
-
-            print(f"🌐 Получение версий для {mod_id}")
-            response = self.session.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            versions = response.json()
-
-            if not versions:
-                print(f"⚠️ Нет версий для {mod_id}")
-                return None
-
-            print(f"📦 Найдено {len(versions)} версий")
-
-            # Выводим информацию о первой версии для отладки
-            first_version = versions[0]
-            print(f"🔍 Первая версия: ID={first_version['id']}")
-            if 'files' in first_version and first_version['files']:
-                file_info = first_version['files'][0]
-                print(f"📄 Файл: {file_info['filename']}")
-                if 'url' in file_info:
-                    print(f"🔗 URL: {file_info['url']}")
-
-            return versions
-
-        except Exception as e:
-            print(f"❌ Ошибка получения версий {mod_id}: {e}")
-            return None
-
-
-
-
-
 
 # Функция создания новой сборки с выбором модов
 def create_new_collection():
@@ -7139,9 +7363,74 @@ def finish_loading(progress_window, collection, success_count, total_mods, backu
     messagebox.showinfo("Загрузка завершена", message)
 
 
+import signal
+import sys
 
+
+def graceful_shutdown(signum, frame):
+    """Красивое завершение работы"""
+    print("\n🎮 Закрываем лаунчер...")
+
+    # Останавливаем музыку
+    try:
+        mixer.music.stop()
+    except:
+        pass
+
+    # Сохраняем настройки
+    try:
+        save_last_session()
+    except:
+        pass
+
+    # Закрываем окно
+    try:
+        win.quit()
+        win.destroy()
+    except:
+        pass
+
+    sys.exit(0)
+
+
+# Регистрируем обработчики сигналов
+signal.signal(signal.SIGINT, graceful_shutdown)  # Ctrl+C
+signal.signal(signal.SIGTERM, graceful_shutdown)  # Завершение процесса
+
+
+# Добавь обработчик закрытия окна
+def on_closing():
+    """При закрытии окна"""
+    print("💾 Сохраняем настройки и выходим...")
+    save_last_session()
+
+    # Останавливаем музыку
+    try:
+        mixer.music.stop()
+    except:
+        pass
+
+    win.destroy()
+    sys.exit(0)
+
+
+# Вешаем обработчик
+win.protocol("WM_DELETE_WINDOW", on_closing)
+
+
+# Добавь защиту от KeyboardInterrupt в mainloop
+def safe_mainloop():
+    """Безопасный mainloop с обработкой прерываний"""
+    try:
+        win.mainloop()
+    except KeyboardInterrupt:
+        on_closing()
+    except Exception as e:
+        print(f"Неожиданная ошибка: {e}")
+        sys.exit(1)
 # Запуск главного цикла
-win.mainloop()
+if __name__ == "__main__":
+    safe_mainloop()
 import json
 from pathlib import Path
 
