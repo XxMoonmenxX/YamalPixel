@@ -202,7 +202,7 @@ def old_repair_with_ui():
 
 
 #Пишется при помощи DeepSeek, каждый может сделать тоже самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.41" #обновление
+CURRENT_VERSION = "0.6.5" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -257,6 +257,8 @@ CONFIG = {
         {'url': 'https://disk.yandex.ru/d/dncEQy1PhTcgrw', 'file': 'TechReborn-5.8.3.jar'},
         {'url': 'https://disk.yandex.ru/d/_c-mQTKC4UB1cw', 'file': 'Terralith_1.20.x_v2.5.4.jar'},
         {'url': 'https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ', 'file': 'Xaeros_Minimap_25.2.10_Fabric_1.20.jar'},
+        {'url': 'https://disk.yandex.ru/d/H0dkq2G5XcrZFQ', 'file': 'moonlight-1.20-2.16.15-fabric.jar'},
+        {'url': 'https://disk.yandex.ru/d/uXJYqfjy_aedHQ', 'file': 'immersive_weathering-1.20.1-2.0.5-fabric.jar'},
         {'url': 'https://disk.yandex.ru/d/7ebHrjGobc89Og', 'file': 'travelersbackpack-fabric-1.20.1-9.1.41.jar'}
     ]
 }
@@ -4054,7 +4056,7 @@ def create_progress_window():
         messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
 
     cancel_btn = ttk.Button(button_frame, text="❌ Отменить запуск",
-                            command=cancel_launch, style="Accent.TButton")
+                            command=cancel_launch)
     cancel_btn.pack()
 
     # Функция обновления таймера
@@ -4560,8 +4562,7 @@ def runn():
         print(f"🚫 Версия {version_selector.get()} - загрузка модов пропущена")
 
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
-    if not auto_pre_launch_check():
-        return  # Не запускаем если проблемы
+
 
     # УСИЛЕННАЯ проверка - предотвращаем любой повторный запуск
     if LAUNCH_IN_PROGRESS:
@@ -5182,31 +5183,9 @@ launch_btn.place(relx=0.5, rely=0.5, anchor="c")
 launch_btn.start_animation()
 
 
-def auto_pre_launch_check():
-    """АВТОМАТИЧЕСКАЯ проверка перед запуском - БЕЗ ДИАЛОГОВ"""
-    issues = []
 
-    # Проверяем КРИТИЧЕСКИЕ вещи
-    if not os.path.exists(os.path.join(CONFIG['minecraft_dir'], 'mods')):
-        issues.append("Папка модов отсутствует")
 
-    if not os.path.exists(os.path.join(CONFIG['minecraft_dir'], 'versions')):
-        issues.append("Папка версий отсутствует")
 
-    # Проверяем моды (считаем сколько должно быть)
-    expected_mods_count = len(CONFIG['mods'])
-    actual_mods = len([f for f in os.listdir(os.path.join(CONFIG['minecraft_dir'], 'mods'))
-                       if f.endswith('.jar')])
-
-    if actual_mods < expected_mods_count * 0.8:  # Меньше 80% модов
-        issues.append(f"Не хватает модов ({actual_mods}/{expected_mods_count})")
-
-    # 🔴 ЕСТЬ ПРОБЛЕМЫ - АВТО-ЧИНИМ БЕЗ СПРОСА
-    if issues:
-        print(f"🔧 Обнаружены проблемы: {issues}")
-        return False  # Всё починили, можно запускать
-
-    return True  # Проблем нет
 def disable_problematic_mods():
     """Временно отключает потенциально проблемные моды"""
     minecraft_dir = CONFIG['minecraft_dir']
@@ -6200,6 +6179,129 @@ def show_version_change_message(version_name):
 win.after(300, update_discord_status)
 
 
+class ModrinthAPI:
+    def __init__(self):
+        self.session = requests.Session()
+        self.base_url = "https://api.modrinth.com/v2"
+        self.session.headers.update({
+            'User-Agent': 'YamalPixel-Launcher/1.0 (moonmen@example.com)'
+        })
+
+    def search_mods(self, query, limit=20):
+        """Поиск модов на Modrinth"""
+        try:
+            url = f"{self.base_url}/search"
+            params = {
+                'query': query,
+                'limit': limit
+            }
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Ошибка поиска модов: {e}")
+            return None
+
+    def get_mod_versions(self, mod_id, minecraft_version, loader):
+        """Получение версий мода с улучшенной обработкой файлов"""
+        try:
+            url = f"{self.base_url}/project/{mod_id}/version"
+            params = {
+                'game_versions': f'["{minecraft_version}"]',
+                'loaders': f'["{loader}"]'
+            }
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            versions = response.json()
+
+            # Фильтруем версии, у которых есть файлы
+            versions_with_files = []
+            for version in versions:
+                if 'files' in version and version['files']:
+                    # Проверяем, что есть primary файл или любой JAR файл
+                    primary_file = None
+                    for file_info in version['files']:
+                        if file_info.get('primary', False) or file_info['filename'].endswith('.jar'):
+                            primary_file = file_info
+                            break
+
+                    if primary_file:
+                        versions_with_files.append(version)
+
+            return versions_with_files if versions_with_files else versions
+
+        except Exception as e:
+            print(f"Ошибка получения версий мода {mod_id}: {e}")
+            return None
+
+    def download_mod(self, project_slug, version_id, filename, mods_dir):
+        """Скачивание мода с правильным URL"""
+        try:
+            # ПРАВИЛЬНЫЙ URL для скачивания файлов Modrinth
+            # Формат: https://cdn.modrinth.com/data/PROJECT_SLUG/versions/VERSION_ID/FILENAME
+            file_url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{filename}"
+
+            print(f"📥 Скачиваем: {file_url}")
+
+            response = self.session.get(file_url, stream=True, timeout=30)
+            response.raise_for_status()
+
+            filepath = os.path.join(mods_dir, filename)
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            print(f"✅ Успешно скачан: {filename}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Ошибка скачивания мода {filename}: {e}")
+
+            # Альтернативный метод через API
+            return self.download_mod_alternative(project_slug, version_id, filename, mods_dir)
+
+    def download_mod_alternative(self, project_slug, version_id, filename, mods_dir):
+        """Альтернативный метод скачивания через получение информации о версии"""
+        try:
+            # Получаем информацию о версии
+            version_url = f"{self.base_url}/version/{version_id}"
+            response = self.session.get(version_url, timeout=30)
+            response.raise_for_status()
+            version_data = response.json()
+
+            print(f"🔍 Ищем файл в информации о версии: {filename}")
+
+            if 'files' in version_data and version_data['files']:
+                # Ищем нужный файл по имени
+                target_file = None
+                for file_info in version_data['files']:
+                    if file_info['filename'] == filename:
+                        target_file = file_info
+                        break
+
+                if target_file and 'url' in target_file:
+                    download_url = target_file['url']
+                    print(f"📥 Альтернативное скачивание: {download_url}")
+
+                    response = self.session.get(download_url, stream=True, timeout=30)
+                    response.raise_for_status()
+
+                    filepath = os.path.join(mods_dir, filename)
+                    with open(filepath, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+
+                    print(f"✅ Успешно скачан альтернативным методом: {filename}")
+                    return True
+
+            print(f"❌ Файл {filename} не найден в информации о версии")
+            return False
+
+        except Exception as e:
+            print(f"❌ Альтернативный метод скачивания также не удался: {e}")
+            return False
 # Функция создания новой сборки с выбором модов
 def create_new_collection():
     global current_sort_col, current_sort_reverse
@@ -7012,7 +7114,9 @@ def calculate_similarity(str1, str2):
     similarity = len(common_words) / max(len(words1), len(words2))
 
     return similarity
-
+COLLECTIONS_CONFIG = {
+    'collections_dir': os.path.join(os.path.expanduser('~'), 'YamalPixel', 'collections')
+}
 # Функция показа менеджера сборок
 def show_collection_manager():
     manager_window = tk.Toplevel(win)
@@ -7239,18 +7343,30 @@ def load_collection_to_game(filename):
 
                 # Берем последнюю версию
                 latest_version = versions[0]
-                file = latest_version['files'][0]
-                filename = file['filename']
 
-                # Получаем slug проекта
-                project_slug = mod.get('modrinth_slug', mod['modrinth_id'])
+                # Находим primary файл или первый JAR файл
+                target_file = None
+                for file_info in latest_version['files']:
+                    if file_info.get('primary', False) or file_info['filename'].endswith('.jar'):
+                        target_file = file_info
+                        break
+
+                if not target_file and latest_version['files']:
+                    target_file = latest_version['files'][0]  # Берем первый файл, если нет primary
+
+                if not target_file:
+                    log_message("   ❌ Не найден файл для скачивания")
+                    continue
+
+                filename = target_file['filename']
                 version_id = latest_version['id']
+                project_slug = mod.get('modrinth_slug', mod['modrinth_id'])
 
                 log_message(f"   ⬇️  Скачиваем: {filename}")
                 log_message(f"   🔗 Project: {project_slug}")
                 log_message(f"   🆔 Version: {version_id}")
 
-                # ИСПРАВЛЕННЫЙ ВЫЗОВ - передаем все 4 аргумента
+                # Скачиваем мод
                 if api.download_mod(project_slug, version_id, filename, mods_dir):
                     success_count += 1
                     log_message("   ✅ Успешно скачан")
