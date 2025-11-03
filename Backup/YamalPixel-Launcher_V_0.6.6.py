@@ -189,14 +189,23 @@ def old_repair_with_ui():
 
 
 #Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.503" #обновление
+CURRENT_VERSION = "0.6.6" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Конфигурация ресурсов
 RESOURCE_DIR = Path.home() / "YamalPixelRes"
+# Обновляем RESOURCES в начале кода
 RESOURCES = {
-    "logo.png": "https://disk.yandex.ru/i/ztKpQOZEjQDE_Q",
+    "logo.png": "https://disk.yandex.ru/i/XJ1rNloj-EcIGw",
+    "logo1.png": "https://disk.yandex.ru/i/IazaA10AvflA2Q",
+    "logo2.png": "https://disk.yandex.ru/i/X7VlJutjTuJI5g",
+    "logo3.png": "https://disk.yandex.ru/i/aw_NY_pDSQ_yeg",
+    "logo4.png": "https://disk.yandex.ru/i/qHwCeXH8SyMBqg",
+    "logo5.png": "https://disk.yandex.ru/i/2ZbSia8Q4sPOmQ",
+    "logo6.png": "https://disk.yandex.ru/i/9sk7fpOYULQe-w",
+    "logo7.png": "https://disk.yandex.ru/i/Vks2YtorAoECdg",
+    "logo8.png": "https://disk.yandex.ru/i/ztj5t0_y39yjcw",
     "menu_song.mp3": "https://disk.yandex.ru/d/Ahqnmj2T8YlNKg"
 }
 # Конфигурация
@@ -2480,10 +2489,122 @@ mixer.music.load(str(RESOURCE_DIR / "menu_song.mp3"))
 mixer.music.set_volume(0.1)
 
 # Модифицируем блок GUI элементов:
-bag = tk.PhotoImage(file=str(RESOURCE_DIR / "logo.png"))
-img = ttk.Label(win, image=bag)
-img.place(x=0, y=-1)
+bag = None
+img = ttk.Label(win)
+img.place(x=0, y=-1, relwidth=1, relheight=1)
 
+
+def setup_adaptive_background():
+    """Автоматический подбор фона под разрешение экрана"""
+    try:
+        RESOLUTION_MAP = {
+            (1920, 1080): "logo1.png",  # Full HD
+            (1920, 1200): "logo2.png",  # WUXGA
+            (2048, 1080): "logo3.png",  # 2K DCI
+            (2048, 1536): "logo4.png",  # QXGA
+            (2560, 1440): "logo5.png",  # 2K QHD
+            (2560, 1600): "logo6.png",  # WQXGA
+            (3440, 1440): "logo7.png",  # UltraWide
+            (3840, 2160): "logo8.png",  # 4K UHD
+            (3840, 2400): "logo2.png",  # WQUXGA (временно используем logo2)
+        }
+
+        screen_width = win.winfo_screenwidth()
+        screen_height = win.winfo_screenheight()
+
+        print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
+
+        # Прямое соответствие
+        bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
+
+        if bg_file:
+            print(f"✅ Найдено точное соответствие: {bg_file}")
+            load_custom_background(bg_file)
+        else:
+            # Используем стандартный
+            print("🔧 Используем стандартный фон")
+            load_default_background()
+
+    except Exception as e:
+        print(f"❌ Ошибка в setup_adaptive_background: {e}")
+        load_default_background()
+
+
+def load_custom_background(filename):
+    """Загружает кастомный фон"""
+    try:
+        bg_path = RESOURCE_DIR / filename
+        if bg_path.exists():
+            global bag, img
+            bag = tk.PhotoImage(file=str(bg_path))
+            img.configure(image=bag)
+            print(f"🎨 Успешно загружен фон: {filename}")
+        else:
+            print(f"⚠️ Фон {filename} не найден")
+            load_default_background()
+
+    except Exception as e:
+        print(f"❌ Ошибка загрузки фона {filename}: {e}")
+        load_default_background()
+
+
+def load_default_background():
+    """Загружает стандартный фон"""
+    try:
+        global bag, img
+        default_bg = RESOURCE_DIR / "logo.png"
+        if default_bg.exists():
+            bag = tk.PhotoImage(file=str(default_bg))
+            img.configure(image=bag)
+            print("🔧 Используем стандартный фон logo.png")
+    except Exception as e:
+        print(f"💥 Критическая ошибка загрузки фона: {e}")
+
+
+def create_background_selector():
+    """Создает кнопку для ручного выбора фона"""
+    try:
+        selector_btn = ModernButton(
+            win,
+            text="🎨 Сменить фон",
+            width=160,
+            height=32,
+            gradient=("#667eea", "#764ba2"),
+            command=show_background_menu,
+            font_size=10
+        )
+        selector_btn.place(relx=0.5, rely=0.68, anchor="c")
+        return selector_btn
+    except Exception as e:
+        print(f"❌ Ошибка создания кнопки фона: {e}")
+
+
+def show_background_menu():
+    """Показывает меню выбора фона"""
+    try:
+        menu = tk.Menu(win, tearoff=0, bg='#2b2b2b', fg='white', font=('Comfortaa', 9))
+
+        backgrounds = [
+            ("🖥️  1920×1080 (Full HD)", "logo1.png"),
+            ("💻  1920×1200 (WUXGA)", "logo2.png"),
+            ("🎬  2048×1080 (2K DCI)", "logo3.png"),
+            ("📊  2048×1536 (QXGA)", "logo4.png"),
+            ("🔥  2560×1440 (2K QHD)", "logo5.png"),
+            ("🚀  2560×1600 (WQXGA)", "logo6.png"),
+            ("🎮  3440×1440 (UltraWide)", "logo7.png"),
+            ("4K  3840×2160 (4K UHD)", "logo8.png"),
+        ]
+
+        for name, file in backgrounds:
+            menu.add_command(
+                label=name,
+                command=lambda f=file: load_custom_background(f)
+            )
+
+        # Показываем меню под курсором
+        menu.tk_popup(win.winfo_pointerx(), win.winfo_pointery())
+    except Exception as e:
+        print(f"❌ Ошибка показа меню фонов: {e}")
 
 
 # Функции для управления окном
@@ -4065,6 +4186,118 @@ def monitor_game_process(process):
     win.after(0, lambda: set_launch_state(False))
 
 
+# ДОБАВЬ ЭТО ПРЯМО ПЕРЕД СОЗДАНИЕМ menu_bar:
+
+def show_simple_background_selector():
+    """Простой выбор фона через отдельное окно"""
+    try:
+        selector_window = tk.Toplevel(win)
+        selector_window.title("Выбор фона для лаунчера")
+        selector_window.geometry("400x500")
+        selector_window.configure(bg='#2b2b2b')
+        selector_window.resizable(False, False)
+        selector_window.transient(win)
+        selector_window.grab_set()
+
+        # Центрируем окно
+        selector_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (400 // 2)
+        y = (win.winfo_screenheight() // 2) - (500 // 2)
+        selector_window.geometry(f"400x500+{x}+{y}")
+
+        main_frame = ttk.Frame(selector_window, padding=20)
+        main_frame.pack(fill='both', expand=True)
+
+        # Заголовок
+        ttk.Label(main_frame,
+                  text="🎨 Выбор фона",
+                  font=('Comfortaa', 16, 'bold'),
+                  foreground='white', background='#2b2b2b').pack(pady=(0, 20))
+
+        # Описание
+        ttk.Label(main_frame,
+                  text="Выберите фон для своего разрешения экрана:",
+                  font=('Comfortaa', 10),
+                  foreground='#cccccc', background='#2b2b2b').pack(pady=(0, 15))
+
+        # Список фонов
+        backgrounds = [
+            ("🖥️  Full HD (1920×1080)", "logo1.png"),
+            ("💻  WUXGA (1920×1200)", "logo2.png"),
+            ("🎬  2K DCI (2048×1080)", "logo3.png"),
+            ("📊  QXGA (2048×1536)", "logo4.png"),
+            ("🔥  2K QHD (2560×1440)", "logo5.png"),
+            ("🚀  WQXGA (2560×1600)", "logo6.png"),
+            ("🎮  UltraWide (3440×1440)", "logo7.png"),
+            ("4K  UHD (3840×2160)", "logo8.png"),
+        ]
+
+        # Создаем кнопки выбора
+        for name, filename in backgrounds:
+            btn_frame = ttk.Frame(main_frame)
+            btn_frame.pack(fill='x', pady=4)
+
+            btn = ModernButton(
+                btn_frame,
+                text=name,
+                width=320,
+                height=36,
+                gradient=("#4A5568", "#2D3748"),
+                command=lambda f=filename: apply_background_and_close(f, selector_window),
+                font_size=10,
+                corner_radius=8
+            )
+            btn.pack(pady=2)
+
+        # Разделитель
+        separator = ttk.Separator(main_frame, orient='horizontal')
+        separator.pack(fill='x', pady=15)
+
+        # Кнопка автоопределения
+        auto_btn = ModernButton(
+            main_frame,
+            text="🔧 Автоопределение (рекомендуется)",
+            width=320,
+            height=36,
+            gradient=("#667eea", "#764ba2"),
+            command=lambda: (setup_adaptive_background(), selector_window.destroy()),
+            font_size=10,
+            corner_radius=8
+        )
+        auto_btn.pack(pady=5)
+
+        # Кнопка закрытия
+        close_btn = ModernButton(
+            main_frame,
+            text="❌ Закрыть",
+            width=200,
+            height=32,
+            gradient=("#718096", "#4A5568"),
+            command=selector_window.destroy,
+            font_size=10,
+            corner_radius=6
+        )
+        close_btn.pack(pady=10)
+
+    except Exception as e:
+        print(f"❌ Ошибка открытия селектора фонов: {e}")
+        messagebox.showerror("Ошибка", "Не удалось открыть выбор фона")
+
+
+def apply_background_and_close(filename, window):
+    """Применяет фон и закрывает окно"""
+    load_custom_background(filename)
+    window.destroy()
+    messagebox.showinfo("Успех", f"Фон {filename} применен!")
+
+
+# А вот теперь создаем меню
+menu_bar = tk.Menu(win)
+win.config(menu=menu_bar)
+settings_menu = tk.Menu(menu_bar, tearoff=0)
+
+# И добавляем нашу команду
+settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
 
 menu_bar = tk.Menu(win)
 win.config(menu=menu_bar)
@@ -4093,7 +4326,7 @@ settings_menu.add_command(label="🔄 Полная переустановка", 
 settings_menu.add_separator()
 settings_menu.add_command(label="🔧 Диагностика проблем", command=create_diagnostic_panel)
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
-
+settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
 
 # Или если хотите в выпадающем меню "Справка":
 help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -4101,6 +4334,368 @@ help_menu.add_command(label="О лаунчере", command=show_version_info)
 help_menu.add_separator()
 help_menu.add_command(label="Проверить обновления", command=check_for_updates)
 menu_bar.add_cascade(label="Справка", menu=help_menu)
+
+
+def setup_adaptive_background():
+    """Автоматический подбор фона под разрешение экрана"""
+
+    RESOLUTION_MAP = {
+        (1920, 1080): "logo1.png",  # Full HD
+        (1920, 1200): "logo2.png",  # WUXGA
+        (2048, 1080): "logo3.png",  # 2K DCI
+        (2048, 1536): "logo4.png",  # QXGA
+        (2560, 1440): "logo5.png",  # 2K QHD
+        (2560, 1600): "logo6.png",  # WQXGA
+        (3440, 1440): "logo7.png",  # UltraWide
+        (3840, 2160): "logo8.png",  # 4K UHD
+        (3840, 2400): "logo9.png",  # WQUXGA
+    }
+
+    screen_width = win.winfo_screenwidth()
+    screen_height = win.winfo_screenheight()
+
+    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
+
+    # Прямое соответствие
+    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
+
+    if bg_file:
+        print(f"✅ Найдено точное соответствие: {bg_file}")
+        load_custom_background(bg_file)
+    else:
+        # Ищем ближайшее по соотношению сторон
+        bg_file = find_closest_resolution(screen_width, screen_height)
+        print(f"🔄 Используем ближайшее: {bg_file}")
+        load_custom_background(bg_file)
+
+
+def find_closest_resolution(width, height):
+    """Находит ближайшее разрешение по соотношению сторон"""
+    aspect_ratio = width / height
+
+    # Ближайшие соотношения сторон
+    ratios = {
+        (1920, 1080): 1.78,  # 16:9
+        (1920, 1200): 1.60,  # 16:10
+        (2048, 1080): 1.90,  # ~17:9
+        (2048, 1536): 1.33,  # 4:3
+        (2560, 1440): 1.78,  # 16:9
+        (2560, 1600): 1.60,  # 16:10
+        (3440, 1440): 2.39,  # 21:9
+        (3840, 2160): 1.78,  # 16:9
+        (3840, 2400): 1.60,  # 16:10
+    }
+
+    # Ищем с наименьшей разницей в соотношении
+    best_match = "logo1.png"  # дефолт
+    min_diff = float('inf')
+
+    for res, target_ratio in ratios.items():
+        diff = abs(aspect_ratio - target_ratio)
+        if diff < min_diff:
+            min_diff = diff
+            best_match = RESOLUTION_MAP[res]
+
+    return best_match
+
+
+def load_custom_background(filename):
+    """Загружает кастомный фон"""
+    try:
+        bg_path = RESOURCE_DIR / filename
+        if bg_path.exists():
+            global bag, img
+            bag = tk.PhotoImage(file=str(bg_path))
+            img.configure(image=bag)
+            print(f"🎨 Загружен фон: {filename}")
+        else:
+            print(f"⚠️ Фон {filename} не найден")
+            # Грузим стандартный как запасной вариант
+            load_default_background()
+    except Exception as e:
+        print(f"❌ Ошибка загрузки фона {filename}: {e}")
+        load_default_background()
+
+
+def load_default_background():
+    """Загружает стандартный фон"""
+    try:
+        global bag, img
+        default_bg = RESOURCE_DIR / "logo.png"
+        if default_bg.exists():
+            bag = tk.PhotoImage(file=str(default_bg))
+            img.configure(image=bag)
+            print("🔧 Используем стандартный фон")
+    except Exception as e:
+        print(f"💥 Критическая ошибка загрузки фона: {e}")
+
+
+def setup_adaptive_background():
+    """Автоматический подбор фона под разрешение экрана"""
+
+    RESOLUTION_MAP = {
+        (1920, 1080): "logo1.png",  # Full HD
+        (1920, 1200): "logo2.png",  # WUXGA
+        (2048, 1080): "logo3.png",  # 2K DCI
+        (2048, 1536): "logo4.png",  # QXGA
+        (2560, 1440): "logo5.png",  # 2K QHD
+        (2560, 1600): "logo6.png",  # WQXGA
+        (3440, 1440): "logo7.png",  # UltraWide
+        (3840, 2160): "logo8.png",  # 4K UHD
+        (3840, 2400): "logo2.png",  # WQUXGA (временно используем logo2)
+    }
+
+    screen_width = win.winfo_screenwidth()
+    screen_height = win.winfo_screenheight()
+
+    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
+
+    # Прямое соответствие
+    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
+
+    if bg_file:
+        print(f"✅ Найдено точное соответствие: {bg_file}")
+        load_custom_background(bg_file)
+    else:
+        # Ищем ближайшее по соотношению сторон
+        bg_file = find_closest_resolution(screen_width, screen_height)
+        print(f"🔄 Используем ближайшее: {bg_file}")
+        load_custom_background(bg_file)
+
+
+def find_closest_resolution(width, height):
+    """Находит ближайшее разрешение по соотношению сторон"""
+    if width == 0 or height == 0:
+        return "logo.png"
+
+    aspect_ratio = width / height
+
+    # Соотношения сторон для каждого разрешения
+    resolution_ratios = {
+        "logo1.png": 1.78,  # 1920x1080 (16:9)
+        "logo2.png": 1.60,  # 1920x1200 (16:10)
+        "logo3.png": 1.90,  # 2048x1080 (~17:9)
+        "logo4.png": 1.33,  # 2048x1536 (4:3)
+        "logo5.png": 1.78,  # 2560x1440 (16:9)
+        "logo6.png": 1.60,  # 2560x1600 (16:10)
+        "logo7.png": 2.39,  # 3440x1440 (21:9)
+        "logo8.png": 1.78,  # 3840x2160 (16:9)
+    }
+
+    # Ищем с наименьшей разницей в соотношении
+    best_match = "logo1.png"  # дефолт - самый популярный
+    min_diff = float('inf')
+
+    for file, target_ratio in resolution_ratios.items():
+        diff = abs(aspect_ratio - target_ratio)
+        if diff < min_diff:
+            min_diff = diff
+            best_match = file
+
+    print(f"📐 Соотношение сторон: {aspect_ratio:.2f}, выбрано: {best_match}")
+    return best_match
+
+
+def load_custom_background(filename):
+    """Загружает кастомный фон"""
+    try:
+        bg_path = RESOURCE_DIR / filename
+        if bg_path.exists():
+            global bag, img
+            bag = tk.PhotoImage(file=str(bg_path))
+            img.configure(image=bag)
+            print(f"🎨 Успешно загружен фон: {filename}")
+
+            # Сохраняем выбор в настройках
+            save_background_preference(filename)
+        else:
+            print(f"⚠️ Фон {filename} не найден, пробуем скачать...")
+            download_and_set_background(filename)
+
+    except Exception as e:
+        print(f"❌ Ошибка загрузки фона {filename}: {e}")
+        load_default_background()
+
+
+def download_and_set_background(filename):
+    """Скачивает и устанавливает фон если его нет"""
+    try:
+        # Используем существующую систему загрузки ресурсов
+        setup_environment()  # Перезагружаем ресурсы
+
+        # Проверяем снова после загрузки
+        bg_path = RESOURCE_DIR / filename
+        if bg_path.exists():
+            load_custom_background(filename)
+        else:
+            print(f"💥 Не удалось скачать {filename}, используем стандартный")
+            load_default_background()
+    except Exception as e:
+        print(f"💥 Ошибка при скачивании фона: {e}")
+        load_default_background()
+
+
+def load_default_background():
+    """Загружает стандартный фон"""
+    try:
+        global bag, img
+        default_bg = RESOURCE_DIR / "logo.png"
+        if default_bg.exists():
+            bag = tk.PhotoImage(file=str(default_bg))
+            img.configure(image=bag)
+            print("🔧 Используем стандартный фон logo.png")
+        else:
+            print("💥 Стандартный фон также недоступен!")
+    except Exception as e:
+        print(f"💥 Критическая ошибка загрузки фона: {e}")
+
+
+def save_background_preference(filename):
+    """Сохраняет выбор фона для будущих запусков"""
+    try:
+        session = load_last_session() or {}
+        session['background'] = filename
+        session['screen_resolution'] = f"{win.winfo_screenwidth()}x{win.winfo_screenheight()}"
+
+        with open(LAST_SESSION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(session, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠️ Не удалось сохранить настройки фона: {e}")
+
+
+def show_background_menu():
+    """Показывает меню выбора фона"""
+    menu = tk.Menu(win, tearoff=0, bg='#2b2b2b', fg='white', font=('Comfortaa', 9))
+
+    backgrounds = [
+        ("🖥️  1920×1080 (Full HD)", "logo1.png"),
+        ("💻  1920×1200 (WUXGA)", "logo2.png"),
+        ("🎬  2048×1080 (2K DCI)", "logo3.png"),
+        ("📊  2048×1536 (QXGA)", "logo4.png"),
+        ("🔥  2560×1440 (2K QHD)", "logo5.png"),
+        ("🚀  2560×1600 (WQXGA)", "logo6.png"),
+        ("🎮  3440×1440 (UltraWide)", "logo7.png"),
+        ("4K  3840×2160 (4K UHD)", "logo8.png"),
+    ]
+
+    for name, file in backgrounds:
+        menu.add_command(
+            label=name,
+            command=lambda f=file: load_custom_background(f)
+        )
+
+    # Показываем меню под курсором
+    menu.tk_popup(win.winfo_pointerx(), win.winfo_pointery())
+
+
+def show_simple_background_selector():
+    """Простой и надежный выбор фона через отдельное окно"""
+    try:
+        selector_window = tk.Toplevel(win)
+        selector_window.title("Выбор фона для лаунчера")
+        selector_window.geometry("400x500")
+        selector_window.configure(bg='#2b2b2b')
+        selector_window.resizable(False, False)
+        selector_window.transient(win)
+        selector_window.grab_set()
+
+        # Центрируем окно
+        selector_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (400 // 2)
+        y = (win.winfo_screenheight() // 2) - (500 // 2)
+        selector_window.geometry(f"400x500+{x}+{y}")
+
+        main_frame = ttk.Frame(selector_window, padding=20)
+        main_frame.pack(fill='both', expand=True)
+
+        # Заголовок
+        ttk.Label(main_frame,
+                  text="🎨 Выбор фона",
+                  font=('Comfortaa', 16, 'bold'),
+                  foreground='white', background='#2b2b2b').pack(pady=(0, 20))
+
+        # Описание
+        ttk.Label(main_frame,
+                  text="Выберите фон для своего разрешения экрана:",
+                  font=('Comfortaa', 10),
+                  foreground='#cccccc', background='#2b2b2b').pack(pady=(0, 15))
+
+        # Список фонов
+        backgrounds = [
+            ("🖥️  Full HD (1920×1080)", "logo1.png"),
+            ("💻  WUXGA (1920×1200)", "logo2.png"),
+            ("🎬  2K DCI (2048×1080)", "logo3.png"),
+            ("📊  QXGA (2048×1536)", "logo4.png"),
+            ("🔥  2K QHD (2560×1440)", "logo5.png"),
+            ("🚀  WQXGA (2560×1600)", "logo6.png"),
+            ("🎮  UltraWide (3440×1440)", "logo7.png"),
+            ("4K  UHD (3840×2160)", "logo8.png"),
+        ]
+
+        # Создаем кнопки выбора
+        for name, filename in backgrounds:
+            btn_frame = ttk.Frame(main_frame)
+            btn_frame.pack(fill='x', pady=4)
+
+            btn = ModernButton(
+                btn_frame,
+                text=name,
+                width=320,
+                height=36,
+                gradient=("#4A5568", "#2D3748"),
+                command=lambda f=filename: apply_background_and_close(f, selector_window),
+                font_size=10,
+                corner_radius=8
+            )
+            btn.pack(pady=2)
+
+        # Разделитель
+        separator = ttk.Separator(main_frame, orient='horizontal')
+        separator.pack(fill='x', pady=15)
+
+        # Кнопка автоопределения
+        auto_btn = ModernButton(
+            main_frame,
+            text="🔧 Автоопределение (рекомендуется)",
+            width=320,
+            height=36,
+            gradient=("#667eea", "#764ba2"),
+            command=lambda: (setup_adaptive_background(), selector_window.destroy()),
+            font_size=10,
+            corner_radius=8
+        )
+        auto_btn.pack(pady=5)
+
+        # Кнопка закрытия
+        close_btn = ModernButton(
+            main_frame,
+            text="❌ Закрыть",
+            width=200,
+            height=32,
+            gradient=("#718096", "#4A5568"),
+            command=selector_window.destroy,
+            font_size=10,
+            corner_radius=6
+        )
+        close_btn.pack(pady=10)
+
+    except Exception as e:
+        print(f"❌ Ошибка открытия селектора фонов: {e}")
+        messagebox.showerror("Ошибка", "Не удалось открыть выбор фона")
+
+
+def apply_background_and_close(filename, window):
+    """Применяет фон и закрывает окно"""
+    load_custom_background(filename)
+    window.destroy()
+    messagebox.showinfo("Успех", f"Фон {filename} применен!")
+
+
+
+
+
+
+
 
 
 
@@ -5675,19 +6270,6 @@ style.configure("Accent.TButton", background='#0078D7', foreground='white')
 app.configure('TLabel', font=('Comfortaa', 12))
 app.configure('TButton', font=('Comfortaa', 12))
 
-# Элементы интерфейса
-enabled = tk.IntVar()
-ttk.Checkbutton(
-    text="Полный экран", variable=enabled, command=lambda: fullsc() if enabled.get() else outscrn(),
-    style='BW2.TLabel'
-).pack(padx=6, pady=6, anchor=tk.NE)
-
-
-
-
-
-style.configure("CenterText.TLabel", layout=('Center',))
-
 
 
 
@@ -5702,13 +6284,282 @@ def mscoff():
 
 
 enabled1 = tk.IntVar()
-ttk.Checkbutton(
-    text="Включить музыку", style='BW2.TLabel', variable=enabled1,
+
+
+class ModernCheckbutton(tk.Canvas):
+    def __init__(self, master=None, text="", variable=None, command=None,
+                 width=180, height=28, **kwargs):
+
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, **kwargs)
+
+        self.configure(bg='#2b2b2b')
+        self.text = text
+        self.variable = variable
+        self.command = command
+        self._width = width  # Сохраняем как атрибуты
+        self._height = height
+
+        self.bind("<Button-1>", self.toggle)
+        self.bind("<Enter>", self.on_hover)
+        self.bind("<Leave>", self.on_leave)
+
+        self.is_hovered = False
+        self.draw_checkbutton()
+
+    def draw_checkbutton(self):
+        self.delete("all")
+
+        checkbox_size = 18
+        checkbox_x, checkbox_y = 8, (self._height - checkbox_size) // 2
+
+        # Чекбокс с градиентом если выбран
+        if self.variable.get():
+            # Красивый градиентный эффект для выбранного состояния
+            self.create_rectangle(checkbox_x, checkbox_y,
+                                  checkbox_x + checkbox_size, checkbox_y + checkbox_size,
+                                  fill="#667eea", outline="#4ECDC4", width=2)
+            self.create_text(checkbox_x + checkbox_size // 2, checkbox_y + checkbox_size // 2,
+                             text="✓", fill="white", font=('Arial', 10, 'bold'))
+        else:
+            # Стильный для невыбранного
+            bg_color = "#555" if self.is_hovered else "#444"
+            self.create_rectangle(checkbox_x, checkbox_y,
+                                  checkbox_x + checkbox_size, checkbox_y + checkbox_size,
+                                  fill=bg_color, outline="#666", width=1)
+
+        # Красивый текст с эмодзи
+        text_color = "#ffffff" if self.is_hovered else "#e0e0e0"
+        self.create_text(checkbox_x + checkbox_size + 12, self._height // 2,
+                         text=self.text, fill=text_color, anchor='w',
+                         font=('Comfortaa', 11))
+
+        # Добавляем легкую анимацию при наведении
+        if self.is_hovered:
+            self.create_rectangle(0, 0, self._width, self._height,
+                                  outline="#667eea", width=1)
+
+    def toggle(self, event):
+        self.variable.set(not self.variable.get())
+        self.draw_checkbutton()
+        if self.command:
+            self.command()
+
+    def on_hover(self, event):
+        self.is_hovered = True
+        self.draw_checkbutton()
+
+    def on_leave(self, event):
+        self.is_hovered = False
+        self.draw_checkbutton()
+
+
+# Использование для музыки
+enabled1 = tk.IntVar()
+music_checkbox = ModernCheckbutton(
+    win,
+    text="🎵 Включить музыку",
+    variable=enabled1,
     command=lambda: mscon() if enabled1.get() else mscoff(),
-).pack(padx=6, pady=6, anchor=tk.NE)
+    width=200,  # можно настроить ширину
+    height=32  # и высоту
+)
+music_checkbox.place(relx=1.0, x=-8, y=50, anchor=tk.NE)
+
+# И для полноэкранного режима
+enabled = tk.IntVar()
+fullscreen_checkbox = ModernCheckbutton(
+    win,
+    text="🖥️ Полный экран",
+    variable=enabled,
+    command=lambda: fullsc() if enabled.get() else outscrn(),
+    width=200,
+    height=32
+)
+fullscreen_checkbox.place(relx=1.0, x=-8, y=90, anchor=tk.NE)
+
+def create_close_button():
+    """Создает и размещает кнопку закрытия ПОД чекбоксом музыки"""
+    close_btn = ModernCloseButton(
+        win,
+        text="❌ ЗАКРЫТЬ",
+        width=120,
+        height=35,
+        gradient=("#ff6b6b", "#ff4757"),
+        glow_color="#ff4757",
+        command=on_closing,
+        font_size=11,
+        corner_radius=10
+    )
+
+    # Размещаем точно под чекбоксом музыки
+    # x=20 (отступ слева), y=80 (отступ сверху - настрой под свой интерфейс)
+    close_btn.pack(padx=6, pady=6, anchor=tk.NE)
+
+    return close_btn
+class ModernCloseButton(tk.Canvas):
+    def __init__(self, master=None,
+                 text="❌ ЗАКРЫТЬ",
+                 width=120,
+                 height=35,
+                 gradient=("#ff6b6b", "#ff4757"),
+                 glow_color="#ff4757",
+                 command=None,
+                 font_size=11,
+                 corner_radius=10,
+                 **kwargs):
+
+        super().__init__(master, width=width, height=height,
+                         highlightthickness=0, **kwargs)
+
+        self.configure(bg='#2b2b2b')
+
+        self.text = text
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.glow_color = glow_color
+        self.command = command
+        self.font_size = font_size
+        self.corner_radius = corner_radius
+
+        # Состояния кнопки
+        self.is_pressed = False
+        self.animation_running = True
+        self.pulse_phase = 0
+
+        self.bind("<Button-1>", self.on_press)
+        self.bind("<ButtonRelease-1>", self.on_release)
+        self.bind("<Enter>", self.on_hover)
+        self.bind("<Leave>", self.on_leave)
+
+        # Начальная отрисовка
+        self.draw_button()
+        self.animate_glow()
+
+    def draw_button(self):
+        """Отрисовывает кнопку закрытия"""
+        self.delete("all")
+
+        # Выбираем градиент в зависимости от состояния
+        if self.is_pressed:
+            grad_colors = (self.darken_color(self.gradient[0]),
+                           self.darken_color(self.gradient[1]))
+        else:
+            grad_colors = self.gradient
+
+        # Добавляем эффект пульсации при наведении
+        if self.animation_running:
+            glow_intensity = abs(math.sin(self.pulse_phase)) * 0.3
+            brightened_colors = (
+                self.lighten_color(grad_colors[0], glow_intensity),
+                self.lighten_color(grad_colors[1], glow_intensity)
+            )
+            grad_colors = brightened_colors
+
+        # Градиентный фон
+        steps = 8
+        for i in range(steps):
+            ratio = i / steps
+            r = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[0] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[0])
+            g = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[1] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[1])
+            b = int((1 - ratio) * self.hex_to_rgb(grad_colors[0])[2] +
+                    ratio * self.hex_to_rgb(grad_colors[1])[2])
+
+            color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
+
+            self.create_rectangle(x1, 2, x2, self.height - 2,
+                                  fill=color, outline="", tags="gradient")
+
+        # Обводка
+        border_color = '#ffffff' if self.is_pressed else self.glow_color
+        self.create_rectangle(1, 1, self.width - 1, self.height - 1,
+                              outline=border_color, width=2, tags="border")
+
+        # Текст
+        text_color = "white"
+        self.create_text(self.width / 2, self.height / 2,
+                         text=self.text,
+                         fill=text_color,
+                         font=('Comfortaa', self.font_size, 'bold'),
+                         tags="text")
+
+        # Свечение
+        if self.animation_running:
+            glow_width = 1 + int(abs(math.sin(self.pulse_phase)) * 2)
+            self.create_rectangle(0, 0, self.width, self.height,
+                                  outline=self.glow_color,
+                                  width=glow_width, tags="glow")
+
+    def animate_glow(self):
+        """Анимация свечения"""
+        if not self.animation_running:
+            return
+
+        self.pulse_phase += 0.1
+        if self.pulse_phase > 2 * math.pi:
+            self.pulse_phase = 0
+
+        self.draw_button()
+        self.after(80, self.animate_glow)
+
+    def on_hover(self, event):
+        """При наведении курсора"""
+        self.animation_running = True
+        self.draw_button()
+
+    def on_leave(self, event):
+        """При уходе курсора"""
+        self.animation_running = False
+        self.draw_button()
+
+    def on_press(self, event):
+        """При нажатии"""
+        self.is_pressed = True
+        self.draw_button()
+
+    def on_release(self, event):
+        """При отпускании"""
+        self.is_pressed = False
+        self.draw_button()
+
+        if self.command:
+            # Подтверждение закрытия
+            if messagebox.askyesno("Закрыть лаунчер",
+                                   "Точно хотите выйти?\n\nВсе настройки будут сохранены."):
+                self.command()
+
+    def lighten_color(self, color, factor=0.2):
+        """Осветляет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [min(255, c + int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def darken_color(self, color, factor=0.2):
+        """Затемняет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [max(0, c - int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
 
 
+
+
+# Создаем кнопку при запуске
+close_button = create_close_button()
 
 
 # Добавьте в интерфейс где-нибудь внизу
@@ -7850,6 +8701,17 @@ def safe_mainloop():
         print(f"Неожиданная ошибка: {e}")
         sys.exit(1)
 # Запуск главного цикла
+win.after(100, lambda: setup_adaptive_background())
+
+
+
+
+
+def apply_background_and_close(filename, window):
+    """Применяет фон и закрывает окно"""
+    load_custom_background(filename)
+    window.destroy()
+    messagebox.showinfo("Успех", f"Фон {filename} применен!")
 if __name__ == "__main__":
     safe_mainloop()
 import json
