@@ -189,7 +189,7 @@ def old_repair_with_ui():
 
 
 #Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.502" #обновление
+CURRENT_VERSION = "0.6.503" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -207,6 +207,7 @@ CONFIG = {
     'mods': [
         {'url': 'https://disk.yandex.ru/d/aJHjc2LrzS8ndA', 'file': 'XaerosWorldMap_1.39.12_Fabric_1.20.jar'},
         {'url': 'https://disk.yandex.ru/d/UzM5BWOXB9S7OA', 'file': 'AdvancedReborn-1.20.1-1.2.9.jar'},
+        {'url': 'https://disk.yandex.ru/d/c81POD3HZgp48Q', 'file': 'cc-tweaked-1.20.1-fabric-1.116.2.jar'},#КРИВО СУКА
         {'url': 'https://disk.yandex.ru/d/B48FGIIitm-olA', 'file': 'ae2-emi-crafting-1.3.1.jar'},
         {'url': 'https://disk.yandex.ru/d/YXPRt1scCMJ8kQ', 'file': 'antixray-fabric-1.4.6+1.20.1.jar'},
         {'url': 'https://disk.yandex.ru/d/ukmqzaHQaTP03g', 'file': 'appliedenergistics2-fabric-15.4.9.jar'},
@@ -376,6 +377,7 @@ class TurboDownloader:
 
 
 def download_single_mod_turbo(mod_info):
+
     """Турбо-загрузка одного мода с правильным закрытием ресурсов"""
     try:
         print(f"🔍 Начинаем загрузку мода: {mod_info['file']}")
@@ -3286,8 +3288,7 @@ def repair_missing_mods_with_progress():
 
                 except Exception as e:
                     win.after(0, lambda: update_progress(
-                        i + 1, total_mods, mod['file'], f"❌ Ошибка: {str(e)[:30]}"
-                    ))
+                        i + 1, total_mods, mod['file'], f"❌ Ошибка: {str(e)[:30]}"))
 
             # Закрываем окно
             win.after(1000, lambda: progress_window.destroy())
@@ -4648,20 +4649,36 @@ def runn():
             set_launch_state(False)
             messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
 
-        cancel_btn = ttk.Button(button_frame, text="❌ Отменить запуск", command=cancel_launch, style="Accent.TButton")
+        cancel_btn = ttk.Button(button_frame, text="❌ Отменить запуск", command=cancel_launch)
         cancel_btn.pack()
 
         # Функция обновления UI
         update_progress_ui()
 
+        def update_status():
+            """Безопасное обновление статуса с проверкой существования элементов"""
+            try:
+                if LAUNCH_IN_PROGRESS:
+                    elapsed = int(time.time() - LAUNCH_START_TIME)
+                    # Безопасно обновляем статус только если элементы существуют
+                    if 'status_label' in globals() and status_label and status_label.winfo_exists():
+                        status_label.config(text=f"🔄 Запуск игры... ({elapsed} сек.)",
+                                            foreground='orange')
+                else:
+                    # Безопасно обновляем статус только если элементы существуют
+                    if 'status_label' in globals() and status_label and status_label.winfo_exists():
+                        status_label.config(text="✅ Готов к запуску", foreground='green')
 
+                # Продолжаем обновление только если главное окно существует
+                if 'win' in globals() and win and win.winfo_exists():
+                    win.after(1000, update_status)
+            except Exception as e:
+                print(f"[STATUS UPDATE ERROR] {e}")
+                # Останавливаем обновление при ошибке
+                return
 
-
-        def update_status(text, detail=""):
-            if progress_window.winfo_exists():
-                win.after(0, lambda: status_label.config(text=text))
-                if detail:
-                    win.after(0, lambda: details_label.config(text=detail))
+        # Запускаем обновление статуса
+        win.after(1000, update_status)
 
         def update_log(message):
             """Обновляет лог с проверкой существования окна и элементов"""
@@ -4953,10 +4970,12 @@ def launch_minecraft_process(command, log_callback=None):
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # Объединяем stderr в stdout
-            text=True,
+            stderr=subprocess.STDOUT,
+
             bufsize=1,
-            universal_newlines=True
+
+            encoding='cp866',
+            errors='replace'
         )
 
         # Запускаем поток для чтения вывода в реальном времени
