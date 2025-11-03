@@ -2303,14 +2303,12 @@ def skip_java_check():
     return result
 # Инициализация звука
 mixer.init()
-#mixer.music.load('Obuse - Menu song.mp3')
 mixer.music.set_volume(0.1)
 
 # Создание главного окна
 win = ThemedTk(theme="arc")
 win.geometry("1920x1080")
 win.title('YamPixel')
-# win.attributes("-fullscreen", True)
 
 # === ПЕРЕМЕЩАЕМ СЮДА ВСЁ ОТНОСИТЕЛЬНО СЕССИИ ===
 LAST_SESSION_FILE = os.path.expanduser("~/YamalPixel/last_session.json")
