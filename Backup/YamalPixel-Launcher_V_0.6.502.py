@@ -189,7 +189,7 @@ def old_repair_with_ui():
 
 
 #Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.501" #обновление
+CURRENT_VERSION = "0.6.502" #обновление
 logging.basicConfig(filename='launcher.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -4110,14 +4110,30 @@ menu_bar.add_cascade(label="Справка", menu=help_menu)
 def open_settings():
     settings_window = tk.Toplevel(win)
     settings_window.title("Настройки")
+
     ttk.Label(settings_window, text="Выделено памяти (ГБ):").grid(row=0, column=0)
+
     memory_var = tk.StringVar(value="8")
-    ttk.Entry(settings_window, textvariable=memory_var).grid(row=0, column=1)
+    memory_spinbox = ttk.Spinbox(
+        settings_window,
+        from_=1,  # Минимум
+        to=64,  # Максимум
+        textvariable=memory_var,
+        width=10,
+        validate="key",
+        validatecommand=(settings_window.register(lambda p: p.isdigit() or p == ""), '%P')
+    )
+    memory_spinbox.grid(row=0, column=1)
 
     def save_settings():
-        new_memory = f"-Xmx{memory_var.get()}G"
+        if not memory_var.get().isdigit():
+            messagebox.showerror("Ошибка", "Введите число!")
+            return
+
+        memory_gb = int(memory_var.get())
+        new_memory = f"-Xmx{memory_gb}G"
         CONFIG['jvm_memory'] = new_memory
-        messagebox.showinfo("Сохранено", "Настройки применены!")
+        messagebox.showinfo("Сохранено", f"Память установлена: {memory_gb} ГБ")
         settings_window.destroy()
 
     ttk.Button(settings_window, text="Сохранить", command=save_settings).grid(row=1, columnspan=2)
