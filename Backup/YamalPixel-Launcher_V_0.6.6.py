@@ -216,6 +216,9 @@ CONFIG = {
     'mods': [
         {'url': 'https://disk.yandex.ru/d/aJHjc2LrzS8ndA', 'file': 'XaerosWorldMap_1.39.12_Fabric_1.20.jar'},
         {'url': 'https://disk.yandex.ru/d/UzM5BWOXB9S7OA', 'file': 'AdvancedReborn-1.20.1-1.2.9.jar'},
+
+        #{'url': 'https://disk.yandex.ru/d/S_m78H3B-N9dCQ', 'file': 'pocket-repose-1.2.7-1.20.1.jar'},
+
         {'url': 'https://disk.yandex.ru/d/c81POD3HZgp48Q', 'file': 'cc-tweaked-1.20.1-fabric-1.116.2.jar'},#КРИВО СУКА
         {'url': 'https://disk.yandex.ru/d/B48FGIIitm-olA', 'file': 'ae2-emi-crafting-1.3.1.jar'},
         {'url': 'https://disk.yandex.ru/d/YXPRt1scCMJ8kQ', 'file': 'antixray-fabric-1.4.6+1.20.1.jar'},
@@ -594,7 +597,7 @@ def fig1():
 # Конфигурация шейдеров
 SHADERS_CONFIG = {
     'shaders': [
-        {'name': 'Aurora Shaders', 'url': 'https://disk.yandex.ru/d/Ish63cvEZjqqMw',
+        {'name': 'Aurora Shaders', 'url': 'https://disk.yandex.ru/d/AXeR74NrLMDpMw',
          'file': 'Aurora-s-Shaders-1.20.2-1.20.zip'},
         {'name': 'BSL Shaders', 'url': 'https://disk.yandex.ru/d/G7YX0Az5ZuUptA', 'file': 'BSL_v8.4.01.2.zip'},
         {'name': 'Bliss Shaders', 'url': 'https://disk.yandex.ru/d/GjbXRVgDF9S55w',
@@ -1145,23 +1148,41 @@ def download_shaders_turbo_ui(selected_shaders):
     """UI для загрузки шейдеров с прогрессом"""
     progress_window = tk.Toplevel(win)
     progress_window.title("Скачивание шейдеров")
-    progress_window.geometry("400x150")
+    progress_window.geometry("500x200")
+    progress_window.transient(win)
+    progress_window.grab_set()
+    progress_window.configure(bg='white')
+
+    # Центрируем окно
+    progress_window.update_idletasks()
+    x = (win.winfo_screenwidth() // 2) - (500 // 2)
+    y = (win.winfo_screenheight() // 2) - (200 // 2)
+    progress_window.geometry(f"500x200+{x}+{y}")
+
+    # Стили
+    title_label = ttk.Label(progress_window, text="📥 Скачивание шейдеров",
+                            font=('Comfortaa', 12, 'bold'))
+    title_label.pack(pady=10)
 
     progress_label = ttk.Label(progress_window, text="Подготовка к скачиванию...")
-    progress_label.pack(pady=10)
+    progress_label.pack(pady=5)
 
-    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+    progress = ttk.Progressbar(progress_window, orient="horizontal", length=400, mode="determinate")
     progress.pack(pady=10)
 
-    status_label = ttk.Label(progress_window, text="")
-    status_label.pack()
+    status_label = ttk.Label(progress_window, text="", wraplength=450)
+    status_label.pack(pady=5)
 
-    def update_progress(percent, status):
+    current_file_label = ttk.Label(progress_window, text="", foreground='blue')
+    current_file_label.pack()
+
+    def update_progress(percent, status, current_file=""):
         progress['value'] = percent
         status_label.config(text=status)
+        current_file_label.config(text=current_file)
         progress_window.update()
 
-    def completion_callback(success_count, total):
+    def completion_callback(success_count, total, error_messages=None):
         progress_window.destroy()
         if success_count > 0:
             messagebox.showinfo(
@@ -1170,43 +1191,126 @@ def download_shaders_turbo_ui(selected_shaders):
                 f"Шейдеры сохранены в папке shaderpacks"
             )
         else:
-            messagebox.showerror("Ошибка", "❌ Не удалось скачать ни одного шейдера")
+            error_text = "❌ Не удалось скачать ни одного шейдера"
+            if error_messages:
+                error_text += f"\n\nОшибки:\n" + "\n".join(error_messages[:3])  # Показываем первые 3 ошибки
+            messagebox.showerror("Ошибка", error_text)
 
     # Запускаем загрузку в отдельном потоке
     def download_thread():
         shaders_dir = os.path.join(CONFIG['minecraft_dir'], 'shaderpacks')
         os.makedirs(shaders_dir, exist_ok=True)
 
-        downloader = TurboDownloader()
         total = len(selected_shaders)
         success_count = 0
+        error_messages = []
 
         for i, shader in enumerate(selected_shaders):
             try:
+                current_percent = (i * 100) // total
                 win.after(0, lambda: update_progress(
-                    (i * 100) // total,
-                    f"Скачивание: {shader['name']}..."
+                    current_percent,
+                    f"Обработка {i + 1}/{total}...",
+                    f"Текущий: {shader['name']}"
                 ))
 
-                direct_link = asyncio.run(downloader.get_turbo_link(shader['url']))
-                if direct_link:
-                    shader_path = os.path.join(shaders_dir, shader['file'])
-                    success = downloader.download_file_sync(direct_link, shader_path)
+                # ПРОСТОЕ СКАЧИВАНИЕ БЕЗ ТУРБО-РЕЖИМА
+                shader_path = os.path.join(shaders_dir, shader['file'])
 
-                    if success:
-                        success_count += 1
-                        logging.info(f"Успешно скачан шейдер: {shader['name']}")
-                    else:
-                        logging.error(f"Ошибка скачивания шейдера: {shader['name']}")
+                # Используем прямые ссылки на скачивание
+                direct_url = convert_to_direct_link(shader['url'])
+
+                if download_file_simple(direct_url, shader_path):
+                    success_count += 1
+                    logging.info(f"✅ Успешно скачан шейдер: {shader['name']}")
                 else:
-                    logging.error(f"Не удалось получить ссылку для шейдера: {shader['name']}")
+                    error_msg = f"Ошибка загрузки: {shader['name']}"
+                    error_messages.append(error_msg)
+                    logging.error(error_msg)
 
             except Exception as e:
-                logging.error(f"Ошибка при загрузке шейдера {shader['name']}: {e}")
+                error_msg = f"Исключение при загрузке {shader['name']}: {str(e)}"
+                error_messages.append(error_msg)
+                logging.error(error_msg)
 
-        win.after(0, lambda: completion_callback(success_count, total))
+            # Обновляем прогресс после каждой попытки
+            win.after(0, lambda: update_progress(
+                ((i + 1) * 100) // total,
+                f"Завершено {i + 1}/{total}...",
+                f"Текущий: {shader['name']}"
+            ))
+
+        win.after(0, lambda: completion_callback(success_count, total, error_messages))
 
     threading.Thread(target=download_thread, daemon=True).start()
+
+
+def convert_to_direct_link(yandex_url):
+    """Конвертируем ссылку Яндекс.Диска в прямую для скачивания"""
+    # Для Яндекс.Диска публичных ссылок
+    if 'disk.yandex.ru/d/' in yandex_url:
+        # Пробуем преобразовать в прямую ссылку
+        file_id = yandex_url.split('/d/')[-1].split('/')[0]
+        return f"https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={yandex_url}"
+
+    return yandex_url  # Если не Яндекс.Диск, возвращаем как есть
+
+
+def download_file_simple(url, filepath):
+    """Простая загрузка файла через requests"""
+    import requests
+    import shutil
+
+    try:
+        logging.info(f"Начинаем загрузку: {url} -> {filepath}")
+
+        # Создаем временный файл
+        temp_path = filepath + '.tmp'
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        response = requests.get(url, stream=True, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        # Проверяем, не является ли ответ HTML страницей с ошибкой
+        content_type = response.headers.get('content-type', '')
+        if 'text/html' in content_type and len(response.content) < 10000:
+            logging.error("Получен HTML вместо файла")
+            return False
+
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+
+        with open(temp_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+        # Переименовываем временный файл в постоянный
+        shutil.move(temp_path, filepath)
+
+        # Проверяем, что файл не пустой
+        file_size = os.path.getsize(filepath)
+        if file_size == 0:
+            os.remove(filepath)
+            logging.error("Скачанный файл пустой")
+            return False
+
+        logging.info(f"✅ Файл успешно скачан: {filepath} ({file_size} байт)")
+        return True
+
+    except Exception as e:
+        logging.error(f"❌ Ошибка загрузки файла: {str(e)}")
+        # Удаляем временный файл если он существует
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        return False
 
 
 
