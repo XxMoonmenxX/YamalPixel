@@ -31,21 +31,25 @@ import json
 from PIL import Image, ImageTk
 
 
-
 def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+    """Get absolute path to resource in YamalPixelRes folder"""
+    # Используем путь из RESOURCE_DIR
+    resource_dir = Path.home() / "YamalPixelRes"
+    return os.path.join(resource_dir, relative_path)
+
 
 def set_window_icon(window):
     """Set icon for all windows"""
     try:
         icon_path = resource_path("icon.ico")
-        window.iconbitmap(icon_path)
+
+        # Проверяем, существует ли файл
+        if os.path.exists(icon_path):
+            window.iconbitmap(icon_path)
+            print(f"Icon loaded from: {icon_path}")
+        else:
+            print(f"Icon file not found: {icon_path}")
+
     except Exception as e:
         print(f"Icon error: {e}")
 
@@ -236,7 +240,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.63"  # обновление
+CURRENT_VERSION = "0.6.64"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -257,6 +261,7 @@ RESOURCES = {
     "logo7.png": "https://disk.yandex.ru/i/Vks2YtorAoECdg",
     "logo8.png": "https://disk.yandex.ru/i/ztj5t0_y39yjcw",
     "menu_song.mp3": "https://disk.yandex.ru/d/Ahqnmj2T8YlNKg",
+    "icon.ico": "https://disk.yandex.ru/i/nRwZp3AzRI16qQ"
 }
 # Конфигурация
 CONFIG = {
@@ -1873,6 +1878,7 @@ def check_for_updates():
 
             # Создаем окно обновления
             update_window = tk.Toplevel(win)
+            set_window_icon(update_window)
             update_window.title(f"YamalPixel - Обновление до v{latest_version}")
             update_window.geometry("550x450")
             update_window.resizable(True, True)
