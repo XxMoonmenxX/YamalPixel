@@ -216,7 +216,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.61"  # обновление
+CURRENT_VERSION = "0.6.62"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -256,7 +256,7 @@ CONFIG = {
         {
             "url": "https://disk.yandex.ru/d/c81POD3HZgp48Q",
             "file": "cc-tweaked-1.20.1-fabric-1.116.2.jar",
-        },  # КРИВО СУКА
+        },
         {
             "url": "https://disk.yandex.ru/d/B48FGIIitm-olA",
             "file": "ae2-emi-crafting-1.3.1.jar",
@@ -1576,69 +1576,54 @@ def download_shaders_turbo_ui(selected_shaders):
 
 def convert_to_direct_link(yandex_url):
     """Конвертируем ссылку Яндекс.Диска в прямую для скачивания"""
-    # Для Яндекс.Диска публичных ссылок
-    if "disk.yandex.ru/d/" in yandex_url:
-        # Пробуем преобразовать в прямую ссылку
-        file_id = yandex_url.split("/d/")[-1].split("/")[0]
-        return f"https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={yandex_url}"
+    try:
+        # Для публичных ссылок Яндекс.Диска
+        if "disk.yandex.ru/d/" in yandex_url or "disk.yandex.ru/d/" in yandex_url:
+            # Получаем download URL через Яндекс API
+            api_url = f"https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key={yandex_url}"
 
-    return yandex_url  # Если не Яндекс.Диск, возвращаем как есть
+            response = requests.get(api_url, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if 'href' in data:
+                    return data['href']  # Это прямая ссылка для скачивания
+
+        return yandex_url  # Если не получилось, возвращаем оригинальную ссылку
+
+    except Exception as e:
+        logging.error(f"Ошибка конвертации ссылки {yandex_url}: {str(e)}")
+        return yandex_url
 
 
 def download_file_simple(url, filepath):
-    """Простая загрузка файла через requests"""
-    import requests
-    import shutil
-
+    """Простое скачивание файла"""
     try:
-        logging.info(f"Начинаем загрузку: {url} -> {filepath}")
-
-        # Создаем временный файл
-        temp_path = filepath + ".tmp"
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-
-        response = requests.get(url, stream=True, headers=headers, timeout=30)
+        response = requests.get(url, stream=True, timeout=60)
         response.raise_for_status()
 
-        # Проверяем, не является ли ответ HTML страницей с ошибкой
-        content_type = response.headers.get("content-type", "")
-        if "text/html" in content_type and len(response.content) < 10000:
-            logging.error("Получен HTML вместо файла")
+        total_size = int(response.headers.get('content-length', 0))
+
+        with open(filepath, 'wb') as f:
+            if total_size == 0:
+                f.write(response.content)
+            else:
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+        # Проверяем, что файл скачался нормально
+        if os.path.getsize(filepath) > 1000:  # Минимум 1KB
+            return True
+        else:
+            os.remove(filepath)  # Удаляем битый файл
             return False
-
-        total_size = int(response.headers.get("content-length", 0))
-        downloaded = 0
-
-        with open(temp_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-
-        # Переименовываем временный файл в постоянный
-        shutil.move(temp_path, filepath)
-
-        # Проверяем, что файл не пустой
-        file_size = os.path.getsize(filepath)
-        if file_size == 0:
-            os.remove(filepath)
-            logging.error("Скачанный файл пустой")
-            return False
-
-        logging.info(f"✅ Файл успешно скачан: {filepath} ({file_size} байт)")
-        return True
 
     except Exception as e:
-        logging.error(f"❌ Ошибка загрузки файла: {str(e)}")
-        # Удаляем временный файл если он существует
-        if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except:
-                pass
+        logging.error(f"Ошибка скачивания {url}: {str(e)}")
+        if os.path.exists(filepath):
+            os.remove(filepath)
         return False
 
 
