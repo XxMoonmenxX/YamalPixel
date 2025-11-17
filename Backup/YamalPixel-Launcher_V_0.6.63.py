@@ -28,13 +28,33 @@ from pathlib import Path
 import psutil
 import math
 import json
+from PIL import Image, ImageTk
 
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+def set_window_icon(window):
+    """Set icon for all windows"""
+    try:
+        icon_path = resource_path("icon.ico")
+        window.iconbitmap(icon_path)
+    except Exception as e:
+        print(f"Icon error: {e}")
 
 def old_repair_with_ui():
     """Полная версия починки с UI"""
     try:
         # Создаем окно прогресса
         progress_window = tk.Toplevel(win)
+        set_window_icon(progress_window)
         progress_window.title("🔧 Автопочинка файлов")
         progress_window.geometry("500x400")
         progress_window.resizable(False, False)
@@ -216,7 +236,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.62"  # обновление
+CURRENT_VERSION = "0.6.63"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -604,6 +624,7 @@ def download_mods_turbo_ui(mods_list):
 
     # Создаем окно прогресса
     progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
     progress_window.title("Загрузка модов")
     progress_window.geometry("400x150")
 
@@ -913,6 +934,7 @@ def speed_test():
 
         # Создаем окно прогресса
         progress_window = tk.Toplevel(win)
+        set_window_icon(progress_window)
         progress_window.title("Тест скорости интернета")
         progress_window.geometry("450x250")
         progress_window.resizable(False, False)
@@ -1279,6 +1301,7 @@ def download_shaders():
 
     # Создаем окно выбора шейдеров
     shaders_window = tk.Toplevel(win)
+    set_window_icon(shaders_window)
     shaders_window.title("📥 Менеджер шейдеров")
     shaders_window.geometry("1200x550")
     shaders_window.resizable(True, True)
@@ -1465,6 +1488,7 @@ def download_shaders():
 def download_shaders_turbo_ui(selected_shaders):
     """UI для загрузки шейдеров с прогрессом"""
     progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
     progress_window.title("Скачивание шейдеров")
     progress_window.geometry("500x200")
     progress_window.transient(win)
@@ -2065,6 +2089,7 @@ def download_and_install_update(download_url):
     try:
         # Создаем окно прогресса
         progress_window = tk.Toplevel(win)
+        set_window_icon(progress_window)
         progress_window.title("Обновление")
         progress_window.geometry("400x150")
         progress_window.resizable(False, False)
@@ -2866,6 +2891,7 @@ mixer.music.set_volume(0.1)
 # Создание главного окна
 win = ThemedTk(theme="arc")
 win.geometry("1920x1080")
+set_window_icon(win)
 win.title("YamPixel")
 
 # === ПЕРЕМЕЩАЕМ СЮДА ВСЁ ОТНОСИТЕЛЬНО СЕССИИ ===
@@ -3832,6 +3858,7 @@ def fig1():
 def repair_game_with_options():
     """Упрощенная версия починки - только то, что работает"""
     choice_window = tk.Toplevel(win)
+    set_window_icon(choice_window)
     choice_window.title("Починить игру")
     choice_window.geometry("400x200")
 
@@ -3901,6 +3928,7 @@ def repair_missing_mods_with_progress():
     """Загрузка отсутствующих модов с прогресс-баром"""
     # Создаем окно прогресса (аналогично checker1)
     progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
     progress_window.title("Починка модов")
     progress_window.geometry("500x200")
     progress_window.resizable(False, False)
@@ -4152,6 +4180,7 @@ def complete_reinstall():
     # Полностью удаляем папку Minecraft
     progress_window = tk.Toplevel(win)
     progress_window.title("Переустановка")
+    set_window_icon(progress_window)
     progress_window.geometry("400x150")
 
     progress_label = ttk.Label(progress_window, text="Удаление старых файлов...")
@@ -4419,6 +4448,7 @@ def complete_reinstall():
 def create_diagnostic_panel():
     """Создает панель диагностики с темным стилем"""
     diag_window = tk.Toplevel(win)
+    set_window_icon(diag_window)
     diag_window.title("Диагностика проблем")
     diag_window.geometry("700x550")
     diag_window.configure(bg="#2b2b2b")  # Темный фон окна
@@ -4923,6 +4953,7 @@ def is_game_process_running():
 def create_progress_window():
     """Создает окно прогресса с защитой от множественного создания"""
     progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
     progress_window.title("YamalPixel - Запуск игры")
     progress_window.geometry("500x300")
     progress_window.resizable(False, False)
@@ -5022,6 +5053,7 @@ def show_simple_background_selector():
     """Простой выбор фона через отдельное окно"""
     try:
         selector_window = tk.Toplevel(win)
+        set_window_icon(selecror_window)
         selector_window.title("Выбор фона для лаунчера")
         selector_window.geometry("400x500")
         selector_window.configure(bg="#2b2b2b")
@@ -5547,6 +5579,7 @@ def apply_background_and_close(filename, window):
 # Функция для открытия настроек
 def open_settings():
     settings_window = tk.Toplevel(win)
+    set_window_icon(settings_window)
     settings_window.title("Настройки")
 
     ttk.Label(settings_window, text="Выделено памяти (ГБ):").grid(row=0, column=0)
@@ -5596,6 +5629,7 @@ def checker1():
 
     # Создаем окно прогресса
     progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
     progress_window.title("Загрузка модов")
     progress_window.geometry("500x200")
     progress_window.resizable(False, False)
@@ -6064,6 +6098,7 @@ def runn():
 
         # Создаем окно прогресса запуска
         progress_window = tk.Toplevel(win)
+        set_window_icon(progress_window)
         progress_window.title("YamalPixel - Запуск игры")
         progress_window.geometry("500x350")
         progress_window.resizable(False, False)
@@ -8034,6 +8069,7 @@ def show_online_players():
     try:
         # Создаем красивое окно с информацией
         online_window = tk.Toplevel(win)
+        set_window_icon(online_window)
         online_window.title("🌐 Статус сервера")
         online_window.geometry("300x200")
         online_window.resizable(False, False)
@@ -8776,6 +8812,7 @@ def create_new_collection():
 
         # Показываем прогресс
         progress_window = tk.Toplevel(collection_window)
+        set_window_icon(progress_window)
         progress_window.title("Поиск")
         progress_window.geometry("300x100")
         progress_window.transient(collection_window)
@@ -9027,6 +9064,7 @@ def create_new_collection():
 
         # Окно прогресса для обработки модов
         progress_window = tk.Toplevel(collection_window)
+        set_window_icon(progress_window)
         progress_window.title("Обработка модов")
         progress_window.geometry("500x300")
         progress_window.transient(collection_window)
@@ -9572,6 +9610,7 @@ COLLECTIONS_CONFIG = {
 # Функция показа менеджера сборок
 def show_collection_manager():
     manager_window = tk.Toplevel(win)
+    set_window_icon(manager_window)
     manager_window.title("Менеджер  (Бета)")
     manager_window.geometry("1000x500")
     manager_window.transient(win)
@@ -9742,6 +9781,7 @@ def load_collection_to_game(filename):
 
     # Создаем окно прогресса с логом
     progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
     progress_window.title(f"Загрузка сборки: {collection['name']}")
     progress_window.geometry("700x500")
     progress_window.transient(win)
