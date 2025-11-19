@@ -251,7 +251,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.65"  # обновление
+CURRENT_VERSION = "0.6.7"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -277,7 +277,7 @@ RESOURCES = {
 # Конфигурация
 CONFIG = {
     "version": "1.20.1",
-    "fabric_loader": "0.16.10",
+    "fabric_loader": "0.17.2",
     "minecraft_dir": os.path.expanduser("~/YamalPixel"),
     "mods": [
         {
@@ -448,6 +448,26 @@ CONFIG = {
         {
             "url": "https://disk.yandex.ru/d/uXJYqfjy_aedHQ",
             "file": "immersive_weathering-1.20.1-2.0.5-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/5XOEqn8FkypWkg",
+            "file": "create-fabric-6.0.8.0+build.1734-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/XfzgIDOOzleiTA",
+            "file": "create-structures-0.1.1-1.20.1-FABRIC.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/fMv6pNJFcHOKkA",
+            "file": "createaddition-fabric+1.20.1-1.3.3.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/E_jBP9cQfeVX6g",
+            "file": "Steam_Rails-1.6.14-beta+fabric-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/2bh0oqQsq4INXg",
+            "file": "botarium-fabric-1.20.1-2.3.4.jar",
         },
         {
             "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
@@ -5654,246 +5674,6 @@ settings_menu.add_separator()
 
 
 # Функция для проверки и загрузки модов
-def checker1():
-    """НАДЕЖНАЯ функция проверки и загрузки модов с прогресс-баром - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
-    if version_selector.get() != "YamalPixel":
-        print("Выбрана версия, отличная от YamalPixel. Загрузка модов пропущена.")
-        return
-
-    # Создаем окно прогресса
-    progress_window = tk.Toplevel(win)
-    set_window_icon(progress_window)
-    progress_window.title("Загрузка модов")
-    progress_window.geometry("500x200")
-    progress_window.resizable(False, False)
-    progress_window.transient(win)
-    progress_window.grab_set()
-
-    # Центрируем окно
-    progress_window.update_idletasks()
-    x = (win.winfo_screenwidth() // 2) - (500 // 2)
-    y = (win.winfo_screenheight() // 2) - (200 // 2)
-    progress_window.geometry(f"500x200+{x}+{y}")
-
-    # Элементы UI
-    main_frame = ttk.Frame(progress_window, padding=20)
-    main_frame.pack(fill="both", expand=True)
-
-    # Заголовок
-    title_label = ttk.Label(
-        main_frame, text="📥 Загрузка модов", font=("Comfortaa", 14, "bold")
-    )
-    title_label.pack(pady=(0, 15))
-
-    # Общий прогресс-бар
-    total_progress_label = ttk.Label(main_frame, text="Общий прогресс: 0%")
-    total_progress_label.pack()
-
-    total_progress = ttk.Progressbar(
-        main_frame, orient="horizontal", length=400, mode="determinate"
-    )
-    total_progress.pack(pady=5)
-
-    # Прогресс текущего мода
-    current_mod_label = ttk.Label(main_frame, text="Подготовка к загрузке...")
-    current_mod_label.pack()
-
-    current_progress = ttk.Progressbar(
-        main_frame, orient="horizontal", length=400, mode="determinate"
-    )
-    current_progress.pack(pady=5)
-
-    # Счетчик
-    counter_label = ttk.Label(main_frame, text="Мод 0/0")
-    counter_label.pack()
-
-    # Статус
-    status_label = ttk.Label(
-        main_frame, text="Инициализация...", font=("Comfortaa", 9), foreground="blue"
-    )
-    status_label.pack(pady=10)
-
-    def update_progress(current, total, mod_name="", file_progress=0, file_total=1):
-        """Обновляет прогресс в UI"""
-        try:
-            # Общий прогресс
-            total_percent = (current * 100) // total if total > 0 else 0
-            total_progress["value"] = total_percent
-            total_progress_label.config(text=f"Общий прогресс: {total_percent}%")
-
-            # Прогресс текущего файла
-            file_percent = (file_progress * 100) // file_total if file_total > 0 else 0
-            current_progress["value"] = file_percent
-
-            # Тексты
-            current_mod_label.config(text=f"Текущий мод: {mod_name}")
-            counter_label.config(text=f"Мод {current}/{total}")
-            status_label.config(
-                text=(
-                    f"Загрузка: {file_progress / (1024 * 1024):.1f}MB / {file_total / (1024 * 1024):.1f}MB"
-                    if file_total > 0
-                    else "Подготовка..."
-                )
-            )
-
-            progress_window.update()
-        except:
-            pass
-
-    def download_thread():
-        """Поток загрузки модов"""
-        nonlocal progress_window
-
-        try:
-            mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-            os.makedirs(mods_dir, exist_ok=True)
-            base_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?"
-
-            # Определяем какие моды нужно скачать
-            mods_to_download = []
-            for mod in CONFIG["mods"]:
-                mod_path = os.path.join(mods_dir, mod["file"])
-                if not os.path.exists(mod_path):
-                    mods_to_download.append(mod)
-
-            total_mods = len(mods_to_download)
-            success_count = 0
-
-            if total_mods == 0:
-                win.after(
-                    0, lambda: show_completion_result(progress_window, 0, 0, True)
-                )
-                return
-
-            win.after(0, lambda: update_progress(0, total_mods, "Подготовка..."))
-
-            for i, mod in enumerate(mods_to_download):
-                try:
-                    mod_path = os.path.join(mods_dir, mod["file"])
-
-                    win.after(
-                        0,
-                        lambda idx=i, m=mod: update_progress(
-                            idx, total_mods, m["file"], 0, 1
-                        ),
-                    )
-
-                    print(f"⬇️  Загружаем мод ({i + 1}/{total_mods}): {mod['file']}")
-
-                    # Получаем ссылку для скачивания
-                    params = {"public_key": mod["url"]}
-                    response = requests.get(base_url, params=params, timeout=30)
-                    response.raise_for_status()
-                    download_url = response.json().get("href")
-
-                    if not download_url:
-                        print(f"❌ Не удалось получить ссылку для {mod['file']}")
-                        continue
-
-                    # Загружаем файл с прогрессом
-                    with requests.get(
-                        download_url, stream=True, timeout=60
-                    ) as dl_response:
-                        dl_response.raise_for_status()
-
-                        total_size = int(dl_response.headers.get("content-length", 0))
-                        downloaded_size = 0
-
-                        with open(mod_path, "wb") as f:
-                            for chunk in dl_response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                                    downloaded_size += len(chunk)
-
-                                    # Обновляем прогресс текущего файла
-                                    win.after(
-                                        0,
-                                        lambda idx=i, m=mod, ds=downloaded_size, ts=total_size: update_progress(
-                                            idx, total_mods, m["file"], ds, ts
-                                        ),
-                                    )
-
-                        print(f"✅ Мод {mod['file']} успешно установлен")
-                        success_count += 1
-
-                except Exception as e:
-                    print(f"❌ Ошибка загрузки мода {mod['file']}: {str(e)}")
-                    win.after(
-                        0, lambda: status_label.config(text=f"Ошибка: {str(e)[:50]}...")
-                    )
-
-            # Распаковываем ZIP-файлы
-            win.after(0, lambda: status_label.config(text="Распаковка архивов..."))
-            zip_count = 0
-            for mod in mods_to_download:
-                if mod["file"].endswith(".zip"):
-                    zip_path = os.path.join(mods_dir, mod["file"])
-                    if os.path.exists(zip_path):
-                        try:
-                            with zipfile.ZipFile(zip_path, "r") as zip_file:
-                                zip_file.extractall(path=mods_dir)
-                            print(
-                                f"📦 Содержимое архива {mod['file']} успешно извлечено"
-                            )
-                            zip_count += 1
-                        except Exception as e:
-                            print(
-                                f"❌ Ошибка распаковки архива {mod['file']}: {str(e)}"
-                            )
-
-            # ПОСЛЕ ПОЛНОЙ ЗАГРУЗКИ ВСЕХ МОДОВ - закрываем окно
-            win.after(
-                0,
-                lambda: show_completion_result(
-                    progress_window, success_count, total_mods, False
-                ),
-            )
-
-        except Exception as e:
-            print(f"💥 Критическая ошибка в потоке загрузки: {e}")
-            win.after(0, lambda: show_completion_result(progress_window, 0, 0, True))
-
-    def show_completion_result(window, success, total, all_exist):
-        """Показывает результат загрузки и ЗАКРЫВАЕТ окно"""
-        window.destroy()
-
-        if all_exist:
-            messagebox.showinfo("Загрузка модов", "✅ Все моды уже установлены!")
-            # ЗАПУСКАЕМ ИГРУ ПОСЛЕ ЗАКРЫТИЯ ОКНА ЗАГРУЗКИ
-            win.after(100, runn)
-        elif success == total:
-            messagebox.showinfo(
-                "Загрузка модов",
-                f"🎉 Все моды успешно загружены!\n\n"
-                f"• Загружено: {success} модов\n"
-                f"Запускайте игру!",
-            )
-            # ЗАПУСКАЕМ ИГРУ ПОСЛЕ ЗАКРЫТИЯ ОКНА ЗАГРУЗКИ
-            win.after(100, runn)
-        elif success > 0:
-            result = messagebox.askyesno(
-                "Загрузка модов",
-                f"📊 Загрузка завершена с ошибками\n\n"
-                f"• Успешно: {success} модов\n"
-                f"• Всего: {total} модов\n"
-                f"• Не загружено: {total - success} модов\n\n"
-                f"Запустить игру с доступными модами?",
-            )
-            if result:
-                # ЗАПУСКАЕМ ИГРУ ПОСЛЕ ЗАКРЫТИЯ ОКНА ЗАГРУЗКИ
-                win.after(100, runn)
-        else:
-            messagebox.showerror(
-                "Ошибка загрузки",
-                "❌ Не удалось загрузить ни одного мода!\n\n"
-                "Возможные причины:\n"
-                "• Проблемы с интернет-соединением\n"
-                "• Яндекс.Диск блокирует загрузки\n"
-                "• Антивирус блокирует загрузки",
-            )
-
-    # Запускаем загрузку в отдельном потоке
-    threading.Thread(target=download_thread, daemon=True).start()
 
 
 # Функция для проверки установки Minecraft и Fabric
@@ -6111,7 +5891,7 @@ def check_and_download_missing_mods():
 
 # ЗАГРУЗКА МОДОВ ТОЛЬКО ДЛЯ YamalPixel
 def runn():
-    global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
+    global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
 
     if LAUNCH_IN_PROGRESS:
         elapsed = int(time.time() - LAUNCH_START_TIME)
@@ -6126,267 +5906,536 @@ def runn():
             messagebox.showerror("Ошибка", "❌ Введите имя пользователя!")
             return
 
-        # НЕМЕДЛЕННО блокируем интерфейс
-        set_launch_state(True)
+        # Если выбрана версия YamalPixel - сначала проверяем моды
+        if version_selector.get() == "YamalPixel":
+            def on_mods_check_complete():
+                """Запускается после завершения проверки модов"""
+                # После проверки модов запускаем игру
+                start_game_launch()
 
-        # Создаем окно прогресса запуска
-        progress_window = tk.Toplevel(win)
-        set_window_icon(progress_window)
-        progress_window.title("YamalPixel - Запуск игры")
-        progress_window.geometry("500x350")
-        progress_window.resizable(False, False)
-        progress_window.transient(win)
-        progress_window.grab_set()
-        progress_window.protocol("WM_DELETE_WINDOW", lambda: None)
-
-        # Центрируем окно
-        progress_window.update_idletasks()
-        x = (win.winfo_screenwidth() // 2) - (500 // 2)
-        y = (win.winfo_screenheight() // 2) - (350 // 2)
-        progress_window.geometry(f"500x350+{x}+{y}")
-
-        # Стилизуем окно прогресса
-        main_frame = ttk.Frame(progress_window, padding=25)
-        main_frame.pack(fill="both", expand=True)
-
-        # Заголовок
-        header_frame = ttk.Frame(main_frame)
-        header_frame.pack(fill="x", pady=(0, 20))
-        ttk.Label(
-            header_frame, text="🚀 Запуск YamalPixel", font=("Comfortaa", 16, "bold")
-        ).pack()
-        ttk.Label(
-            header_frame,
-            text="Подготовка к запуску игры...",
-            font=("Comfortaa", 11),
-            foreground="gray",
-        ).pack(pady=(5, 0))
-
-        # Прогресс-бар
-        progress_frame = ttk.Frame(main_frame)
-        progress_frame.pack(fill="x", pady=10)
-        progress_bar = ttk.Progressbar(
-            progress_frame, orient="horizontal", length=400, mode="indeterminate"
-        )
-        progress_bar.pack(pady=5)
-        progress_bar.start()
-
-        # Статус запуска
-        status_label = ttk.Label(
-            progress_frame, text="Инициализация запуска...", font=("Comfortaa", 10)
-        )
-        status_label.pack()
-
-        # Таймер
-        timer_frame = ttk.Frame(main_frame)
-        timer_frame.pack(fill="x", pady=10)
-        timer_label = ttk.Label(
-            timer_frame, text="⏱️ Прошло времени: 0 сек.", font=("Comfortaa", 9)
-        )
-        timer_label.pack()
-
-        # Детали запуска
-        details_label = ttk.Label(
-            main_frame, text="", font=("Comfortaa", 8), foreground="blue"
-        )
-        details_label.pack()
-
-        # Лог запуска
-        log_frame = ttk.Frame(main_frame)
-        log_frame.pack(fill="x", pady=5)
-        log_label = ttk.Label(
-            log_frame, text="", font=("Consolas", 7), foreground="green"
-        )
-        log_label.pack()
-
-        # Кнопка отмены
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x", pady=20)
-
-        def cancel_launch():
-            progress_window.destroy()
-            set_launch_state(False)
-            messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
-
-        cancel_btn = ttk.Button(
-            button_frame, text="❌ Отменить запуск", command=cancel_launch
-        )
-        cancel_btn.pack()
-
-        # Локальные функции для обновления UI
-        def update_progress_ui():
-            """Обновляет UI прогресса"""
-            if LAUNCH_IN_PROGRESS and progress_window.winfo_exists():
-                elapsed = int(time.time() - LAUNCH_START_TIME)
-                timer_label.config(text=f"⏱️ Прошло времени: {elapsed} сек.")
-                progress_window.after(1000, update_progress_ui)
-
-        def update_ui_status(text="", detail=""):
-            """Обновляет статус в UI"""
-            try:
-                if progress_window.winfo_exists():
-                    if text:
-                        status_label.config(text=text)
-                    if detail:
-                        details_label.config(text=detail)
-            except Exception as e:
-                print(f"[UI STATUS ERROR] {e}")
-
-        def update_ui_log(message):
-            """Обновляет лог в UI"""
-            try:
-                if progress_window.winfo_exists():
-                    log_label.config(text=message)
-            except Exception as e:
-                print(f"[UI LOG ERROR] {e}")
-
-        # Запускаем обновление таймера
-        update_progress_ui()
-
-        # ГЛАВНЫЙ ПРОЦЕСС ЗАПУСКА
-        def execute_launch_process():
-            """Основной процесс запуска игры"""
-            try:
-                # Шаг 1: Проверка и загрузка модов
-                if version_selector.get() == "YamalPixel":
-                    update_ui_status("Проверка модов", "Проверяем наличие модов...")
-                    update_ui_log("🔍 Проверяем моды для YamalPixel")
-
-                    # Простая проверка модов
-                    mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-                    missing_mods = []
-
-                    for mod in CONFIG["mods"]:
-                        mod_path = os.path.join(mods_dir, mod["file"])
-                        if not os.path.exists(mod_path):
-                            missing_mods.append(mod["file"])
-
-                    if missing_mods:
-                        update_ui_log(f"❌ Отсутствуют моды: {len(missing_mods)}")
-                        # Здесь можно добавить загрузку модов при необходимости
-                    else:
-                        update_ui_log("✅ Все моды на месте")
-
-                # Шаг 2: Подготовка игры
-                update_ui_status("Подготовка игры", "Очистка и проверка...")
-                cleanup_before_launch()
-                clear_auth_cache()
-                update_ui_log("✅ Файлы подготовлены")
-
-                # Шаг 3: Проверка Fabric
-                selected_version = version_selector.get()
-                if is_fabric_needed(selected_version):
-                    update_ui_status("Проверка Fabric", "Проверяем установку...")
-                    if not check_fabric_installed():
-                        update_ui_log("🔧 Устанавливаем Fabric...")
-                        try:
-                            minecraft_launcher_lib.fabric.install_fabric(
-                                minecraft_version=CONFIG["version"],
-                                loader_version=CONFIG["fabric_loader"],
-                                minecraft_directory=CONFIG["minecraft_dir"],
-                            )
-                            update_ui_log("✅ Fabric установлен")
-                        except Exception as e:
-                            update_ui_log(f"❌ Ошибка Fabric: {e}")
-                            raise
-                    else:
-                        update_ui_log("✅ Fabric готов")
-
-                # Шаг 4: Запуск игры
-                update_ui_status("Запуск Minecraft", "Формируем команду...")
-
-                # Настройки памяти
-                selected_memory = CONFIG.get("jvm_memory", "4G")
-                if selected_memory.startswith("-Xmx"):
-                    selected_memory = selected_memory[4:]
-
-                # JVM аргументы
-                jvm_args = [
-                    f"-Xmx{selected_memory}",
-                    f"-Xms{selected_memory}",
-                    "-XX:+UseG1GC",
-                    "-Duser.language=ru",
-                    "-Duser.country=RU",
-                ]
-
-                options = {
-                    "username": username.get(),
-                    "uuid": str(hash(username.get())),
-                    "token": "",
-                    "jvmArguments": jvm_args,
-                    "gameLocale": "ru_RU",
-                }
-
-                # Формируем команду
-                if is_fabric_needed(selected_version):
-                    command = minecraft_launcher_lib.command.get_minecraft_command(
-                        version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
-                        minecraft_directory=CONFIG["minecraft_dir"],
-                        options=options,
-                    )
-                else:
-                    command = minecraft_launcher_lib.command.get_minecraft_command(
-                        version=CONFIG["version"],
-                        minecraft_directory=CONFIG["minecraft_dir"],
-                        options=options,
-                    )
-
-                update_ui_log("🚀 Запускаем Minecraft...")
-
-                # Запускаем процесс
-                process = launch_minecraft_process(command)
-
-                if process:
-                    update_ui_status("Игра запущена", "Minecraft загружается...")
-                    update_ui_log("✅ Процесс запущен")
-
-                    # Ждем немного и проверяем
-                    time.sleep(3)
-
-                    if is_minecraft_process_running(process):
-                        # Успешный запуск
-                        win.after(2000, progress_window.destroy)
-                        win.after(0, lambda: set_launch_state(False))
-
-                        win.after(
-                            100,
-                            lambda: messagebox.showinfo(
-                                "Успешный запуск",
-                                f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
-                            ),
-                        )
-
-                        # Мониторим процесс
-                        threading.Thread(
-                            target=monitor_game_process, args=(process,), daemon=True
-                        ).start()
-                    else:
-                        raise Exception("Minecraft не запустился")
-                else:
-                    raise Exception("Не удалось создать процесс")
-
-            except Exception as e:
-                error_msg = f"Ошибка запуска: {str(e)}"
-                print(f"[LAUNCH ERROR] {error_msg}")
-
-                if progress_window.winfo_exists():
-                    progress_window.destroy()
-
-                set_launch_state(False)
-
-                messagebox.showerror(
-                    "Ошибка запуска",
-                    f"❌ Не удалось запустить игру:\n\n{error_msg}"
-                )
-
-        # Запускаем основной процесс в отдельном потоке
-        threading.Thread(target=execute_launch_process, daemon=True).start()
+            # Запускаем проверку модов, передавая колбэк для запуска игры
+            checker1_with_callback(on_mods_check_complete)
+        else:
+            # Для других версий сразу запускаем игру
+            start_game_launch()
 
     except Exception as e:
         set_launch_state(False)
         messagebox.showerror(
             "Критическая ошибка", f"❌ Не удалось подготовить запуск:\n\n{str(e)}"
         )
+
+
+def checker1_with_callback(completion_callback=None):
+    """Версия checker1 с колбэком для последовательного выполнения"""
+    if version_selector.get() != "YamalPixel":
+        print("Выбрана версия, отличная от YamalPixel. Загрузка модов пропущена.")
+        if completion_callback:
+            completion_callback()
+        return
+
+    # Создаем окно прогресса
+    progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
+    progress_window.title("Загрузка модов")
+    progress_window.geometry("500x200")
+    progress_window.resizable(False, False)
+    progress_window.transient(win)
+    progress_window.grab_set()
+
+    # Центрируем окно
+    progress_window.update_idletasks()
+    x = (win.winfo_screenwidth() // 2) - (500 // 2)
+    y = (win.winfo_screenheight() // 2) - (200 // 2)
+    progress_window.geometry(f"500x200+{x}+{y}")
+
+    # Элементы UI
+    main_frame = ttk.Frame(progress_window, padding=20)
+    main_frame.pack(fill="both", expand=True)
+
+    # Заголовок
+    title_label = ttk.Label(
+        main_frame, text="📥 Загрузка модов", font=("Comfortaa", 14, "bold")
+    )
+    title_label.pack(pady=(0, 15))
+
+    # Общий прогресс-бар
+    total_progress_label = ttk.Label(main_frame, text="Общий прогресс: 0%")
+    total_progress_label.pack()
+
+    total_progress = ttk.Progressbar(
+        main_frame, orient="horizontal", length=400, mode="determinate"
+    )
+    total_progress.pack(pady=5)
+
+    # Прогресс текущего мода
+    current_mod_label = ttk.Label(main_frame, text="Подготовка к загрузке...")
+    current_mod_label.pack()
+
+    current_progress = ttk.Progressbar(
+        main_frame, orient="horizontal", length=400, mode="determinate"
+    )
+    current_progress.pack(pady=5)
+
+    # Счетчик
+    counter_label = ttk.Label(main_frame, text="Мод 0/0")
+    counter_label.pack()
+
+    # Статус
+    status_label = ttk.Label(
+        main_frame, text="Инициализация...", font=("Comfortaa", 9), foreground="blue"
+    )
+    status_label.pack(pady=10)
+
+    def update_progress(current, total, mod_name="", file_progress=0, file_total=1):
+        """Обновляет прогресс в UI - ИСПРАВЛЕННАЯ ВЕРСИЯ БЕЗ РЕКУРСИИ"""
+        try:
+            # Общий прогресс
+            total_percent = (current * 100) // total if total > 0 else 0
+            total_progress["value"] = total_percent
+            total_progress_label.config(text=f"Общий прогресс: {total_percent}%")
+
+            # Прогресс текущего файла
+            file_percent = (file_progress * 100) // file_total if file_total > 0 else 0
+            current_progress["value"] = file_percent
+
+            # Тексты
+            current_mod_label.config(text=f"Текущий мод: {mod_name}")
+            counter_label.config(text=f"Мод {current}/{total}")
+
+            if file_total > 0:
+                status_text = f"Загрузка: {file_progress / (1024 * 1024):.1f}MB / {file_total / (1024 * 1024):.1f}MB"
+            else:
+                status_text = "Подготовка..."
+
+            status_label.config(text=status_text)
+
+            progress_window.update()
+        except Exception as e:
+            print(f"Ошибка обновления прогресса: {e}")
+
+    def download_thread():
+        """Поток загрузки модов - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        nonlocal progress_window
+
+        try:
+            mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+            os.makedirs(mods_dir, exist_ok=True)
+            base_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?"
+
+            # Определяем какие моды нужно скачать
+            mods_to_download = []
+            for mod in CONFIG["mods"]:
+                mod_path = os.path.join(mods_dir, mod["file"])
+                if not os.path.exists(mod_path):
+                    mods_to_download.append(mod)
+
+            total_mods = len(mods_to_download)
+            success_count = 0
+
+            if total_mods == 0:
+                win.after(
+                    0, lambda: show_completion_result(progress_window, 0, 0, True, completion_callback)
+                )
+                return
+
+            win.after(0, lambda: update_progress(0, total_mods, "Подготовка..."))
+
+            for i, mod in enumerate(mods_to_download):
+                try:
+                    mod_path = os.path.join(mods_dir, mod["file"])
+
+                    win.after(
+                        0,
+                        lambda idx=i, m=mod: update_progress(
+                            idx, total_mods, m["file"], 0, 1
+                        ),
+                    )
+
+                    print(f"⬇️  Загружаем мод ({i + 1}/{total_mods}): {mod['file']}")
+
+                    # Получаем ссылку для скачивания
+                    params = {"public_key": mod["url"]}
+                    response = requests.get(base_url, params=params, timeout=30)
+                    response.raise_for_status()
+                    download_url = response.json().get("href")
+
+                    if not download_url:
+                        print(f"❌ Не удалось получить ссылку для {mod['file']}")
+                        continue
+
+                    # Загружаем файл с прогрессом
+                    with requests.get(
+                            download_url, stream=True, timeout=60
+                    ) as dl_response:
+                        dl_response.raise_for_status()
+
+                        total_size = int(dl_response.headers.get("content-length", 0))
+                        downloaded_size = 0
+
+                        with open(mod_path, "wb") as f:
+                            for chunk in dl_response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                                    downloaded_size += len(chunk)
+
+                                    # Обновляем прогресс текущего файла - БЕЗ РЕКУРСИИ
+                                    if downloaded_size % (1024 * 1024) == 0:  # Обновляем каждые 1MB
+                                        win.after(
+                                            0,
+                                            lambda ds=downloaded_size, ts=total_size: update_progress(
+                                                i, total_mods, mod["file"], ds, ts
+                                            ),
+                                        )
+
+                        # Финальное обновление прогресса
+                        win.after(
+                            0,
+                            lambda: update_progress(
+                                i, total_mods, mod["file"], total_size, total_size
+                            ),
+                        )
+
+                        print(f"✅ Мод {mod['file']} успешно установлен")
+                        success_count += 1
+
+                except Exception as e:
+                    print(f"❌ Ошибка загрузки мода {mod['file']}: {str(e)}")
+                    win.after(
+                        0, lambda: status_label.config(text=f"Ошибка: {str(e)[:50]}...")
+                    )
+
+            # Распаковываем ZIP-файлы
+            win.after(0, lambda: status_label.config(text="Распаковка архивов..."))
+            zip_count = 0
+            for mod in mods_to_download:
+                if mod["file"].endswith(".zip"):
+                    zip_path = os.path.join(mods_dir, mod["file"])
+                    if os.path.exists(zip_path):
+                        try:
+                            with zipfile.ZipFile(zip_path, "r") as zip_file:
+                                zip_file.extractall(path=mods_dir)
+                            print(
+                                f"📦 Содержимое архива {mod['file']} успешно извлечено"
+                            )
+                            zip_count += 1
+                        except Exception as e:
+                            print(
+                                f"❌ Ошибка распаковки архива {mod['file']}: {str(e)}"
+                            )
+
+            # ПОСЛЕ ПОЛНОЙ ЗАГРУЗКИ ВСЕХ МОДОВ - закрываем окно
+            win.after(
+                0,
+                lambda: show_completion_result(
+                    progress_window, success_count, total_mods, False, completion_callback
+                ),
+            )
+
+        except Exception as e:
+            print(f"💥 Критическая ошибка в потоке загрузки: {e}")
+            win.after(0, lambda: show_completion_result(progress_window, 0, 0, True, completion_callback))
+
+    def show_completion_result(window, success, total, all_exist, callback=None):
+        """Показывает результат загрузки и ЗАКРЫВАЕТ окно"""
+        try:
+            window.destroy()
+        except:
+            pass
+
+        if all_exist:
+            messagebox.showinfo("Загрузка модов", "✅ Все моды уже установлены!")
+            # Вызываем колбэк для запуска игры
+            if callback:
+                win.after(100, callback)
+        elif success == total:
+            messagebox.showinfo(
+                "Загрузка модов",
+                f"🎉 Все моды успешно загружены!\n\n"
+                f"• Загружено: {success} модов\n"
+                f"Запускайте игру!",
+            )
+            # Вызываем колбэк для запуска игры
+            if callback:
+                win.after(100, callback)
+        elif success > 0:
+            result = messagebox.askyesno(
+                "Загрузка модов",
+                f"📊 Загрузка завершена с ошибками\n\n"
+                f"• Успешно: {success} модов\n"
+                f"• Всего: {total} модов\n"
+                f"• Не загружено: {total - success} модов\n\n"
+                f"Запустить игру с доступными модами?",
+            )
+            if result and callback:
+                # Вызываем колбэк для запуска игры
+                win.after(100, callback)
+        else:
+            messagebox.showerror(
+                "Ошибка загрузки",
+                "❌ Не удалось загрузить ни одного мода!\n\n"
+                "Возможные причины:\n"
+                "• Проблемы с интернет-соединением\n"
+                "• Яндекс.Диск блокирует загрузки\n"
+                "• Антивирус блокирует загрузки",
+            )
+            # Даже при ошибке вызываем колбэк, если пользователь хочет продолжить
+            if callback:
+                result = messagebox.askyesno(
+                    "Продолжить",
+                    "Запустить игру без модов?"
+                )
+                if result:
+                    win.after(100, callback)
+
+    # Запускаем загрузку в отдельном потоке
+    threading.Thread(target=download_thread, daemon=True).start()
+
+
+def start_game_launch():
+    """Основной процесс запуска игры (вынесен из runn)"""
+    global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
+
+    # НЕМЕДЛЕННО блокируем интерфейс
+    set_launch_state(True)
+
+    # Создаем окно прогресса запуска
+    progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
+    progress_window.title("YamalPixel - Запуск игры")
+    progress_window.geometry("500x350")
+    progress_window.resizable(False, False)
+    progress_window.transient(win)
+    progress_window.grab_set()
+    progress_window.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    # Центрируем окно
+    progress_window.update_idletasks()
+    x = (win.winfo_screenwidth() // 2) - (500 // 2)
+    y = (win.winfo_screenheight() // 2) - (350 // 2)
+    progress_window.geometry(f"500x350+{x}+{y}")
+
+    # Стилизуем окно прогресса
+    main_frame = ttk.Frame(progress_window, padding=25)
+    main_frame.pack(fill="both", expand=True)
+
+    # Заголовок
+    header_frame = ttk.Frame(main_frame)
+    header_frame.pack(fill="x", pady=(0, 20))
+    ttk.Label(
+        header_frame, text="🚀 Запуск YamalPixel", font=("Comfortaa", 16, "bold")
+    ).pack()
+    ttk.Label(
+        header_frame,
+        text="Подготовка к запуску игры...",
+        font=("Comfortaa", 11),
+        foreground="gray",
+    ).pack(pady=(5, 0))
+
+    # Прогресс-бар
+    progress_frame = ttk.Frame(main_frame)
+    progress_frame.pack(fill="x", pady=10)
+    progress_bar = ttk.Progressbar(
+        progress_frame, orient="horizontal", length=400, mode="indeterminate"
+    )
+    progress_bar.pack(pady=5)
+    progress_bar.start()
+
+    # Статус запуска
+    status_label = ttk.Label(
+        progress_frame, text="Инициализация запуска...", font=("Comfortaa", 10)
+    )
+    status_label.pack()
+
+    # Таймер
+    timer_frame = ttk.Frame(main_frame)
+    timer_frame.pack(fill="x", pady=10)
+    timer_label = ttk.Label(
+        timer_frame, text="⏱️ Прошло времени: 0 сек.", font=("Comfortaa", 9)
+    )
+    timer_label.pack()
+
+    # Детали запуска
+    details_label = ttk.Label(
+        main_frame, text="", font=("Comfortaa", 8), foreground="blue"
+    )
+    details_label.pack()
+
+    # Лог запуска
+    log_frame = ttk.Frame(main_frame)
+    log_frame.pack(fill="x", pady=5)
+    log_label = ttk.Label(
+        log_frame, text="", font=("Consolas", 7), foreground="green"
+    )
+    log_label.pack()
+
+    # Кнопка отмены
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill="x", pady=20)
+
+    def cancel_launch():
+        progress_window.destroy()
+        set_launch_state(False)
+        messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
+
+    cancel_btn = ttk.Button(
+        button_frame, text="❌ Отменить запуск", command=cancel_launch
+    )
+    cancel_btn.pack()
+
+    # Локальные функции для обновления UI
+    def update_progress_ui():
+        """Обновляет UI прогресса"""
+        if LAUNCH_IN_PROGRESS and progress_window.winfo_exists():
+            elapsed = int(time.time() - LAUNCH_START_TIME)
+            timer_label.config(text=f"⏱️ Прошло времени: {elapsed} сек.")
+            progress_window.after(1000, update_progress_ui)
+
+    def update_ui_status(text="", detail=""):
+        """Обновляет статус в UI"""
+        try:
+            if progress_window.winfo_exists():
+                if text:
+                    status_label.config(text=text)
+                if detail:
+                    details_label.config(text=detail)
+        except Exception as e:
+            print(f"[UI STATUS ERROR] {e}")
+
+    def update_ui_log(message):
+        """Обновляет лог в UI"""
+        try:
+            if progress_window.winfo_exists():
+                log_label.config(text=message)
+        except Exception as e:
+            print(f"[UI LOG ERROR] {e}")
+
+    # Запускаем обновление таймера
+    update_progress_ui()
+
+    # ГЛАВНЫЙ ПРОЦЕСС ЗАПУСКА
+    def execute_launch_process():
+        """Основной процесс запуска игры"""
+        try:
+            # Шаг 1: Проверка модов (уже выполнена ранее)
+            if version_selector.get() == "YamalPixel":
+                update_ui_status("Проверка завершена", "Моды готовы...")
+                update_ui_log("✅ Все моды проверены и загружены")
+
+            # Шаг 2: Подготовка игры
+            update_ui_status("Подготовка игры", "Очистка и проверка...")
+            cleanup_before_launch()
+            clear_auth_cache()
+            update_ui_log("✅ Файлы подготовлены")
+
+            # Шаг 3: Проверка Fabric
+            selected_version = version_selector.get()
+            if is_fabric_needed(selected_version):
+                update_ui_status("Проверка Fabric", "Проверяем установку...")
+                if not check_fabric_installed():
+                    update_ui_log("🔧 Устанавливаем Fabric...")
+                    try:
+                        minecraft_launcher_lib.fabric.install_fabric(
+                            minecraft_version=CONFIG["version"],
+                            loader_version=CONFIG["fabric_loader"],
+                            minecraft_directory=CONFIG["minecraft_dir"],
+                        )
+                        update_ui_log("✅ Fabric установлен")
+                    except Exception as e:
+                        update_ui_log(f"❌ Ошибка Fabric: {e}")
+                        raise
+                else:
+                    update_ui_log("✅ Fabric готов")
+
+            # Шаг 4: Запуск игры
+            update_ui_status("Запуск Minecraft", "Формируем команду...")
+
+            # Настройки памяти
+            selected_memory = CONFIG.get("jvm_memory", "4G")
+            if selected_memory.startswith("-Xmx"):
+                selected_memory = selected_memory[4:]
+
+            # JVM аргументы
+            jvm_args = [
+                f"-Xmx{selected_memory}",
+                f"-Xms{selected_memory}",
+                "-XX:+UseG1GC",
+                "-Duser.language=ru",
+                "-Duser.country=RU",
+            ]
+
+            options = {
+                "username": username.get(),
+                "uuid": str(hash(username.get())),
+                "token": "",
+                "jvmArguments": jvm_args,
+                "gameLocale": "ru_RU",
+            }
+
+            # Формируем команду
+            if is_fabric_needed(selected_version):
+                command = minecraft_launcher_lib.command.get_minecraft_command(
+                    version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
+                    minecraft_directory=CONFIG["minecraft_dir"],
+                    options=options,
+                )
+            else:
+                command = minecraft_launcher_lib.command.get_minecraft_command(
+                    version=CONFIG["version"],
+                    minecraft_directory=CONFIG["minecraft_dir"],
+                    options=options,
+                )
+
+            update_ui_log("🚀 Запускаем Minecraft...")
+
+            # Запускаем процесс
+            process = launch_minecraft_process(command)
+
+            if process:
+                update_ui_status("Игра запущена", "Minecraft загружается...")
+                update_ui_log("✅ Процесс запущен")
+
+                # Ждем немного и проверяем
+                time.sleep(3)
+
+                if is_minecraft_process_running(process):
+                    # Успешный запуск
+                    win.after(2000, progress_window.destroy)
+                    win.after(0, lambda: set_launch_state(False))
+
+                    win.after(
+                        100,
+                        lambda: messagebox.showinfo(
+                            "Успешный запуск",
+                            f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
+                        ),
+                    )
+
+                    # Мониторим процесс
+                    threading.Thread(
+                        target=monitor_game_process, args=(process,), daemon=True
+                    ).start()
+                else:
+                    raise Exception("Minecraft не запустился")
+            else:
+                raise Exception("Не удалось создать процесс")
+
+        except Exception as e:
+            error_msg = f"Ошибка запуска: {str(e)}"
+            print(f"[LAUNCH ERROR] {error_msg}")
+
+            if progress_window.winfo_exists():
+                progress_window.destroy()
+
+            set_launch_state(False)
+
+            messagebox.showerror(
+                "Ошибка запуска",
+                f"❌ Не удалось запустить игру:\n\n{error_msg}"
+            )
+
+    # Запускаем основной процесс в отдельном потоке
+    threading.Thread(target=execute_launch_process, daemon=True).start()
 
 
 def safe_destroy_window(window):
