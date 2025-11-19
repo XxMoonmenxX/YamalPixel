@@ -32,10 +32,15 @@ from PIL import Image, ImageTk
 
 
 def resource_path(relative_path):
-    """Get absolute path to resource in YamalPixelRes folder"""
-    # Используем путь из RESOURCE_DIR
-    resource_dir = Path.home() / "YamalPixelRes"
-    return os.path.join(resource_dir, relative_path)
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # В режиме разработки используем домашнюю директорию
+        base_path = Path.home() / "YamalPixelRes"
+
+    return os.path.join(base_path, relative_path)
 
 
 def set_window_icon(window):
@@ -43,12 +48,18 @@ def set_window_icon(window):
     try:
         icon_path = resource_path("icon.ico")
 
-        # Проверяем, существует ли файл
-        if os.path.exists(icon_path):
-            window.iconbitmap(icon_path)
-            print(f"Icon loaded from: {icon_path}")
-        else:
-            print(f"Icon file not found: {icon_path}")
+        # Дополнительная проверка для PyInstaller
+        if not os.path.exists(icon_path):
+            # Пробуем найти в домашней директории
+            home_icon_path = Path.home() / "YamalPixelRes" / "icon.ico"
+            if os.path.exists(home_icon_path):
+                icon_path = home_icon_path
+            else:
+                print(f"Icon not found: {icon_path}")
+                return
+
+        window.iconbitmap(icon_path)
+        print(f"Icon loaded from: {icon_path}")
 
     except Exception as e:
         print(f"Icon error: {e}")
@@ -240,7 +251,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.64"  # обновление
+CURRENT_VERSION = "0.6.65"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -2268,6 +2279,22 @@ def show_manual_update_option(download_url):
 
 # Функция очистки перед запуском
 def cleanup_before_launch():
+    try:
+        # Закрываем возможные висящие процессы Minecraft
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/f", "/im", "javaw.exe"],
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        else:
+            subprocess.run(["pkill", "-f", "minecraft"], capture_output=True)
+
+        # Небольшая пауза для завершения процессов
+        time.sleep(2)
+
+    except Exception as e:
+        print(f"Очистка перед запуском: {e}")
     launcher_dir = os.getcwd()
     minecraft_dir = os.path.expanduser("~/YamalPixel/versions")
     old_Mods = os.path.expanduser("~/YamalPixel/mods")
@@ -6186,289 +6213,100 @@ def runn():
         )
         cancel_btn.pack()
 
-        # Функция обновления UI
+        # Локальные функции для обновления UI
+        def update_progress_ui():
+            """Обновляет UI прогресса"""
+            if LAUNCH_IN_PROGRESS and progress_window.winfo_exists():
+                elapsed = int(time.time() - LAUNCH_START_TIME)
+                timer_label.config(text=f"⏱️ Прошло времени: {elapsed} сек.")
+                progress_window.after(1000, update_progress_ui)
+
+        def update_ui_status(text="", detail=""):
+            """Обновляет статус в UI"""
+            try:
+                if progress_window.winfo_exists():
+                    if text:
+                        status_label.config(text=text)
+                    if detail:
+                        details_label.config(text=detail)
+            except Exception as e:
+                print(f"[UI STATUS ERROR] {e}")
+
+        def update_ui_log(message):
+            """Обновляет лог в UI"""
+            try:
+                if progress_window.winfo_exists():
+                    log_label.config(text=message)
+            except Exception as e:
+                print(f"[UI LOG ERROR] {e}")
+
+        # Запускаем обновление таймера
         update_progress_ui()
 
-        def update_status():
-            """Безопасное обновление статуса с проверкой существования элементов"""
+        # ГЛАВНЫЙ ПРОЦЕСС ЗАПУСКА
+        def execute_launch_process():
+            """Основной процесс запуска игры"""
             try:
-                if LAUNCH_IN_PROGRESS:
-                    elapsed = int(time.time() - LAUNCH_START_TIME)
-                    # Безопасно обновляем статус только если элементы существуют
-                    if (
-                        "status_label" in globals()
-                        and status_label
-                        and status_label.winfo_exists()
-                    ):
-                        status_label.config(
-                            text=f"🔄 Запуск игры... ({elapsed} сек.)",
-                            foreground="orange",
-                        )
-                else:
-                    # Безопасно обновляем статус только если элементы существуют
-                    if (
-                        "status_label" in globals()
-                        and status_label
-                        and status_label.winfo_exists()
-                    ):
-                        status_label.config(
-                            text="✅ Готов к запуску", foreground="green"
-                        )
+                # Шаг 1: Проверка и загрузка модов
+                if version_selector.get() == "YamalPixel":
+                    update_ui_status("Проверка модов", "Проверяем наличие модов...")
+                    update_ui_log("🔍 Проверяем моды для YamalPixel")
 
-                # Продолжаем обновление только если главное окно существует
-                if "win" in globals() and win and win.winfo_exists():
-                    win.after(1000, update_status)
-            except Exception as e:
-                print(f"[STATUS UPDATE ERROR] {e}")
-                # Останавливаем обновление при ошибке
-                return
-
-        # Запускаем обновление статуса
-        win.after(1000, update_status)
-
-        def update_log(message):
-            """Обновляет лог с проверкой существования окна и элементов"""
-            try:
-                # Всегда пишем в консоль
-                print(f"[LAUNCHER] {message}")
-
-                # Проверяем существует ли окно прогресса и лейбл
-                if (
-                    "progress_window" in globals()
-                    and progress_window
-                    and progress_window.winfo_exists()
-                ):
-                    if (
-                        "log_label" in globals()
-                        and log_label
-                        and log_label.winfo_exists()
-                    ):
-                        win.after(0, lambda: log_label.config(text=message))
-            except Exception as e:
-                # В случае ошибки просто логируем в консоль
-                print(f"[LAUNCHER UPDATE ERROR] {message}")
-
-        def update_status(text, detail=""):
-            """Обновляет статус с проверкой существования окна и элементов"""
-            try:
-                if (
-                    "progress_window" in globals()
-                    and progress_window
-                    and progress_window.winfo_exists()
-                ):
-                    if (
-                        "status_label" in globals()
-                        and status_label
-                        and status_label.winfo_exists()
-                    ):
-                        win.after(0, lambda: status_label.config(text=text))
-                    if (
-                        detail
-                        and "details_label" in globals()
-                        and details_label
-                        and details_label.winfo_exists()
-                    ):
-                        win.after(0, lambda: details_label.config(text=detail))
-            except Exception as e:
-                print(f"[STATUS UPDATE ERROR] {text}")
-
-        update_progress_ui()
-
-        # ГЛАВНОЕ ИСПРАВЛЕНИЕ: Загрузка модов ДО запуска игры
-        def start_launch_process():
-            """Запускает процесс загрузки модов и только ПОТОМ игру"""
-
-            def mods_loading_completed():
-                """Вызывается когда ВСЕ моды загружены"""
-                update_status("Моды загружены", "Запускаем игру...")
-                update_log("✅ Все моды успешно загружены, запускаем игру")
-                launch_game_after_mods()
-
-            def mods_loading_failed(error_msg):
-                """Вызывается при ошибке загрузки модов"""
-                update_log(f"❌ Ошибка загрузки модов: {error_msg}")
-                # Спрашиваем запускать ли игру без модов
-                result = messagebox.askyesno(
-                    "Ошибка загрузки модов",
-                    f"Не удалось загрузить некоторые моды:\n{error_msg}\n\nЗапустить игру без недостающих модов?",
-                )
-                if result:
-                    update_log("🔄 Запускаем игру без некоторых модов")
-                    launch_game_after_mods()
-                else:
-                    # Отменяем запуск
-                    win.after(0, progress_window.destroy)
-                    win.after(0, lambda: set_launch_state(False))
-
-            # ЗАПУСКАЕМ ЗАГРУЗКУ МОДОВ ДЛЯ YamalPixel
-            if version_selector.get() == "YamalPixel":
-                update_status("Загрузка модов", "Скачиваем и проверяем моды...")
-                update_log("🔄 Запускаем загрузку модов для YamalPixel")
-
-                # Запускаем checker1() с колбэками завершения
-                run_mods_download_with_callbacks(
-                    mods_loading_completed, mods_loading_failed
-                )
-            else:
-                # Для других версий сразу запускаем игру
-                update_log(
-                    f"🚫 Версия {version_selector.get()} - загрузка модов не требуется"
-                )
-                launch_game_after_mods()
-
-        def run_mods_download_with_callbacks(success_callback, error_callback):
-            """Запускает загрузку модов с колбэками завершения"""
-
-            def mods_download_thread():
-                try:
+                    # Простая проверка модов
                     mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-                    os.makedirs(mods_dir, exist_ok=True)
+                    missing_mods = []
 
-                    # Проверяем какие моды нужно скачать
-                    mods_to_download = []
                     for mod in CONFIG["mods"]:
                         mod_path = os.path.join(mods_dir, mod["file"])
                         if not os.path.exists(mod_path):
-                            mods_to_download.append(mod)
+                            missing_mods.append(mod["file"])
 
-                    if not mods_to_download:
-                        update_log("✅ Все моды уже установлены")
-                        win.after(0, success_callback)
-                        return
-
-                    update_log(f"📥 Начинаем загрузку {len(mods_to_download)} модов...")
-
-                    base_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?"
-                    success_count = 0
-                    failed_mods = []
-
-                    for i, mod in enumerate(mods_to_download):
-                        try:
-                            update_status(
-                                f"Загрузка модов ({i + 1}/{len(mods_to_download)})",
-                                f"Скачиваем: {mod['file']}",
-                            )
-
-                            # Получаем ссылку для скачивания
-                            params = {"public_key": mod["url"]}
-                            response = requests.get(base_url, params=params, timeout=30)
-                            response.raise_for_status()
-                            download_url = response.json().get("href")
-
-                            if not download_url:
-                                failed_mods.append(
-                                    f"{mod['file']} - не удалось получить ссылку"
-                                )
-                                continue
-
-                            # Загружаем файл
-                            mod_path = os.path.join(mods_dir, mod["file"])
-                            with requests.get(
-                                download_url, stream=True, timeout=60
-                            ) as dl_response:
-                                dl_response.raise_for_status()
-                                with open(mod_path, "wb") as f:
-                                    for chunk in dl_response.iter_content(
-                                        chunk_size=8192
-                                    ):
-                                        if chunk:
-                                            f.write(chunk)
-
-                            success_count += 1
-                            update_log(f"✅ Успешно: {mod['file']}")
-
-                        except Exception as e:
-                            failed_mods.append(f"{mod['file']} - {str(e)}")
-                            update_log(f"❌ Ошибка: {mod['file']} - {str(e)}")
-
-                    # Обрабатываем результат загрузки
-                    if failed_mods:
-                        error_msg = (
-                            f"Не удалось загрузить {len(failed_mods)} модов:\n"
-                            + "\n".join(failed_mods[:3])
-                        )
-                        if len(failed_mods) > 3:
-                            error_msg += f"\n...и еще {len(failed_mods) - 3} модов"
-                        win.after(0, lambda: error_callback(error_msg))
+                    if missing_mods:
+                        update_ui_log(f"❌ Отсутствуют моды: {len(missing_mods)}")
+                        # Здесь можно добавить загрузку модов при необходимости
                     else:
-                        win.after(0, success_callback)
+                        update_ui_log("✅ Все моды на месте")
 
-                except Exception as e:
-                    win.after(0, lambda: error_callback(str(e)))
-
-            # Запускаем загрузку в отдельном потоке
-            threading.Thread(target=mods_download_thread, daemon=True).start()
-
-        def launch_game_after_mods():
-            """Запускает игру ПОСЛЕ загрузки всех модов"""
-            try:
-                update_status("Подготовка игры", "Завершаем настройку...")
-
-                # Быстрая проверка файлов
-                quick_file_check()
-                update_log("✅ Проверка файлов завершена")
-
-                # Очистка кэша аутентификации
+                # Шаг 2: Подготовка игры
+                update_ui_status("Подготовка игры", "Очистка и проверка...")
+                cleanup_before_launch()
                 clear_auth_cache()
-                update_log("✅ Кэш аутентификации очищен")
+                update_ui_log("✅ Файлы подготовлены")
 
+                # Шаг 3: Проверка Fabric
                 selected_version = version_selector.get()
-                selected_memory = CONFIG.get("jvm_memory", "4G")
-
-                if selected_memory.startswith("-Xmx"):
-                    selected_memory = selected_memory[4:]
-                elif selected_memory.startswith("-Xms"):
-                    selected_memory = selected_memory[4:]
-
-                update_status("Проверка Fabric", "Проверяем установку Fabric...")
-
-                # Проверяем и устанавливаем Fabric если нужно
                 if is_fabric_needed(selected_version):
-                    fabric_version = (
-                        f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
-                    )
-                    update_log(f"🔧 Проверяем Fabric: {fabric_version}")
-
+                    update_ui_status("Проверка Fabric", "Проверяем установку...")
                     if not check_fabric_installed():
-                        update_status(
-                            "Установка Fabric", "Устанавливаем Fabric Loader..."
-                        )
-                        update_log("Fabric не установлен, начинаем установку...")
-
+                        update_ui_log("🔧 Устанавливаем Fabric...")
                         try:
                             minecraft_launcher_lib.fabric.install_fabric(
                                 minecraft_version=CONFIG["version"],
                                 loader_version=CONFIG["fabric_loader"],
                                 minecraft_directory=CONFIG["minecraft_dir"],
                             )
-                            update_log("✅ Fabric успешно установлен")
-                        except Exception as fabric_error:
-                            update_log(f"❌ Ошибка установки Fabric: {fabric_error}")
-                            raise Exception(
-                                f"Не удалось установить Fabric: {fabric_error}"
-                            )
+                            update_ui_log("✅ Fabric установлен")
+                        except Exception as e:
+                            update_ui_log(f"❌ Ошибка Fabric: {e}")
+                            raise
                     else:
-                        update_log("✅ Fabric уже установлен")
-                else:
-                    update_log("🚫 Fabric не требуется для этой версии")
+                        update_ui_log("✅ Fabric готов")
 
-                update_status("Запуск игры", "Формируем команду запуска...")
-                update_log(f"🎯 Запускаем версию: {selected_version}")
-                update_log(f"💾 Память: {selected_memory}")
+                # Шаг 4: Запуск игры
+                update_ui_status("Запуск Minecraft", "Формируем команду...")
 
-                # Оптимизированные настройки запуска
+                # Настройки памяти
+                selected_memory = CONFIG.get("jvm_memory", "4G")
+                if selected_memory.startswith("-Xmx"):
+                    selected_memory = selected_memory[4:]
+
+                # JVM аргументы
                 jvm_args = [
                     f"-Xmx{selected_memory}",
                     f"-Xms{selected_memory}",
                     "-XX:+UseG1GC",
-                    "-XX:+UnlockExperimentalVMOptions",
-                    "-XX:G1NewSizePercent=20",
-                    "-XX:G1ReservePercent=20",
-                    "-XX:MaxGCPauseMillis=50",
-                    "-XX:G1HeapRegionSize=32M",
                     "-Duser.language=ru",
                     "-Duser.country=RU",
-                    "-Dfile.encoding=UTF-8",
                 ]
 
                 options = {
@@ -6479,15 +6317,12 @@ def runn():
                     "gameLocale": "ru_RU",
                 }
 
-                # Формируем команду запуска
+                # Формируем команду
                 if is_fabric_needed(selected_version):
                     command = minecraft_launcher_lib.command.get_minecraft_command(
                         version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
                         minecraft_directory=CONFIG["minecraft_dir"],
                         options=options,
-                    )
-                    update_log(
-                        f"⚙️ Используем Fabric версию: fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
                     )
                 else:
                     command = minecraft_launcher_lib.command.get_minecraft_command(
@@ -6495,62 +6330,57 @@ def runn():
                         minecraft_directory=CONFIG["minecraft_dir"],
                         options=options,
                     )
-                    update_log(f"⚙️ Используем vanilla версию: {CONFIG['version']}")
 
-                update_status("Запуск Minecraft", "Запускаем процесс...")
-                update_log("🚀 Запускаем процесс Minecraft...")
+                update_ui_log("🚀 Запускаем Minecraft...")
 
                 # Запускаем процесс
-                process = launch_minecraft_process(command, update_log)
+                process = launch_minecraft_process(command)
 
                 if process:
-                    update_log("✅ Процесс Minecraft успешно запущен!")
-                    update_status("Игра запущена", "Minecraft загружается...")
+                    update_ui_status("Игра запущена", "Minecraft загружается...")
+                    update_ui_log("✅ Процесс запущен")
 
-                    # Ждем и проверяем статус
-                    time.sleep(5)
+                    # Ждем немного и проверяем
+                    time.sleep(3)
 
                     if is_minecraft_process_running(process):
-                        update_log("🎮 Minecraft загружается...")
-
-                        # Закрываем окно прогресса и разблокируем интерфейс
-                        win.after(0, progress_window.destroy)
+                        # Успешный запуск
+                        win.after(2000, progress_window.destroy)
                         win.after(0, lambda: set_launch_state(False))
 
                         win.after(
                             100,
                             lambda: messagebox.showinfo(
                                 "Успешный запуск",
-                                f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}\n\n{show_random_launch_message()}",
+                                f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
                             ),
                         )
 
-                        # Мониторим процесс в фоне
+                        # Мониторим процесс
                         threading.Thread(
                             target=monitor_game_process, args=(process,), daemon=True
                         ).start()
                     else:
-                        update_log("❌ Процесс Minecraft завершился неожиданно")
                         raise Exception("Minecraft не запустился")
                 else:
-                    update_log("❌ Не удалось запустить процесс Minecraft")
-                    raise Exception("Не удалось создать процесс Minecraft")
+                    raise Exception("Не удалось создать процесс")
 
             except Exception as e:
                 error_msg = f"Ошибка запуска: {str(e)}"
-                update_log(f"❌ {error_msg}")
-                win.after(0, progress_window.destroy)
-                win.after(0, lambda: set_launch_state(False))
-                win.after(
-                    0,
-                    lambda: messagebox.showerror(
-                        "Ошибка запуска",
-                        f"❌ Не удалось запустить игру:\n\n{error_msg}\n\nПроверьте:\n• Достаточно ли памяти\n• Целостность игровых файлов\n• Антивирусные блокировки",
-                    ),
+                print(f"[LAUNCH ERROR] {error_msg}")
+
+                if progress_window.winfo_exists():
+                    progress_window.destroy()
+
+                set_launch_state(False)
+
+                messagebox.showerror(
+                    "Ошибка запуска",
+                    f"❌ Не удалось запустить игру:\n\n{error_msg}"
                 )
 
-        # ЗАПУСКАЕМ ПРОЦЕСС ЗАГРУЗКИ МОДОВ И ИГРЫ
-        start_launch_process()
+        # Запускаем основной процесс в отдельном потоке
+        threading.Thread(target=execute_launch_process, daemon=True).start()
 
     except Exception as e:
         set_launch_state(False)
@@ -6569,43 +6399,21 @@ def safe_destroy_window(window):
 
 
 def launch_minecraft_process(command, log_callback=None):
-    """Запускает процесс Minecraft с перехватом вывода"""
+    """Запускает процесс Minecraft БЕЗ перехвата вывода"""
     try:
         if log_callback:
             log_callback("Запускаем Minecraft...")
 
-        # Запускаем процесс с перехватом stdout и stderr
+        # ЗАПУСКАЕМ БЕЗ ПЕРЕХВАТА ВЫВОДА - это убирает белое окно
         process = subprocess.Popen(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-            encoding="cp866",
-            errors="replace",
+            stdout=subprocess.DEVNULL,  # Игнорируем stdout
+            stderr=subprocess.DEVNULL,  # Игнорируем stderr
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
 
-        # Запускаем поток для чтения вывода в реальном времени
-        def read_output():
-            try:
-                while True:
-                    line = process.stdout.readline()
-                    if not line and process.poll() is not None:
-                        break
-                    if line and log_callback:
-                        # Фильтруем и форматируем вывод
-                        formatted_line = format_minecraft_output(line.strip())
-                        if formatted_line:
-                            log_callback(formatted_line)
-            except Exception as e:
-                if log_callback:
-                    log_callback(f"❌ Ошибка чтения вывода: {str(e)}")
-
-        # Запускаем поток чтения вывода
-        output_thread = threading.Thread(target=read_output, daemon=True)
-        output_thread.start()
-
         if log_callback:
-            log_callback("✅ Minecraft запущен, читаем вывод...")
+            log_callback("✅ Minecraft запущен в фоновом режиме")
         return process
 
     except Exception as e:
@@ -6674,10 +6482,10 @@ def is_minecraft_process_running(process):
     """Проверяет, запущен ли процесс Minecraft"""
     try:
         # Проверяем наш процесс
-        if process.poll() is None:
+        if process and process.poll() is None:
             return True
 
-        # Дополнительная проверка через tasklist
+        # Дополнительная проверка через tasklist для Windows
         if os.name == "nt":
             result = subprocess.run(
                 ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
@@ -7727,19 +7535,7 @@ status_label = ttk.Label(
 status_label.pack()
 
 
-def update_status():
-    if LAUNCH_IN_PROGRESS:
-        elapsed = int(time.time() - LAUNCH_START_TIME)
-        status_label.config(
-            text=f"🔄 Запуск игры... ({elapsed} сек.)", foreground="orange"
-        )
-    else:
-        status_label.config(text="✅ Готов к запуску", foreground="green")
-    win.after(1000, update_status)
 
-
-# Запускаем обновление статуса
-win.after(1000, update_status)
 
 
 class ModernEntry(tk.Canvas):
