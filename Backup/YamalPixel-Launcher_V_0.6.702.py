@@ -251,7 +251,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.7"  # обновление
+CURRENT_VERSION = "0.6.702"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -472,6 +472,26 @@ CONFIG = {
         {
             "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
             "file": "travelersbackpack-fabric-1.20.1-9.1.41.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/P2yhjpE96GaH1Q",
+            "file": "carryon-fabric-1.20.1-2.1.2.7.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/g33-cksFAVrbmg",
+            "file": "treeharvester-1.20.1-9.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/tG9ulUDXHr53vQ",
+            "file": "framework-fabric-1.20.1-0.7.15.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/lePC1Exc3PrWQA",
+            "file": "refurbished_furniture-fabric-1.20.1-1.0.20.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/_JyuGFFBszGFog",
+            "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
         },
     ],
 }
