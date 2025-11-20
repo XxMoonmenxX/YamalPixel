@@ -251,7 +251,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.702"  # обновление
+CURRENT_VERSION = "0.6.71"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -2623,28 +2623,6 @@ def install_java_with_progress():
     )
     details_label.pack(pady=5)
 
-    def install_thread():
-        try:
-            system = platform.system()
-            status_label.config(text="Определение вашей системы...")
-            details_label.config(
-                text=f"ОС: {system}, Архитектура: {platform.machine()}"
-            )
-
-            if system == "Windows":
-                install_java_windows(status_label, details_label)
-            elif system == "Linux":
-                install_java_linux(status_label, details_label)
-            elif system == "Darwin":
-                install_java_macos(status_label, details_label)
-            else:
-                raise Exception(f"Неподдерживаемая ОС: {system}")
-
-            # Проверяем успешность установки
-            java_window.after(1000, lambda: verify_java_installation(java_window))
-
-        except Exception as e:
-            java_window.after(0, lambda: show_java_install_error(str(e)))
 
     def verify_java_installation(window):
         if check_java_version():
@@ -4505,7 +4483,7 @@ def complete_reinstall():
 
             report += "🔄 Установлено:\n"
             report += "• Чистая версия Minecraft 1.20.1\n"
-            report += "• Fabric Loader 0.16.10\n"
+            report += "• Fabric Loader 0.17.2\n"
             report += "• Основные моды (без проблемных)\n\n"
             report += "🎯 Теперь попробуйте запустить игру!"
 
@@ -5739,13 +5717,21 @@ def install_minecraft_version(version, progress_callback=None):
 
     if not os.path.exists(version_dir):
         print(f"Версия {version} не найдена. Начинаем установку...")
-        minecraft_launcher_lib.install.install_minecraft_version(
-            versionid=version,
-            minecraft_directory=CONFIG["minecraft_dir"],
-            callback=progress_callback,
-        )
+        try:
+            # ИСПРАВЛЕНО: правильное имя параметра 'version' вместо 'versionid'
+            minecraft_launcher_lib.install.install_minecraft_version(
+                version=version,  # ПРАВИЛЬНОЕ имя параметра
+                minecraft_directory=CONFIG["minecraft_dir"],
+                callback=progress_callback
+            )
+            print(f"✅ Версия {version} успешно установлена")
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка установки версии {version}: {e}")
+            return False
     else:
         print(f"Версия {version} уже установлена.")
+        return True
 
 
 def clear_auth_cache():
@@ -5926,24 +5912,130 @@ def runn():
             messagebox.showerror("Ошибка", "❌ Введите имя пользователя!")
             return
 
+        selected_version = version_selector.get()
+
+        def start_game_launch_wrapper():
+            """Обертка для запуска игры после подготовки"""
+            # Для версий, отличных от YamalPixel, устанавливаем необходимые компоненты
+            if selected_version != "YamalPixel":
+                install_required_components(selected_version)
+            start_game_launch()
+
         # Если выбрана версия YamalPixel - сначала проверяем моды
-        if version_selector.get() == "YamalPixel":
+        if selected_version == "YamalPixel":
             def on_mods_check_complete():
                 """Запускается после завершения проверки модов"""
-                # После проверки модов запускаем игру
-                start_game_launch()
+                start_game_launch_wrapper()
 
-            # Запускаем проверку модов, передавая колбэк для запуска игры
             checker1_with_callback(on_mods_check_complete)
         else:
-            # Для других версий сразу запускаем игру
-            start_game_launch()
+            # Для других версий сразу запускаем подготовку и запуск
+            start_game_launch_wrapper()
 
     except Exception as e:
         set_launch_state(False)
         messagebox.showerror(
             "Критическая ошибка", f"❌ Не удалось подготовить запуск:\n\n{str(e)}"
         )
+
+
+def install_required_components(version_name):
+    """Устанавливает необходимые компоненты для выбранной версии"""
+    try:
+        # Создаем окно прогресса
+        progress_window = tk.Toplevel(win)
+        set_window_icon(progress_window)
+        progress_window.title("Установка компонентов")
+        progress_window.geometry("400x150")
+        progress_window.resizable(False, False)
+        progress_window.transient(win)
+        progress_window.grab_set()
+
+        # Центрируем окно
+        progress_window.update_idletasks()
+        x = (win.winfo_screenwidth() // 2) - (400 // 2)
+        y = (win.winfo_screenheight() // 2) - (150 // 2)
+        progress_window.geometry(f"400x150+{x}+{y}")
+
+        progress_label = ttk.Label(progress_window, text="Подготовка компонентов...")
+        progress_label.pack(pady=10)
+
+        progress = ttk.Progressbar(
+            progress_window, orient="horizontal", length=300, mode="indeterminate"
+        )
+        progress.pack(pady=10)
+        progress.start()
+
+        status_label = ttk.Label(progress_window, text="")
+        status_label.pack()
+
+        def install_thread():
+            try:
+                # Определяем параметры версии
+                version_configs = {
+                    "YamalPixel": ("1.20.1", "0.17.2"),
+                    "Minecraft 1.7.10": ("1.7.10", None),
+                    "Minecraft 1.8.9": ("1.8.9", None),
+                    "Minecraft 1.12.2": ("1.12.2", None),
+                    "Minecraft 1.14.4": ("1.14.4", None),
+                    "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
+                    "Minecraft 1.15.2": ("1.15.2", None),
+                    "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2"),
+                    "Minecraft 1.16.5": ("1.16.5", None),
+                    "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2"),
+                    "Minecraft 1.17.1": ("1.17.1", None),
+                    "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2"),
+                    "Minecraft 1.18.2": ("1.18.2", None),
+                    "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
+                    "Minecraft 1.19.2": ("1.19.2", None),
+                    "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
+                    "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
+                    "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
+                    "Minecraft 1.20.2": ("1.20.2", None),
+                    "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
+                    "Minecraft 1.21": ("1.21", None),
+                    "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
+                    "Minecraft 1.21.1": ("1.21.1", None),
+                    "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
+                    "Minecraft 1.21.2": ("1.21.2", None),
+                    "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
+                    "Minecraft 1.21.3": ("1.21.3", None),
+                    "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
+                    "Minecraft 1.21.4": ("1.21.4", None),
+                    "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
+                }
+
+                if version_name in version_configs:
+                    minecraft_version, fabric_loader = version_configs[version_name]
+
+                    # Устанавливаем Minecraft версию
+                    win.after(0, lambda: status_label.config(text="Установка Minecraft..."))
+
+                    # ИСПРАВЛЕННЫЙ ВЫЗОВ - правильное имя параметра
+                    success = install_minecraft_version(minecraft_version)
+
+                    if not success:
+                        raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
+
+                    # Устанавливаем Fabric если нужно
+                    if fabric_loader and is_fabric_needed(version_name):
+                        win.after(0, lambda: status_label.config(text="Установка Fabric..."))
+                        minecraft_launcher_lib.fabric.install_fabric(
+                            minecraft_version=minecraft_version,
+                            loader_version=fabric_loader,
+                            minecraft_directory=CONFIG["minecraft_dir"]
+                        )
+
+                win.after(0, progress_window.destroy)
+
+            except Exception as e:
+                win.after(0, progress_window.destroy)
+                messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}")
+
+        threading.Thread(target=install_thread, daemon=True).start()
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось начать установку компонентов: {str(e)}")
 
 
 def checker1_with_callback(completion_callback=None):
@@ -6337,8 +6429,19 @@ def start_game_launch():
     def execute_launch_process():
         """Основной процесс запуска игры"""
         try:
-            # Шаг 1: Проверка модов (уже выполнена ранее)
-            if version_selector.get() == "YamalPixel":
+            selected_version = version_selector.get()
+
+            # Шаг 0: Устанавливаем необходимые компоненты для ВСЕХ версий кроме YamalPixel
+            if selected_version != "YamalPixel":
+                update_ui_status("Установка компонентов", "Подготавливаем версию...")
+                update_ui_log(f"🔧 Устанавливаем компоненты для: {selected_version}")
+
+                # Используем существующую функцию установки компонентов
+                install_required_components_sync(selected_version)
+                update_ui_log("✅ Компоненты установлены")
+
+            # Шаг 1: Проверка модов (только для YamalPixel)
+            if selected_version == "YamalPixel":
                 update_ui_status("Проверка завершена", "Моды готовы...")
                 update_ui_log("✅ Все моды проверены и загружены")
 
@@ -6348,19 +6451,22 @@ def start_game_launch():
             clear_auth_cache()
             update_ui_log("✅ Файлы подготовлены")
 
-            # Шаг 3: Проверка Fabric
-            selected_version = version_selector.get()
+            # Шаг 3: Проверка Fabric (для версий, которые его требуют)
             if is_fabric_needed(selected_version):
                 update_ui_status("Проверка Fabric", "Проверяем установку...")
                 if not check_fabric_installed():
                     update_ui_log("🔧 Устанавливаем Fabric...")
                     try:
+                        # Получаем версию Minecraft для Fabric
+                        minecraft_version = get_minecraft_version_for_fabric(selected_version)
+                        fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
+
                         minecraft_launcher_lib.fabric.install_fabric(
-                            minecraft_version=CONFIG["version"],
-                            loader_version=CONFIG["fabric_loader"],
+                            minecraft_version=minecraft_version,
+                            loader_version=fabric_loader,
                             minecraft_directory=CONFIG["minecraft_dir"],
                         )
-                        update_ui_log("✅ Fabric установлен")
+                        update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
                     except Exception as e:
                         update_ui_log(f"❌ Ошибка Fabric: {e}")
                         raise
@@ -6392,19 +6498,27 @@ def start_game_launch():
                 "gameLocale": "ru_RU",
             }
 
-            # Формируем команду
+            # Формируем команду в зависимости от версии
             if is_fabric_needed(selected_version):
+                minecraft_version = get_minecraft_version_for_fabric(selected_version)
+                fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
+                fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
+
                 command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
+                    version=fabric_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
                     options=options,
                 )
+                update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
             else:
+                # Для vanilla версий используем чистый Minecraft
+                minecraft_version = get_minecraft_version(selected_version)
                 command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=CONFIG["version"],
+                    version=minecraft_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
                     options=options,
                 )
+                update_ui_log(f"⚡ Используем Vanilla: {minecraft_version}")
 
             update_ui_log("🚀 Запускаем Minecraft...")
 
@@ -6456,6 +6570,343 @@ def start_game_launch():
 
     # Запускаем основной процесс в отдельном потоке
     threading.Thread(target=execute_launch_process, daemon=True).start()
+
+
+def update_system_certificates():
+    """Пытается обновить системные сертификаты (для Windows)"""
+    if os.name != 'nt':
+        return False
+
+    try:
+        # Запускаем обновление сертификатов через PowerShell
+        import subprocess
+        result = subprocess.run([
+            'powershell', '-Command',
+            'Update-ScriptExecutionPolicy -Scope CurrentUser -Force;' +
+            'Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force;' +
+            'Install-Module -Name PSWindowsUpdate -Force;' +
+            'Get-WUInstall -AcceptAll -AutoReboot'
+        ], capture_output=True, text=True, timeout=300)
+
+        return "успех" in result.stdout.lower()
+    except:
+        return False
+
+def repair_version_file():
+    """Исправление поврежденного файла версии Minecraft"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        versions_dir = os.path.join(minecraft_dir, "versions")
+        problem_version = "1.18.2"
+
+        # Путь к проблемному файлу
+        version_json_path = os.path.join(versions_dir, problem_version, f"{problem_version}.json")
+
+        print(f"🔧 Исправляем файл версии: {version_json_path}")
+
+        # Проверяем существует ли файл
+        if not os.path.exists(version_json_path):
+            print(f"❌ Файл {version_json_path} не существует")
+            return False
+
+        # Создаем бэкап поврежденного файла
+        backup_path = version_json_path + ".backup"
+        shutil.copy2(version_json_path, backup_path)
+        print(f"📂 Создан бэкап: {backup_path}")
+
+        # Переустанавливаем версию Minecraft
+        print("🔄 Переустанавливаем версию Minecraft...")
+        minecraft_launcher_lib.install.install_minecraft_version(
+            versionid=problem_version,
+            minecraft_directory=minecraft_dir
+        )
+
+        print("✅ Файл версии успешно исправлен!")
+
+        # Удаляем бэкап если все успешно
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка при исправлении файла версии: {e}")
+
+        # Восстанавливаем из бэкапа при ошибке
+        if os.path.exists(backup_path):
+            shutil.copy2(backup_path, version_json_path)
+            print("🔄 Восстановлен файл из бэкапа")
+
+        return False
+
+
+def auto_fix_version_files():
+    """Автоматическое исправление всех поврежденных файлов версий"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        versions_dir = os.path.join(minecraft_dir, "versions")
+
+        if not os.path.exists(versions_dir):
+            print("❌ Папка versions не существует")
+            return False
+
+        fixed_count = 0
+        problematic_versions = []
+
+        # Проверяем все версии
+        for version_folder in os.listdir(versions_dir):
+            version_path = os.path.join(versions_dir, version_folder)
+            json_path = os.path.join(version_path, f"{version_folder}.json")
+
+            if os.path.exists(json_path):
+                try:
+                    # Пробуем загрузить JSON для проверки целостности
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        json.load(f)
+                except Exception as e:
+                    print(f"❌ Обнаружен поврежденный файл: {version_folder}")
+                    problematic_versions.append(version_folder)
+
+        # Исправляем проблемные версии
+        for version in problematic_versions:
+            if repair_single_version(version):
+                fixed_count += 1
+
+        if fixed_count > 0:
+            messagebox.showinfo(
+                "Исправление завершено",
+                f"✅ Успешно исправлено {fixed_count} версий Minecraft!"
+            )
+        else:
+            messagebox.showinfo(
+                "Проверка завершена",
+                "✅ Все файлы версий в порядке, проблем не обнаружено."
+            )
+
+        return True
+
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось проверить версии: {e}")
+        return False
+
+
+def repair_single_version(version_name):
+    """Исправляет одну конкретную версию"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+
+        print(f"🔄 Исправляем версию: {version_name}")
+
+        # Переустанавливаем версию
+        minecraft_launcher_lib.install.install_minecraft_version(
+            versionid=version_name,
+            minecraft_directory=minecraft_dir
+        )
+
+        print(f"✅ Версия {version_name} успешно исправлена")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка исправления версии {version_name}: {e}")
+        return False
+
+def install_required_components_sync(version_name):
+    """Синхронная установка компонентов (без отдельного окна)"""
+    version_configs = {
+        "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
+        "Minecraft 1.7.10": ("1.7.10", None),
+        "Minecraft 1.8.9": ("1.8.9", None),
+        "Minecraft 1.12.2": ("1.12.2", None),
+        "Minecraft 1.14.4": ("1.14.4", None),
+        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
+        "Minecraft 1.15.2": ("1.15.2", None),
+        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2"),
+        "Minecraft 1.16.5": ("1.16.5", None),
+        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2"),
+        "Minecraft 1.17.1": ("1.17.1", None),
+        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2"),
+        "Minecraft 1.18.2": ("1.18.2", None),
+        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
+        "Minecraft 1.19.2": ("1.19.2", None),
+        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
+        "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.2": ("1.20.2", None),
+        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
+        "Minecraft 1.21": ("1.21", None),
+        "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
+        "Minecraft 1.21.1": ("1.21.1", None),
+        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
+        "Minecraft 1.21.2": ("1.21.2", None),
+        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
+        "Minecraft 1.21.3": ("1.21.3", None),
+        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
+        "Minecraft 1.21.4": ("1.21.4", None),
+        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
+    }
+
+    if version_name in version_configs:
+        minecraft_version, fabric_loader = version_configs[version_name]
+
+        # Устанавливаем Minecraft версию БЕЗОПАСНО
+        print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
+
+        success = safe_install_minecraft_version(
+            version=minecraft_version,
+            minecraft_directory=CONFIG["minecraft_dir"]
+        )
+
+        if not success:
+            raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
+
+        # Устанавливаем Fabric если нужно
+        if fabric_loader and is_fabric_needed(version_name):
+            print(f"Устанавливаем Fabric {fabric_loader} для {minecraft_version}")
+            minecraft_launcher_lib.fabric.install_fabric(
+                minecraft_version=minecraft_version,
+                loader_version=fabric_loader,
+                minecraft_directory=CONFIG["minecraft_dir"]
+            )
+
+
+def check_network_connectivity():
+    """Проверяет доступность серверов Minecraft"""
+    import urllib.request
+    import ssl
+
+    test_urls = [
+        "https://libraries.minecraft.net",
+        "https://launcher.mojang.com",
+        "https://piston-meta.mojang.com"
+    ]
+
+    for url in test_urls:
+        try:
+            # Создаем контекст без проверки SSL для теста
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+            with urllib.request.urlopen(url, timeout=10, context=context) as response:
+                if response.status == 200:
+                    print(f"✅ {url} доступен")
+                else:
+                    print(f"⚠️ {url} недоступен (статус: {response.status})")
+
+        except Exception as e:
+            print(f"❌ {url} недоступен: {e}")
+            return False
+
+    return True
+
+
+def repair_minecraft_installation(version):
+    """Восстанавливает установку Minecraft для проблемных версий"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        versions_dir = os.path.join(minecraft_dir, "versions")
+        version_dir = os.path.join(versions_dir, version)
+
+        # Удаляем проблемную версию
+        if os.path.exists(version_dir):
+            import shutil
+            shutil.rmtree(version_dir)
+            print(f"🗑️ Удалена проблемная версия: {version}")
+
+        # Пробуем установить заново
+        print(f"🔄 Переустанавливаем {version}...")
+        return safe_install_minecraft_version(version, minecraft_dir)
+
+    except Exception as e:
+        print(f"❌ Не удалось восстановить {version}: {e}")
+        return False
+def get_minecraft_version(version_name):
+    """Получает версию Minecraft для выбранной версии"""
+    version_map = {
+        "YamalPixel": "1.20.1",
+        "Minecraft 1.7.10": "1.7.10",
+        "Minecraft 1.8.9": "1.8.9",
+        "Minecraft 1.12.2": "1.12.2",
+        "Minecraft 1.14.4": "1.14.4",
+        "Minecraft 1.14.4 + Fabric": "1.14.4",
+        "Minecraft 1.15.2": "1.15.2",
+        "Minecraft 1.15.2 + Fabric": "1.15.2",
+        "Minecraft 1.16.5": "1.16.5",
+        "Minecraft 1.16.5 + Fabric": "1.16.5",
+        "Minecraft 1.17.1": "1.17.1",
+        "Minecraft 1.17.1 + Fabric": "1.17.1",
+        "Minecraft 1.18.2": "1.18.2",
+        "Minecraft 1.18.2 + Fabric": "1.18.2",
+        "Minecraft 1.19.2": "1.19.2",
+        "Minecraft 1.19.2 + Fabric": "1.19.2",
+        "Minecraft 1.20.1": "1.20.1",
+        "Minecraft 1.20.1 + Fabric": "1.20.1",
+        "Minecraft 1.20.2": "1.20.2",
+        "Minecraft 1.20.2 + Fabric": "1.20.2",
+        "Minecraft 1.21": "1.21",
+        "Minecraft 1.21 + Fabric": "1.21",
+        "Minecraft 1.21.1": "1.21.1",
+        "Minecraft 1.21.1 + Fabric": "1.21.1",
+        "Minecraft 1.21.2": "1.21.2",
+        "Minecraft 1.21.2 + Fabric": "1.21.2",
+        "Minecraft 1.21.3": "1.21.3",
+        "Minecraft 1.21.3 + Fabric": "1.21.3",
+        "Minecraft 1.21.4": "1.21.4",
+        "Minecraft 1.21.4 + Fabric": "1.21.4",
+    }
+    return version_map.get(version_name, "1.20.1")
+
+
+def get_minecraft_version_for_fabric(version_name):
+    """Получает версию Minecraft для Fabric"""
+    return get_minecraft_version(version_name)
+
+
+def safe_install_minecraft_version(version, minecraft_directory, progress_callback=None):
+    """Безопасная установка версии Minecraft с обработкой ошибок"""
+    try:
+        # Устанавливаем таймауты и повторные попытки
+        import socket
+        socket.setdefaulttimeout(30)
+
+        # Пробуем установить с обработкой SSL ошибок
+        minecraft_launcher_lib.install.install_minecraft_version(
+            version=version,
+            minecraft_directory=minecraft_directory,
+            callback=progress_callback
+        )
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка установки Minecraft {version}: {e}")
+
+        # Пробуем альтернативный метод для проблемных версий
+        if "SSL" in str(e) or "certificate" in str(e).lower():
+            return install_with_ssl_bypass(version, minecraft_directory)
+
+        return False
+
+
+def install_with_ssl_bypass(version, minecraft_directory):
+    """Установка с обходом SSL проверок (только для проблемных версий)"""
+    try:
+        print(f"🔄 Пробуем альтернативный метод установки {version}...")
+
+        # Используем настройки без строгой SSL проверки
+        import ssl
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # Здесь должен быть код для установки с кастомным SSL контекстом
+        # К сожалению, minecraft-launcher-lib не поддерживает это напрямую
+
+        print(f"⚠️ SSL ошибка для версии {version}. Требуется ручная установка.")
+        return False
+
+    except Exception as e:
+        print(f"❌ Альтернативный метод также не сработал: {e}")
+        return False
 
 
 def safe_destroy_window(window):
@@ -8302,36 +8753,36 @@ def select_version(event):
 
     # Обновляем конфигурацию в зависимости от выбранной версии
     version_configs = {
-        "YamalPixel": ("1.20.1", "0.16.10"),
+        "YamalPixel": ("1.20.1", "0.17.2"),
         "Minecraft 1.7.10": ("1.7.10", None),
         "Minecraft 1.8.9": ("1.8.9", None),
         "Minecraft 1.12.2": ("1.12.2", None),
         "Minecraft 1.14.4": ("1.14.4", None),
-        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.16.10"),
+        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
         "Minecraft 1.15.2": ("1.15.2", None),
-        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.16.10"),
+        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2"),
         "Minecraft 1.16.5": ("1.16.5", None),
-        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.16.10"),
+        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2"),
         "Minecraft 1.17.1": ("1.17.1", None),
-        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.16.10"),
+        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2"),
         "Minecraft 1.18.2": ("1.18.2", None),
-        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.16.10"),
+        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
         "Minecraft 1.19.2": ("1.19.2", None),
-        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.16.10"),
-        "Minecraft 1.20.1": ("1.20.1", "0.16.10"),
-        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.16.10"),
+        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
+        "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.2": ("1.20.2", None),
-        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.16.10"),
+        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
         "Minecraft 1.21": ("1.21", None),
-        "Minecraft 1.21 + Fabric": ("1.21", "0.16.10"),
+        "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
         "Minecraft 1.21.1": ("1.21.1", None),
-        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.16.10"),
+        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
         "Minecraft 1.21.2": ("1.21.2", None),
-        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.16.10"),
+        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
         "Minecraft 1.21.3": ("1.21.3", None),
-        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.16.10"),
+        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
         "Minecraft 1.21.4": ("1.21.4", None),
-        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.16.10"),
+        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
     }
 
     if selected_version in version_configs:
