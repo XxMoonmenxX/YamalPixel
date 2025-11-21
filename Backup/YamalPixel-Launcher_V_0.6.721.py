@@ -30,7 +30,28 @@ import math
 import json
 from PIL import Image, ImageTk
 
+import tempfile
 
+
+def fix_pyinstaller_dll_issue():
+    """Фикс для проблемы с DLL в PyInstaller"""
+    try:
+        # Добавляем временную папку в PATH
+        temp_dir = tempfile.gettempdir()
+        if temp_dir not in os.environ['PATH']:
+            os.environ['PATH'] = temp_dir + os.pathsep + os.environ['PATH']
+
+        # Для отладки
+        if hasattr(sys, '_MEIPASS'):
+            print(f"🔧 PyInstaller temp: {sys._MEIPASS}")
+            print(f"🔧 System PATH: {os.environ['PATH']}")
+
+    except Exception as e:
+        print(f"⚠️ DLL fix warning: {e}")
+
+
+# ВЫЗОВИ ЭТО ПЕРВОЙ ФУНКЦИЕЙ ПРИ ЗАПУСКЕ
+fix_pyinstaller_dll_issue()
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
@@ -251,7 +272,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.72"  # обновление
+CURRENT_VERSION = "0.6.721"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -5124,7 +5145,7 @@ def show_simple_background_selector():
     """Простой выбор фона через отдельное окно"""
     try:
         selector_window = tk.Toplevel(win)
-        set_window_icon(selecror_window)
+        set_window_icon(selector_window)
         selector_window.title("Выбор фона для лаунчера")
         selector_window.geometry("400x500")
         selector_window.configure(bg="#2b2b2b")
