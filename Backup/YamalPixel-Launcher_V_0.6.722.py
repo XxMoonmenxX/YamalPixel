@@ -50,7 +50,7 @@ def fix_pyinstaller_dll_issue():
         print(f"⚠️ DLL fix warning: {e}")
 
 
-# ВЫЗОВИ ЭТО ПЕРВОЙ ФУНКЦИЕЙ ПРИ ЗАПУСКЕ
+
 fix_pyinstaller_dll_issue()
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -272,7 +272,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.721"  # обновление
+CURRENT_VERSION = "0.6.722"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
