@@ -251,7 +251,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.71"  # обновление
+CURRENT_VERSION = "0.6.72"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -4438,6 +4438,26 @@ def complete_reinstall():
                     "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
                     "file": "travelersbackpack-fabric-1.20.1-9.1.41.jar",
                 },
+                {
+                    "url": "https://disk.yandex.ru/d/P2yhjpE96GaH1Q",
+                    "file": "carryon-fabric-1.20.1-2.1.2.7.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/g33-cksFAVrbmg",
+                    "file": "treeharvester-1.20.1-9.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/tG9ulUDXHr53vQ",
+                    "file": "framework-fabric-1.20.1-0.7.15.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/lePC1Exc3PrWQA",
+                    "file": "refurbished_furniture-fabric-1.20.1-1.0.20.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/_JyuGFFBszGFog",
+                    "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
+                },
             ]
 
             for mod in essential_mods:
@@ -6008,29 +6028,33 @@ def install_required_components(version_name):
                 if version_name in version_configs:
                     minecraft_version, fabric_loader = version_configs[version_name]
 
-                    # Устанавливаем Minecraft версию
-                    win.after(0, lambda: status_label.config(text="Установка Minecraft..."))
-
-                    # ИСПРАВЛЕННЫЙ ВЫЗОВ - правильное имя параметра
-                    success = install_minecraft_version(minecraft_version)
-
-                    if not success:
-                        raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
-
-                    # Устанавливаем Fabric если нужно
+                    # 🔥 ИСПРАВЛЕНИЕ: Раздельная логика установки
                     if fabric_loader and is_fabric_needed(version_name):
+                        # Устанавливаем Minecraft ЧЕРЕЗ Fabric (одной командой)
                         win.after(0, lambda: status_label.config(text="Установка Fabric..."))
+
                         minecraft_launcher_lib.fabric.install_fabric(
                             minecraft_version=minecraft_version,
                             loader_version=fabric_loader,
                             minecraft_directory=CONFIG["minecraft_dir"]
                         )
 
+                        win.after(0, lambda: status_label.config(text="Fabric установлен!"))
+
+                    else:
+                        # Ванильная установка (только Minecraft)
+                        win.after(0, lambda: status_label.config(text="Установка Minecraft..."))
+                        success = install_minecraft_version(minecraft_version)
+                        if not success:
+                            raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
+
+                        win.after(0, lambda: status_label.config(text="Minecraft установлен!"))
+
                 win.after(0, progress_window.destroy)
 
             except Exception as e:
-                win.after(0, progress_window.destroy)
-                messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}")
+                win.after(0, lambda: progress_window.destroy())
+                win.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}"))
 
         threading.Thread(target=install_thread, daemon=True).start()
 
