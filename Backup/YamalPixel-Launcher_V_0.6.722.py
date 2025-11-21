@@ -33,25 +33,30 @@ from PIL import Image, ImageTk
 import tempfile
 
 
-def fix_pyinstaller_dll_issue():
-    """Фикс для проблемы с DLL в PyInstaller"""
-    try:
-        # Добавляем временную папку в PATH
-        temp_dir = tempfile.gettempdir()
-        if temp_dir not in os.environ['PATH']:
-            os.environ['PATH'] = temp_dir + os.pathsep + os.environ['PATH']
-
-        # Для отладки
+def fix_python314_dll_issue():
+    """Critical fix for Python 3.14 + PyInstaller 6.16.0 DLL loading"""
+    if getattr(sys, 'frozen', False):
+        # Основной фикс - добавляем MEIPASS в начало PATH
         if hasattr(sys, '_MEIPASS'):
-            print(f"🔧 PyInstaller temp: {sys._MEIPASS}")
-            print(f"🔧 System PATH: {os.environ['PATH']}")
+            meipass_path = Path(sys._MEIPASS)
+            current_paths = os.environ['PATH'].split(os.pathsep)
 
-    except Exception as e:
-        print(f"⚠️ DLL fix warning: {e}")
+            # Убираем дубликаты и ставим MEIPASS первым
+            new_paths = [str(meipass_path)]
+            for path in current_paths:
+                if path != str(meipass_path) and Path(path).exists():
+                    new_paths.append(path)
+
+            os.environ['PATH'] = os.pathsep.join(new_paths)
+            os.chdir(meipass_path)  # Меняем рабочую директорию
+
+            print(f"Fixed PATH for DLL loading: {meipass_path}")
 
 
 
-fix_pyinstaller_dll_issue()
+fix_python314_dll_issue()
+
+
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
@@ -2220,6 +2225,10 @@ timeout /t 2 /nobreak >nul
 
 :: Закрываем лаунчер
 taskkill /f /im "{os.path.basename(current_exe)}" >nul 2>&1
+
+:: ОЧИСТКА ВРЕМЕННЫХ ФАЙЛОВ PYINSTALLER
+del /q /f "%TEMP%\\_MEI*" >nul 2>&1
+for /d %%i in ("%TEMP%\\_MEI*") do rd /s /q "%%i" >nul 2>&1
 timeout /t 1 /nobreak >nul
 
 :: Создаем бэкап старой версии
