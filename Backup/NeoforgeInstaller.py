@@ -3,30 +3,7 @@ import json
 import os
 import sys
 from urllib.parse import urljoin
-
-
-def get_neoforge_versions():
-    """Получить список доступных версий NeoForge"""
-    base_url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/"
-
-    try:
-        response = requests.get(base_url + "maven-metadata.xml")
-        response.raise_for_status()
-
-        # Парсим XML для получения версий
-        from xml.etree import ElementTree as ET
-        root = ET.fromstring(response.content)
-
-        versions = []
-        for version_elem in root.findall(".//version"):
-            versions.append(version_elem.text)
-
-        return sorted(versions, reverse=True)
-
-    except Exception as e:
-        print(f"Ошибка при получении списка версий: {e}")
-        return []
-
+from YamalPixel_Launcher import is_neoforge_needed
 
 def download_neoforge(version):
     """Скачать указанную версию NeoForge"""
@@ -74,37 +51,8 @@ def main():
     print("=== NeoForge Downloader ===")
     print("Получение списка доступных версий...")
 
-    versions = get_neoforge_versions()
+    version = is_neoforge_needed(selected_version)
 
-    if not versions:
-        print("Не удалось получить список версий.")
-        print("Пожалуйста, введите версию вручную.")
-        version = input("Введите версию NeoForge (например: 20.4.100): ").strip()
-    else:
-        print("\nДоступные версии (последние 10):")
-        for i, ver in enumerate(versions[:10], 1):
-            print(f"{i}. {ver}")
-
-        print("\n0. Ввести версию вручную")
-
-        try:
-            choice = input("\nВыберите версию (номер) или введите свою: ").strip()
-
-            if choice == "0":
-                version = input("Введите версию NeoForge: ").strip()
-            elif choice.isdigit() and 1 <= int(choice) <= len(versions[:10]):
-                version = versions[int(choice) - 1]
-            else:
-                # Если пользователь ввел версию напрямую
-                version = choice
-        except (ValueError, IndexError):
-            version = input("Введите версию NeoForge: ").strip()
-
-    if not version:
-        print("Версия не указана. Выход.")
-        return
-
-    print(f"\nСкачивание NeoForge версии: {version}")
 
     if download_neoforge(version):
         print(f"\nNeoForge {version} успешно скачан!")

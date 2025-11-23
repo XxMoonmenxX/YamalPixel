@@ -5735,6 +5735,7 @@ def check_minecraft_and_fabric_installed():
     else:
         print("Fabric не установлен.")
         return False
+from NeoforgeInstaller import *
 
 def is_neoforge_needed(selected_version):
     # Список версий, где Neoforge поддерживается
