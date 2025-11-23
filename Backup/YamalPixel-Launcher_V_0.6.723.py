@@ -5739,39 +5739,24 @@ def check_minecraft_and_fabric_installed():
 def is_neoforge_needed(selected_version):
     # Список версий, где Neoforge поддерживается
     neoforge_supported_versions = [
+        "Minecraft 1.20.2 + NeoForge (20.2.93)",
+        "Minecraft 1.20.3 + NeoForge (20.3.8-beta)",
+        "Minecraft 1.20.4 + NeoForge (20.4.251)",
+        "Minecraft 1.20.5 + NeoForge (20.5.21-beta)",
+        "Minecraft 1.20.6 + NeoForge (20.6.139)",
+        "Minecraft 1.21 + NeoForge (21.0.167)",
+        "Minecraft 1.21.1 + NeoForge (21.1.215)",
+        "Minecraft 1.21.2 + NeoForge (21.1.-beta)",
+        "Minecraft 1.21.3 + NeoForge (21.3.94)",
+        "Minecraft 1.21.4 + NeoForge (21.4.155)",
+        "Minecraft 1.21.5 + NeoForge (21.5.95)",
+        "Minecraft 1.21.6 + NeoForge (21.6.20-beta)",
+        "Minecraft 1.21.7 + NeoForge (21.7.25-beta)",
+        "Minecraft 1.21.8 + NeoForge (21.8.51)",
+        "Minecraft 1.21.10 + NeoForge (21.10.52-beta)"
+    ]
+    return selected_version in neoforge_supported_versions
 
-    "Minecraft 1.20.2 + NeoForge (20.2.93)",
-
-    "Minecraft 1.20.3 + NeoForge (20.3.8-beta)",
-
-    "Minecraft 1.20.4 + NeoForge (20.4.251)",
-
-    "Minecraft 1.20.5 + NeoForge (20.5.21-beta)",
-
-    "Minecraft 1.20.6 + NeoForge (20.6.139)",
-
-    "Minecraft 1.21 + NeoForge (21.0.167)",
-
-    "Minecraft 1.21.1 + NeoForge (21.1.215)",
-
-    "Minecraft 1.21.2 + NeoForge (21.1.-beta)",  # обратите внимание: версия NeoForge выглядит некорректно
-
-    "Minecraft 1.21.3 + NeoForge (21.3.94)",
-
-    "Minecraft 1.21.4 + NeoForge (21.4.155)",
-
-    "Minecraft 1.21.5 + NeoForge (21.5.95)",
-
-    "Minecraft 1.21.6 + NeoForge (21.6.20-beta)",
-
-    "Minecraft 1.21.7 + NeoForge (21.7.25-beta)",
-
-    "Minecraft 1.21.8 + NeoForge (21.8.51)",
-
-    "Minecraft 1.21.9 + NeoForge (21.9.16-beta)",
-
-    "Minecraft 1.21.10 + NeoForge (21.10.52-beta)"
-]
 def is_fabric_needed(selected_version):
     # Список версий, где Fabric поддерживается
     fabric_supported_versions = [
@@ -8899,32 +8884,16 @@ def select_version(event):
         "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.2": ("1.20.2", None),
         "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
-        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "20.2.93"),
-        "Minecraft 1.20.3 + NeoForge": ("1.20.3", "20.3.8-beta"),
-        "Minecraft 1.20.4 + NeoForge": ("1.20.4", "20.4.251"),
-        "Minecraft 1.20.5 + NeoForge": ("1.20.5", "20.5.21-beta"),
-        "Minecraft 1.20.6 + NeoForge": ("1.20.6", "20.6.139"),
         "Minecraft 1.21": ("1.21", None),
         "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
-        "Minecraft 1.21 + NeoForge": ("1.21", "21.0.167"),
         "Minecraft 1.21.1": ("1.21.1", None),
         "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
-        "Minecraft 1.21.1 + NeoForge": ("1.21.1", "21.1.215"),
         "Minecraft 1.21.2": ("1.21.2", None),
         "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
-        "Minecraft 1.21.2 + NeoForge": ("1.21.2", "21.1.-beta"),
         "Minecraft 1.21.3": ("1.21.3", None),
         "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
-        "Minecraft 1.21.3 + NeoForge": ("1.21.3", "21.3.94"),
         "Minecraft 1.21.4": ("1.21.4", None),
         "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
-        "Minecraft 1.21.4 + NeoForge": ("1.21.4", "21.4.155"),
-        "Minecraft 1.21.5 + NeoForge": ("1.21.5", "21.5.95"),
-        "Minecraft 1.21.6 + NeoForge": ("1.21.6", "21.6.20-beta"),
-        "Minecraft 1.21.7 + NeoForge": ("1.21.7", "21.7.25-beta"),
-        "Minecraft 1.21.8 + NeoForge": ("1.21.8", "21.8.51"),
-        "Minecraft 1.21.9 + NeoForge": ("1.21.9", "21.9.16-beta"),
-        "Minecraft 1.21.10 + NeoForge": ("1.21.10", "21.10.52-beta")
     }
 
     if selected_version in version_configs:
