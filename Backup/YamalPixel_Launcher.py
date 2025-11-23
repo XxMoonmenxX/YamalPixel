@@ -7139,6 +7139,41 @@ def try_find_by_filename(api, filename, minecraft_version, loader):
 
     return None
 
+def get_minecraft_version(version_name):
+    """Получает версию Minecraft для выбранной версии"""
+    version_map = {
+"YamalPixel": "1.20.1",
+"Minecraft 1.7.10": "1.7.10",
+"Minecraft 1.8.9": "1.8.9",
+"Minecraft 1.12.2": "1.12.2",
+"Minecraft 1.14.4": "1.14.4",
+"Minecraft 1.14.4 + Fabric": "1.14.4",
+"Minecraft 1.15.2": "1.15.2",
+"Minecraft 1.15.2 + Fabric": "1.15.2",
+"Minecraft 1.16.5": "1.16.5",
+"Minecraft 1.16.5 + Fabric": "1.16.5",
+"Minecraft 1.17.1": "1.17.1",
+"Minecraft 1.17.1 + Fabric": "1.17.1",
+"Minecraft 1.18.2": "1.18.2",
+"Minecraft 1.18.2 + Fabric": "1.18.2",
+"Minecraft 1.19.2": "1.19.2",
+"Minecraft 1.19.2 + Fabric": "1.19.2",
+"Minecraft 1.20.1": "1.20.1",
+"Minecraft 1.20.1 + Fabric": "1.20.1",
+"Minecraft 1.20.2": "1.20.2",
+"Minecraft 1.20.2 + Fabric": "1.20.2",
+"Minecraft 1.21": "1.21",
+"Minecraft 1.21 + Fabric": "1.21",
+"Minecraft 1.21.1": "1.21.1",
+"Minecraft 1.21.1 + Fabric": "1.21.1",
+"Minecraft 1.21.2": "1.21.2",
+"Minecraft 1.21.2 + Fabric": "1.21.2",
+"Minecraft 1.21.3": "1.21.3",
+"Minecraft 1.21.3 + Fabric": "1.21.3",
+"Minecraft 1.21.4": "1.21.4",
+"Minecraft 1.21.4 + Fabric": "1.21.4",
+}
+return version_map.get(version_name)
 
 def find_best_match(mods, original_name, clean_name, minecraft_version, loader, api):
     """Находит лучший совпадающий мод"""
