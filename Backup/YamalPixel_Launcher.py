@@ -5994,7 +5994,7 @@ def runn():
         )
 
 
-def install_required_components(version_name):
+def install_required_components(selected_version):
     """Устанавливает необходимые компоненты для выбранной версии"""
     try:
         # Создаем окно прогресса
@@ -6060,11 +6060,11 @@ def install_required_components(version_name):
                     "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
                 }
 
-                if version_name in version_configs:
-                    minecraft_version, fabric_loader = version_configs[version_name]
+                if selected_version in version_configs:
+                    minecraft_version, fabric_loader = version_configs[selected_version]
 
                     # 🔥 ИСПРАВЛЕНИЕ: Раздельная логика установки
-                    if fabric_loader and is_fabric_needed(version_name):
+                    if fabric_loader and is_fabric_needed(selected_version):
                         # Устанавливаем Minecraft ЧЕРЕЗ Fabric (одной командой)
                         win.after(0, lambda: status_label.config(text="Установка Fabric..."))
 
@@ -6085,15 +6085,19 @@ def install_required_components(version_name):
 
                         win.after(0, lambda: status_label.config(text="Minecraft установлен!"))
 
+                # УСПЕШНОЕ ЗАВЕРШЕНИЕ - закрываем окно
                 win.after(0, progress_window.destroy)
-
+                print("✅ Установка компонентов завершена успешно")
 
             except Exception as install_error:
-
-                win.after(0, lambda error=install_error: messagebox.showerror("Ошибка",
-                                                                          f"Не удалось установить компоненты: {str(error)}"))
+                # ОШИБКА - показываем сообщение и закрываем окно
                 win.after(0, progress_window.destroy)
-            threading.Thread(target=install_thread, daemon=True).start()
+                win.after(0, lambda error=install_error: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(error)}"))
+                print(f"❌ Ошибка установки компонентов: {install_error}")
+
+        # Запускаем установку в отдельном потоке
+        threading.Thread(target=install_thread, daemon=True).start()
+
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось начать установку компонентов: {str(e)}")
 
