@@ -1290,7 +1290,15 @@ def check_fabric_installed():
     try:
         minecraft_dir = CONFIG['minecraft_dir']
         versions_dir = os.path.join(minecraft_dir, 'versions')
-        fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
+
+        # Получаем текущую выбранную версию
+        selected_version = version_selector.get()
+        minecraft_version = get_minecraft_version(selected_version)
+
+        if not minecraft_version:
+            return False
+
+        fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{minecraft_version}"
         fabric_version_dir = os.path.join(versions_dir, fabric_version)
         return os.path.exists(fabric_version_dir)
     except:
@@ -4810,7 +4818,11 @@ def runn():
 
                 # Проверяем и устанавливаем Fabric если нужно
                 if is_fabric_needed(selected_version):
-                    fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
+                    minecraft_version = get_minecraft_version(selected_version)
+                    if not minecraft_version:
+                        raise Exception(f"Неизвестная версия: {selected_version}")
+
+                    fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{minecraft_version}"
                     update_log(f"🔧 Проверяем Fabric: {fabric_version}")
 
                     if not check_fabric_installed():
@@ -4819,7 +4831,7 @@ def runn():
 
                         try:
                             minecraft_launcher_lib.fabric.install_fabric(
-                                minecraft_version=CONFIG['version'],
+                                minecraft_version=minecraft_version,  # Используем чистую версию
                                 loader_version=CONFIG['fabric_loader'],
                                 minecraft_directory=CONFIG['minecraft_dir']
                             )
@@ -4853,22 +4865,33 @@ def runn():
                     'gameLocale': 'ru_RU'
                 }
 
-                # Формируем команду запуска
+                # Формируем команду запуска с ПРАВИЛЬНОЙ версией
                 if is_fabric_needed(selected_version):
+                    # Получаем ЧИСТУЮ версию Minecraft
+                    minecraft_version = get_minecraft_version(selected_version)
+                    if not minecraft_version:
+                        raise Exception(f"Неизвестная версия: {selected_version}")
+
+                    # Для Fabric используем версию Fabric
+                    fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{minecraft_version}"
                     command = minecraft_launcher_lib.command.get_minecraft_command(
-                        version=f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}",
+                        version=fabric_version,
                         minecraft_directory=CONFIG['minecraft_dir'],
                         options=options
                     )
-                    update_log(
-                        f"⚙️ Используем Fabric версию: fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}")
+                    update_log(f"⚙️ Используем Fabric версию: {fabric_version}")
                 else:
+                    # Для vanilla используем чистую версию Minecraft
+                    minecraft_version = get_minecraft_version(selected_version)
+                    if not minecraft_version:
+                        raise Exception(f"Неизвестная версия: {selected_version}")
+
                     command = minecraft_launcher_lib.command.get_minecraft_command(
-                        version=CONFIG['version'],
+                        version=minecraft_version,
                         minecraft_directory=CONFIG['minecraft_dir'],
                         options=options
                     )
-                    update_log(f"⚙️ Используем vanilla версию: {CONFIG['version']}")
+                    update_log(f"⚙️ Используем vanilla версию: {minecraft_version}")
 
                 update_status("Запуск Minecraft", "Запускаем процесс...")
                 update_log("🚀 Запускаем процесс Minecraft...")
@@ -6302,7 +6325,7 @@ version_selector.place(relx=0.5, rely=0.4, anchor="c")
 
 # Функция выбора версии
 def select_version(event):
-    selected_version = version_selector.get()
+    selected_version_name = version_selector.get()
 
     # Обновляем конфигурацию в зависимости от выбранной версии
     version_configs = {
@@ -6336,8 +6359,10 @@ def select_version(event):
         "Minecraft 1.21.4 + Fabric": ('1.21.4', '0.16.10')
     }
 
-    if selected_version in version_configs:
-        CONFIG['version'], CONFIG['fabric_loader'] = version_configs[selected_version]
+    if selected_version_name in version_configs:
+        minecraft_version, fabric_loader = version_configs[selected_version_name]
+        CONFIG['version'] = minecraft_version
+        CONFIG['fabric_loader'] = fabric_loader
 
         # Красивое сообщение об изменении версии
         show_version_change_message(selected_version)
