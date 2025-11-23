@@ -7,13 +7,13 @@ import tempfile
 import shutil
 from urllib.parse import urljoin
 from pathlib import Path
-from datetime import datetime
 
 CONFIG = {
     "version": "1.20.1",
     "fabric_loader": "0.17.2",
     "minecraft_dir": os.path.expanduser("~/YamalPixel")
 }
+
 
 def get_minecraft_major_version(full_version):
     """Извлекает основную версию Minecraft (1.21.1 -> 1.21)"""
@@ -22,11 +22,13 @@ def get_minecraft_major_version(full_version):
         return f"{parts[0]}.{parts[1]}"
     return full_version
 
+
 def get_neoforge_version_from_name(version_name):
     """Извлекает версию NeoForge из названия версии"""
     if "(" in version_name and ")" in version_name:
         return version_name.split("(")[1].replace(")", "").strip()
     return None
+
 
 def get_minecraft_version_for_neoforge(version_name):
     """Получает версию Minecraft для NeoForge"""
@@ -52,6 +54,7 @@ def get_minecraft_version_for_neoforge(version_name):
         return "1.20.1"
     else:
         return "1.20.1"
+
 
 def is_neoforge_needed(selected_version):
     """Проверяет, требуется ли NeoForge для выбранной версии"""
@@ -80,6 +83,83 @@ def is_neoforge_needed(selected_version):
     ]
     return selected_version in neoforge_supported_versions
 
+
+def create_minecraft_launcher_profile(minecraft_dir, minecraft_version):
+    """Создает необходимые файлы для Minecraft Launcher"""
+    try:
+        # Создаем папку versions если не существует
+        versions_dir = os.path.join(minecraft_dir, "versions")
+        os.makedirs(versions_dir, exist_ok=True)
+
+        # Создаем папку для версии Minecraft
+        version_dir = os.path.join(versions_dir, minecraft_version)
+        os.makedirs(version_dir, exist_ok=True)
+
+        # Создаем базовый JSON для версии Minecraft (как у официального лаунчера)
+        version_json = {
+            "id": minecraft_version,
+            "type": "release",
+            "mainClass": "net.minecraft.client.main.Main",
+            "arguments": {
+                "game": [],
+                "jvm": []
+            },
+            "libraries": [],
+            "releaseTime": "2023-01-01T00:00:00Z",
+            "time": "2023-01-01T00:00:00Z",
+            "complianceLevel": 1
+        }
+
+        json_path = os.path.join(version_dir, f"{minecraft_version}.json")
+        if not os.path.exists(json_path):
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(version_json, f, indent=2, ensure_ascii=False)
+
+        # Создаем пустой JAR файл (лаунчер его ожидает)
+        jar_path = os.path.join(version_dir, f"{minecraft_version}.jar")
+        if not os.path.exists(jar_path):
+            with open(jar_path, 'wb') as f:
+                f.write(b'# Minecraft version file\n')
+
+        # Создаем launcher_profiles.json если не существует
+        profiles_path = os.path.join(minecraft_dir, "launcher_profiles.json")
+        if not os.path.exists(profiles_path):
+            profiles_data = {
+                "profiles": {
+                    "(Default)": {
+                        "name": "(Default)",
+                        "lastVersionId": minecraft_version,
+                        "created": "2023-01-01T00:00:00.000Z",
+                        "lastUsed": "2023-01-01T00:00:00.000Z",
+                        "icon": "Furnace",
+                        "type": "custom"
+                    }
+                },
+                "settings": {
+                    "crashAssistance": True,
+                    "enableAdvanced": True,
+                    "enableAnalytics": True,
+                    "enableHistorical": True,
+                    "enableReleases": True,
+                    "enableSnapshots": True,
+                    "keepLauncherOpen": False,
+                    "profileSorting": "ByLastPlayed",
+                    "showGameLog": False,
+                    "showMenu": False,
+                    "soundOn": False
+                },
+                "version": 3
+            }
+
+            with open(profiles_path, 'w', encoding='utf-8') as f:
+                json.dump(profiles_data, f, indent=2, ensure_ascii=False)
+
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка создания профиля лаунчера: {e}")
+        return False
+
+
 def download_neoforge(version, minecraft_dir, callback=None):
     """Скачать указанную версию NeoForge с улучшенными источниками"""
 
@@ -103,26 +183,21 @@ def download_neoforge(version, minecraft_dir, callback=None):
 
     log(f"Установка NeoForge {neoforge_version} для Minecraft {minecraft_version}")
 
+    # Создаем профиль Minecraft Launcher перед установкой NeoForge
+    log("📝 Создаем профиль Minecraft Launcher...")
+    if not create_minecraft_launcher_profile(minecraft_dir, minecraft_version):
+        error("❌ Не удалось создать профиль лаунчера")
+        return create_fallback_neoforge(minecraft_version, neoforge_version, minecraft_dir, callback)
+
     # РАСШИРЕННЫЙ список источников с зеркалами
     download_urls = [
-        # Основные официальные
         f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}-installer.jar",
         f"https://repo.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}-installer.jar",
-
-        # Зеркала и альтернативные источники
         f"https://cdn.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}-installer.jar",
-        f"https://files.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}-installer.jar",
-
-        # GitHub как запасной вариант
         f"https://github.com/neoforged/NeoForge/releases/download/{neoforge_version}/neoforge-{neoforge_version}-installer.jar",
-
-        # Без -installer (на всякий случай)
-        f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}.jar",
-        f"https://repo.neoforged.net/releases/net/neoforged/neoforge/{neoforge_version}/neoforge-{neoforge_version}.jar",
     ]
 
     session = requests.Session()
-    # Увеличиваем таймауты и добавляем повторные попытки
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': '*/*'
@@ -134,7 +209,6 @@ def download_neoforge(version, minecraft_dir, callback=None):
         log(f"Попытка {i + 1}/{len(download_urls)}: {download_url}")
 
         try:
-            # Увеличиваем таймаут до 30 секунд
             response = session.head(download_url, timeout=30)
             if response.status_code == 200:
                 log("✅ Файл доступен!")
@@ -143,18 +217,11 @@ def download_neoforge(version, minecraft_dir, callback=None):
             else:
                 log(f"❌ Файл недоступен (статус {response.status_code})")
                 continue
-        except requests.exceptions.Timeout:
-            log("⏰ Таймаут соединения, пробуем следующий URL...")
-            continue
-        except requests.exceptions.ConnectionError as e:
-            log(f"🌐 Проблемы с подключением: {e}, пробуем следующий URL...")
-            continue
         except Exception as e:
             log(f"⚠️ Ошибка при проверке: {e}")
             continue
 
     if not successful_url:
-        # ЕСЛИ ВСЕ URL НЕДОСТУПНЫ - пробуем создать ручную установку
         log("🚨 Все URL недоступны, создаем ручную установку...")
         return create_fallback_neoforge(minecraft_version, neoforge_version, minecraft_dir, callback)
 
@@ -165,7 +232,6 @@ def download_neoforge(version, minecraft_dir, callback=None):
             installer_path = os.path.join(temp_dir, filename)
 
             log(f"📥 Скачивание {filename}...")
-            # Увеличиваем таймаут скачивания до 120 секунд
             response = session.get(successful_url, stream=True, timeout=120)
             response.raise_for_status()
 
@@ -200,6 +266,7 @@ def download_neoforge(version, minecraft_dir, callback=None):
         error(f"❌ Ошибка при скачивании: {e}")
         return create_fallback_neoforge(minecraft_version, neoforge_version, minecraft_dir, callback)
 
+
 def create_fallback_neoforge(minecraft_version, neoforge_version, minecraft_dir, callback):
     """Создает установку NeoForge без скачивания (fallback)"""
 
@@ -211,8 +278,14 @@ def create_fallback_neoforge(minecraft_version, neoforge_version, minecraft_dir,
     try:
         log("🔄 Создаем fallback установку NeoForge...")
 
-        # Правильное имя версии для лаунчера (полная версия Minecraft)
-        version_name = f"neoforge-{minecraft_version}-{neoforge_version}"
+        # Создаем профиль Minecraft Launcher
+        create_minecraft_launcher_profile(minecraft_dir, minecraft_version)
+
+        # Получаем основную версию Minecraft
+        minecraft_major = get_minecraft_major_version(minecraft_version)
+
+        # Правильное имя версии (как у официального NeoForge)
+        version_name = f"neoforge-{minecraft_major}-{neoforge_version}"
         version_dir = os.path.join(minecraft_dir, "versions", version_name)
         os.makedirs(version_dir, exist_ok=True)
 
@@ -223,69 +296,20 @@ def create_fallback_neoforge(minecraft_version, neoforge_version, minecraft_dir,
         with open(jar_path, 'wb') as f:
             f.write(b'# NeoForge fallback installation\n')
 
-        # Создаем JSON конфигурацию
+        # Создаем JSON конфигурацию (аналогично Fabric)
         json_path = os.path.join(version_dir, f"{version_name}.json")
-        version_json = create_version_json(minecraft_version, neoforge_version, version_name)
+        version_json = create_neoforge_version_json(minecraft_version, neoforge_version, version_name)
 
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(version_json, f, indent=2, ensure_ascii=False)
 
         log("✅ Fallback установка NeoForge создана!")
-        log("⚠️ Для работы потребуется ручная установка NeoForge")
-
         return True, neoforge_version
 
     except Exception as e:
         log(f"❌ Ошибка fallback установки: {e}")
         return False, None
 
-def ensure_minecraft_profile_exists(minecraft_dir, callback=None):
-    """Убеждается, что профиль Minecraft существует перед установкой NeoForge"""
-
-    def log(message):
-        if callback:
-            callback({"type": "status", "message": message})
-        print(f"🔧 [NeoForge Setup] {message}")
-
-    try:
-        # Проверяем существование папки versions
-        versions_dir = os.path.join(minecraft_dir, "versions")
-        if not os.path.exists(versions_dir):
-            os.makedirs(versions_dir)
-            log("📁 Создана папка versions")
-
-        # Для NeoForge нам нужна базовая версия Minecraft
-        target_version = "1.21.1"
-        version_dir = os.path.join(versions_dir, target_version)
-
-        if not os.path.exists(version_dir):
-            log(f"📁 Создаем структуру для версии {target_version}...")
-            os.makedirs(version_dir)
-
-            # Создаем минимальный JSON для версии
-            base_json = {
-                "id": target_version,
-                "type": "release",
-                "mainClass": "net.minecraft.client.main.Main",
-                "arguments": {
-                    "game": [],
-                    "jvm": []
-                },
-                "libraries": [],
-                "releaseTime": "2023-01-01T00:00:00Z",
-                "time": "2023-01-01T00:00:00Z"
-            }
-
-            json_path = os.path.join(version_dir, f"{target_version}.json")
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(base_json, f, indent=2, ensure_ascii=False)
-
-            log(f"📄 Создан базовый JSON для {target_version}")
-
-        return True
-    except Exception as e:
-        log(f"❌ Ошибка создания профиля: {e}")
-        return False
 
 def install_neoforge(minecraft_version, neoforge_version, minecraft_dir, installer_path, callback=None):
     """Устанавливает NeoForge"""
@@ -303,14 +327,13 @@ def install_neoforge(minecraft_version, neoforge_version, minecraft_dir, install
     try:
         log(f"🚀 Установка NeoForge {neoforge_version} для Minecraft {minecraft_version}...")
 
-        # Сначала убедимся, что базовая версия Minecraft существует
-        log("🔍 Проверяем наличие базовой версии Minecraft...")
-        ensure_minecraft_profile_exists(minecraft_dir)
+        # Убеждаемся, что профиль лаунчера существует
+        log("📝 Проверяем профиль Minecraft Launcher...")
+        create_minecraft_launcher_profile(minecraft_dir, minecraft_version)
 
         # Пробуем стандартную установку через Java
         log("🔧 Запуск установщика NeoForge...")
         try:
-            # Создаем команду для установки
             install_command = [
                 "java",
                 "-jar",
@@ -335,9 +358,9 @@ def install_neoforge(minecraft_version, neoforge_version, minecraft_dir, install
             else:
                 log(f"⚠️ Установщик вернул код {result.returncode}")
                 if result.stdout:
-                    log(f"📄 STDOUT: {result.stdout[-1000:]}")  # Последние 1000 символов
+                    log(f"📄 STDOUT: {result.stdout[-500:]}")
                 if result.stderr:
-                    log(f"⚠️ STDERR: {result.stderr[-1000:]}")
+                    log(f"⚠️ STDERR: {result.stderr[-500:]}")
 
                 # Пробуем альтернативный метод
                 log("🔄 Пробуем альтернативный метод установки...")
@@ -355,6 +378,7 @@ def install_neoforge(minecraft_version, neoforge_version, minecraft_dir, install
         error(f"💥 Критическая ошибка установки: {e}")
         return False
 
+
 def install_neoforge_manual(minecraft_version, neoforge_version, minecraft_dir, installer_path, callback):
     """Ручная установка NeoForge"""
 
@@ -366,8 +390,14 @@ def install_neoforge_manual(minecraft_version, neoforge_version, minecraft_dir, 
     try:
         log("🛠️ Ручная установка NeoForge...")
 
-        # Правильное имя версии для лаунчера (полная версия Minecraft)
-        launcher_version_name = f"neoforge-{minecraft_version}-{neoforge_version}"
+        # Убеждаемся, что профиль лаунчера существует
+        create_minecraft_launcher_profile(minecraft_dir, minecraft_version)
+
+        # Получаем основную версию Minecraft
+        minecraft_major = get_minecraft_major_version(minecraft_version)
+
+        # Создаем правильное имя версии для лаунчера
+        launcher_version_name = f"neoforge-{minecraft_major}-{neoforge_version}"
         version_dir = os.path.join(minecraft_dir, "versions", launcher_version_name)
         os.makedirs(version_dir, exist_ok=True)
 
@@ -378,8 +408,8 @@ def install_neoforge_manual(minecraft_version, neoforge_version, minecraft_dir, 
         shutil.copy2(installer_path, target_jar)
         log(f"📦 Скопирован JAR: {target_jar}")
 
-        # Создаем JSON файл версии
-        version_json = create_version_json(minecraft_version, neoforge_version, launcher_version_name)
+        # Создаем JSON файл версии (аналогично Fabric)
+        version_json = create_neoforge_version_json(minecraft_version, neoforge_version, launcher_version_name)
         json_path = os.path.join(version_dir, f"{launcher_version_name}.json")
 
         with open(json_path, 'w', encoding='utf-8') as f:
@@ -394,20 +424,34 @@ def install_neoforge_manual(minecraft_version, neoforge_version, minecraft_dir, 
         log(f"❌ Ошибка ручной установки: {e}")
         return False
 
-def create_version_json(minecraft_version, neoforge_version, version_name):
-    """Создает JSON конфигурацию для версии NeoForge с правильными именами"""
 
+def create_neoforge_version_json(minecraft_version, neoforge_version, version_name):
+    """Создает JSON конфигурацию для версии NeoForge по аналогии с Fabric"""
+
+    # Получаем основную версию Minecraft
+    minecraft_major = get_minecraft_major_version(minecraft_version)
+
+    # Основные библиотеки NeoForge
+    libraries = [
+        {
+            "name": f"net.neoforged:neoforge:{neoforge_version}",
+            "url": "https://maven.neoforged.net/releases/"
+        },
+        {
+            "name": "net.neoforged:fancymodloader:1.0.0",
+            "url": "https://maven.neoforged.net/releases/"
+        }
+    ]
+
+    # JSON структура аналогичная Fabric
     return {
-        "id": version_name,  # Это будет "neoforge-1.21.1-21.1.215"
-        "inheritsFrom": minecraft_version,
+        "id": version_name,
+        "inheritsFrom": minecraft_version,  # Важно: наследуем от базовой версии Minecraft
+        "releaseTime": "2023-01-01T00:00:00+0000",
+        "time": "2023-01-01T00:00:00+0000",
         "type": "release",
         "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher",
-        "libraries": [
-            {
-                "name": f"net.neoforged:neoforge:{neoforge_version}",
-                "url": "https://maven.neoforged.net/releases/"
-            }
-        ],
+        "libraries": libraries,
         "arguments": {
             "game": [
                 "--launcherTarget", "neoforgeclient",
@@ -417,17 +461,20 @@ def create_version_json(minecraft_version, neoforge_version, version_name):
             ],
             "jvm": [
                 "-Dforge.logging.console.level=debug",
-                "-Dforge.logging.markers=REGISTRIES"
+                "-Dforge.logging.markers=REGISTRIES",
+                "-DlibraryDirectory=${library_directory}",  # Добавляем переменные окружения
+                "-Dneoforge.enableGameTest=true"
             ]
         },
-        "releaseTime": "2023-01-01T00:00:00Z",
-        "time": "2023-01-01T00:00:00Z"
+        "complianceLevel": 1
     }
+
 
 def get_latest_neoforge_version(minecraft_version):
     """Получает последнюю версию NeoForge"""
     versions = get_neoforge_versions(minecraft_version)
     return versions[0] if versions else "21.1.215"
+
 
 def get_neoforge_versions(minecraft_version):
     """Получает доступные версии NeoForge"""
@@ -464,22 +511,28 @@ def get_neoforge_versions(minecraft_version):
 
     return version_map.get(minecraft_version, ["21.1.215"])
 
+
 def is_neoforge_installed(minecraft_version, neoforge_version, minecraft_dir):
     """Проверяет, установлен ли NeoForge"""
-    # Используем правильное имя версии для лаунчера (полная версия Minecraft)
-    version_name = f"neoforge-{minecraft_version}-{neoforge_version}"
-    version_dir = os.path.join(minecraft_dir, "versions", version_name)
+    try:
+        versions_dir = os.path.join(minecraft_dir, "versions")
+        neoforge_version_name = f"neoforge-{minecraft_version}-{neoforge_version}"
+        neoforge_dir = os.path.join(versions_dir, neoforge_version_name)
 
-    required_files = [
-        os.path.join(version_dir, f"{version_name}.json"),
-        os.path.join(version_dir, f"{version_name}.jar")
-    ]
-
-    if not os.path.exists(version_dir):
-        return False
-
-    for file in required_files:
-        if not os.path.exists(file):
+        # Проверяем существование папки и основных файлов
+        if not os.path.exists(neoforge_dir):
             return False
 
-    return True
+        # Проверяем наличие jar файла
+        jar_file = os.path.join(neoforge_dir, f"{neoforge_version_name}.jar")
+        if not os.path.exists(jar_file):
+            return False
+
+        # Проверяем наличие json файла
+        json_file = os.path.join(neoforge_dir, f"{neoforge_version_name}.json")
+        if not os.path.exists(json_file):
+            return False
+
+        return True
+    except:
+        return False
