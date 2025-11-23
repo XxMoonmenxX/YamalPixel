@@ -7173,7 +7173,7 @@ def get_minecraft_version(version_name):
 "Minecraft 1.21.4": "1.21.4",
 "Minecraft 1.21.4 + Fabric": "1.21.4",
 }
-return version_map.get(version_name)
+    return version_map.get(version_name)
 
 def find_best_match(mods, original_name, clean_name, minecraft_version, loader, api):
     """Находит лучший совпадающий мод"""
