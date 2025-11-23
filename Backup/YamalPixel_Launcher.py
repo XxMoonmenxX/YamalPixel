@@ -29,7 +29,7 @@ import psutil
 import math
 import json
 from PIL import Image, ImageTk
-from NeoforgeInstaller import *
+
 import tempfile
 
 
@@ -5736,10 +5736,28 @@ def check_minecraft_and_fabric_installed():
         print("Fabric не установлен.")
         return False
 
-
+def is_neoforge_needed(selected_version):
+    # Список версий, где Neoforge поддерживается
+    neoforge_supported_versions = [
+        "Minecraft 1.20.2 + NeoForge (20.2.93)",
+        "Minecraft 1.20.3 + NeoForge (20.3.8-beta)",
+        "Minecraft 1.20.4 + NeoForge (20.4.251)",
+        "Minecraft 1.20.5 + NeoForge (20.5.21-beta)",
+        "Minecraft 1.20.6 + NeoForge (20.6.139)",
+        "Minecraft 1.21 + NeoForge (21.0.167)",
+        "Minecraft 1.21.1 + NeoForge (21.1.215)",
+        "Minecraft 1.21.2 + NeoForge (21.1.-beta)",
+        "Minecraft 1.21.3 + NeoForge (21.3.94)",
+        "Minecraft 1.21.4 + NeoForge (21.4.155)",
+        "Minecraft 1.21.5 + NeoForge (21.5.95)",
+        "Minecraft 1.21.6 + NeoForge (21.6.20-beta)",
+        "Minecraft 1.21.7 + NeoForge (21.7.25-beta)",
+        "Minecraft 1.21.8 + NeoForge (21.8.51)",
+        "Minecraft 1.21.10 + NeoForge (21.10.52-beta)"
+    ]
+    return selected_version in neoforge_supported_versions
 
 def is_fabric_needed(selected_version):
-    """Проверяет, требуется ли Fabric или NeoForge для выбранной версии"""
     # Список версий, где Fabric поддерживается
     fabric_supported_versions = [
         "YamalPixel",
@@ -5757,16 +5775,7 @@ def is_fabric_needed(selected_version):
         "Minecraft 1.21.3 + Fabric",
         "Minecraft 1.21.4 + Fabric",
     ]
-
-    # Проверяем Fabric
-    if selected_version in fabric_supported_versions:
-        return True
-
-    # Проверяем NeoForge
-    if is_neoforge_needed(selected_version):
-        return True
-
-    return False
+    return selected_version in fabric_supported_versions
 
 
 def install_minecraft_version(version, progress_callback=None):
@@ -6516,48 +6525,29 @@ def start_game_launch():
             clear_auth_cache()
             update_ui_log("✅ Файлы подготовлены")
 
-            # Шаг 3: Проверка Fabric/NeoForge (для версий, которые их требуют)
-            if is_fabric_needed(selected_version) or is_neoforge_needed(selected_version):
-                update_ui_status("Проверка загрузчика", "Проверяем установку...")
+            # Шаг 3: Проверка Fabric (для версий, которые его требуют)
+            if is_fabric_needed(selected_version):
+                update_ui_status("Проверка Fabric", "Проверяем установку...")
+                if not check_fabric_installed():
+                    update_ui_log("🔧 Устанавливаем Fabric...")
+                    try:
+                        # Получаем версию Minecraft для Fabric
+                        minecraft_version = get_minecraft_version_for_fabric(selected_version)
+                        fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
 
-                if is_neoforge_needed(selected_version):
-                    # Проверяем NeoForge
-                    minecraft_version = get_minecraft_version_for_neoforge(selected_version)
-                    neoforge_version = get_neoforge_version_from_name(selected_version)
+                        minecraft_launcher_lib.fabric.install_fabric(
+                            minecraft_version=minecraft_version,
+                            loader_version=fabric_loader,
+                            minecraft_directory=CONFIG["minecraft_dir"],
+                        )
+                        update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
+                    except Exception as e:
+                        update_ui_log(f"❌ Ошибка Fabric: {e}")
+                        raise
+                else:
+                    update_ui_log("✅ Fabric готов")
 
-                    if not is_neoforge_installed(minecraft_version, neoforge_version, CONFIG["minecraft_dir"]):
-                        update_ui_log("🔧 Устанавливаем NeoForge...")
-                        try:
-                            success = download_neoforge(selected_version, CONFIG["minecraft_dir"])
-                            if not success:
-                                raise Exception("Не удалось установить NeoForge")
-                            update_ui_log(f"✅ NeoForge установлен для {minecraft_version}")
-                        except Exception as e:
-                            update_ui_log(f"❌ Ошибка NeoForge: {e}")
-                            raise
-                    else:
-                        update_ui_log("✅ NeoForge готов")
 
-                elif is_fabric_needed(selected_version):
-                    # Проверяем Fabric
-                    if not check_fabric_installed():
-                        update_ui_log("🔧 Устанавливаем Fabric...")
-                        try:
-                            # Получаем версию Minecraft для Fabric
-                            minecraft_version = get_minecraft_version_for_fabric(selected_version)
-                            fabric_loader = "0.17.2"
-
-                            minecraft_launcher_lib.fabric.install_fabric(
-                                minecraft_version=minecraft_version,
-                                loader_version=fabric_loader,
-                                minecraft_directory=CONFIG["minecraft_dir"],
-                            )
-                            update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
-                        except Exception as e:
-                            update_ui_log(f"❌ Ошибка Fabric: {e}")
-                            raise
-                    else:
-                        update_ui_log("✅ Fabric готов")
 
             # Шаг 4: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
@@ -6574,6 +6564,8 @@ def start_game_launch():
                 "-XX:+UseG1GC",
                 "-Duser.language=ru",
                 "-Duser.country=RU",
+                "-Dfml.earlyprogresswindow=false",  # ФИКС: отключает раннее окно прогресса
+                "-Dforge.disableOptimizedLaunch=true",  # ФИКС: отключает оптимизированный запуск
             ]
 
             options = {
@@ -6585,21 +6577,9 @@ def start_game_launch():
             }
 
             # Формируем команду в зависимости от версии
-            if is_neoforge_needed(selected_version):
-                minecraft_version = get_minecraft_version_for_neoforge(selected_version)
-                neoforge_version = get_neoforge_version_from_name(selected_version)
-                neoforge_version_name = f"neoforge-{minecraft_version}-{neoforge_version}"
-
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=neoforge_version_name,
-                    minecraft_directory=CONFIG["minecraft_dir"],
-                    options=options,
-                )
-                update_ui_log(f"🔧 Используем NeoForge: {neoforge_version_name}")
-
-            elif is_fabric_needed(selected_version):
+            if is_fabric_needed(selected_version):
                 minecraft_version = get_minecraft_version_for_fabric(selected_version)
-                fabric_loader = "0.17.2"
+                fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
                 fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
 
                 command = minecraft_launcher_lib.command.get_minecraft_command(
@@ -6808,68 +6788,43 @@ def repair_single_version(version_name):
         print(f"❌ Ошибка исправления версии {version_name}: {e}")
         return False
 
-
 def install_required_components_sync(version_name):
     """Синхронная установка компонентов (без отдельного окна)"""
     version_configs = {
-        "YamalPixel": ("1.20.1", "0.17.2", None),
-        "Minecraft 1.7.10": ("1.7.10", None, None),
-        "Minecraft 1.8.9": ("1.8.9", None, None),
-        "Minecraft 1.12.2": ("1.12.2", None, None),
-        "Minecraft 1.14.4": ("1.14.4", None, None),
-        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2", None),
-        "Minecraft 1.15.2": ("1.15.2", None, None),
-        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2", None),
-        "Minecraft 1.16.5": ("1.16.5", None, None),
-        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2", None),
-        "Minecraft 1.17.1": ("1.17.1", None, None),
-        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2", None),
-        "Minecraft 1.18.2": ("1.18.2", None, None),
-        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2", None),
-        "Minecraft 1.19.2": ("1.19.2", None, None),
-        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2", None),
-        "Minecraft 1.20.1": ("1.20.1", "0.17.2", None),
-        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2", None),
-        "Minecraft 1.20.2": ("1.20.2", None, None),
-        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2", None),
-        "Minecraft 1.20.2 + NeoForge (20.2.93)": ("1.20.2", None, "20.2.93"),
-        "Minecraft 1.20.3": ("1.20.3", None, None),
-        "Minecraft 1.20.3 + Fabric": ("1.20.3", "0.17.2", None),
-        "Minecraft 1.20.3 + NeoForge (20.3.8-beta)": ("1.20.3", None, "20.3.8-beta"),
-        "Minecraft 1.20.4": ("1.20.4", None, None),
-        "Minecraft 1.20.4 + Fabric": ("1.20.4", "0.17.2", None),
-        "Minecraft 1.20.4 + NeoForge (20.4.251)": ("1.20.4", None, "20.4.251"),
-        "Minecraft 1.20.5": ("1.20.5", None, None),
-        "Minecraft 1.20.5 + Fabric": ("1.20.5", "0.17.2", None),
-        "Minecraft 1.20.5 + NeoForge (20.5.21-beta)": ("1.20.5", None, "20.5.21-beta"),
-        "Minecraft 1.20.6": ("1.20.6", None, None),
-        "Minecraft 1.20.6 + Fabric": ("1.20.6", "0.17.2", None),
-        "Minecraft 1.20.6 + NeoForge (20.6.139)": ("1.20.6", None, "20.6.139"),
-        "Minecraft 1.21": ("1.21", None, None),
-        "Minecraft 1.21 + Fabric": ("1.21", "0.17.2", None),
-        "Minecraft 1.21 + NeoForge (21.0.167)": ("1.21", None, "21.0.167"),
-        "Minecraft 1.21.1": ("1.21.1", None, None),
-        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2", None),
-        "Minecraft 1.21.1 + NeoForge (21.1.215)": ("1.21.1", None, "21.1.215"),
-        "Minecraft 1.21.2": ("1.21.2", None, None),
-        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2", None),
-        "Minecraft 1.21.2 + NeoForge (21.1.-beta)": ("1.21.2", None, "21.1.-beta"),
-        "Minecraft 1.21.3": ("1.21.3", None, None),
-        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2", None),
-        "Minecraft 1.21.3 + NeoForge (21.3.94)": ("1.21.3", None, "21.3.94"),
-        "Minecraft 1.21.4": ("1.21.4", None, None),
-        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2", None),
-        "Minecraft 1.21.4 + NeoForge (21.4.155)": ("1.21.4", None, "21.4.155"),
-        "Minecraft 1.21.5 + NeoForge (21.5.95)": ("1.21.5", None, "21.5.95"),
-        "Minecraft 1.21.6 + NeoForge (21.6.20-beta)": ("1.21.6", None, "21.6.20-beta"),
-        "Minecraft 1.21.7 + NeoForge (21.7.25-beta)": ("1.21.7", None, "21.7.25-beta"),
-        "Minecraft 1.21.8 + NeoForge (21.8.51)": ("1.21.8", None, "21.8.51"),
-        "Minecraft 1.21.9 + NeoForge (21.9.16-beta)": ("1.21.9", None, "21.9.16-beta"),
-        "Minecraft 1.21.10 + NeoForge (21.10.52-beta)": ("1.21.10", None, "21.10.52-beta")
+        "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
+        "Minecraft 1.7.10": ("1.7.10", None),
+        "Minecraft 1.8.9": ("1.8.9", None),
+        "Minecraft 1.12.2": ("1.12.2", None),
+        "Minecraft 1.14.4": ("1.14.4", None),
+        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
+        "Minecraft 1.15.2": ("1.15.2", None),
+        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2"),
+        "Minecraft 1.16.5": ("1.16.5", None),
+        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2"),
+        "Minecraft 1.17.1": ("1.17.1", None),
+        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2"),
+        "Minecraft 1.18.2": ("1.18.2", None),
+        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
+        "Minecraft 1.19.2": ("1.19.2", None),
+        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
+        "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.2": ("1.20.2", None),
+        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
+        "Minecraft 1.21": ("1.21", None),
+        "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
+        "Minecraft 1.21.1": ("1.21.1", None),
+        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
+        "Minecraft 1.21.2": ("1.21.2", None),
+        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
+        "Minecraft 1.21.3": ("1.21.3", None),
+        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
+        "Minecraft 1.21.4": ("1.21.4", None),
+        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
     }
 
     if version_name in version_configs:
-        minecraft_version, fabric_loader, neoforge_version = version_configs[version_name]
+        minecraft_version, fabric_loader = version_configs[version_name]
 
         # Устанавливаем Minecraft версию БЕЗОПАСНО
         print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
@@ -6891,46 +6846,6 @@ def install_required_components_sync(version_name):
                 minecraft_directory=CONFIG["minecraft_dir"]
             )
 
-        # Устанавливаем NeoForge если нужно
-        elif is_neoforge_needed(version_name):
-            print(f"🔄 Устанавливаем NeoForge для {version_name}")
-            minecraft_version = get_minecraft_version_for_neoforge(version_name)
-            neoforge_version = get_neoforge_version_from_name(version_name)
-
-            # Простая установка NeoForge
-            success = download_neoforge(version_name, CONFIG["minecraft_dir"])
-            if success:
-                print(f"✅ NeoForge установлен для {minecraft_version}")
-            else:
-                print(f"❌ Ошибка установки NeoForge")
-                return False
-
-def get_minecraft_version_for_neoforge(version_name):
-    """Получает версию Minecraft для NeoForge"""
-    if "1.21.4" in version_name:
-        return "1.21.4"
-    elif "1.21.3" in version_name:
-        return "1.21.3"
-    elif "1.21.2" in version_name:
-        return "1.21.2"
-    elif "1.21.1" in version_name:
-        return "1.21.1"
-    elif "1.21.0" in version_name or "1.21" in version_name:
-        return "1.21"
-    elif "1.20.6" in version_name:
-        return "1.20.6"
-    elif "1.20.5" in version_name:
-        return "1.20.5"
-    elif "1.20.4" in version_name:
-        return "1.20.4"
-    elif "1.20.3" in version_name:
-        return "1.20.3"
-    elif "1.20.2" in version_name:
-        return "1.20.2"
-    elif "1.20.1" in version_name:
-        return "1.20.1"
-    else:
-        return "1.20.1"
 
 def check_network_connectivity():
     """Проверяет доступность серверов Minecraft"""
@@ -6983,41 +6898,77 @@ def repair_minecraft_installation(version):
     except Exception as e:
         print(f"❌ Не удалось восстановить {version}: {e}")
         return False
+
+
 def get_minecraft_version(version_name):
-    """Получает версию Minecraft для выбранной версии"""
+    """Получает версию Minecraft для выбранной конфигурации (без указания загрузчика)"""
     version_map = {
         "YamalPixel": "1.20.1",
+
+        # Базовые версии без загрузчиков
         "Minecraft 1.7.10": "1.7.10",
         "Minecraft 1.8.9": "1.8.9",
         "Minecraft 1.12.2": "1.12.2",
         "Minecraft 1.14.4": "1.14.4",
-        "Minecraft 1.14.4 + Fabric": "1.14.4",
         "Minecraft 1.15.2": "1.15.2",
-        "Minecraft 1.15.2 + Fabric": "1.15.2",
         "Minecraft 1.16.5": "1.16.5",
-        "Minecraft 1.16.5 + Fabric": "1.16.5",
         "Minecraft 1.17.1": "1.17.1",
-        "Minecraft 1.17.1 + Fabric": "1.17.1",
         "Minecraft 1.18.2": "1.18.2",
-        "Minecraft 1.18.2 + Fabric": "1.18.2",
         "Minecraft 1.19.2": "1.19.2",
-        "Minecraft 1.19.2 + Fabric": "1.19.2",
         "Minecraft 1.20.1": "1.20.1",
-        "Minecraft 1.20.1 + Fabric": "1.20.1",
         "Minecraft 1.20.2": "1.20.2",
-        "Minecraft 1.20.2 + Fabric": "1.20.2",
         "Minecraft 1.21": "1.21",
-        "Minecraft 1.21 + Fabric": "1.21",
         "Minecraft 1.21.1": "1.21.1",
-        "Minecraft 1.21.1 + Fabric": "1.21.1",
         "Minecraft 1.21.2": "1.21.2",
-        "Minecraft 1.21.2 + Fabric": "1.21.2",
         "Minecraft 1.21.3": "1.21.3",
-        "Minecraft 1.21.3 + Fabric": "1.21.3",
         "Minecraft 1.21.4": "1.21.4",
+        "Minecraft 1.21.5": "1.21.5",
+        "Minecraft 1.21.6": "1.21.6",
+        "Minecraft 1.21.7": "1.21.7",
+        "Minecraft 1.21.8": "1.21.8",
+        "Minecraft 1.21.9": "1.21.9",
+        "Minecraft 1.21.10": "1.21.10",
+
+        # Версии с Fabric
+        "Minecraft 1.14.4 + Fabric": "1.14.4",
+        "Minecraft 1.15.2 + Fabric": "1.15.2",
+        "Minecraft 1.16.5 + Fabric": "1.16.5",
+        "Minecraft 1.17.1 + Fabric": "1.17.1",
+        "Minecraft 1.18.2 + Fabric": "1.18.2",
+        "Minecraft 1.19.2 + Fabric": "1.19.2",
+        "Minecraft 1.20.1 + Fabric": "1.20.1",
+        "Minecraft 1.20.2 + Fabric": "1.20.2",
+        "Minecraft 1.21 + Fabric": "1.21",
+        "Minecraft 1.21.1 + Fabric": "1.21.1",
+        "Minecraft 1.21.2 + Fabric": "1.21.2",
+        "Minecraft 1.21.3 + Fabric": "1.21.3",
         "Minecraft 1.21.4 + Fabric": "1.21.4",
+        "Minecraft 1.21.5 + Fabric": "1.21.5",
+        "Minecraft 1.21.6 + Fabric": "1.21.6",
+        "Minecraft 1.21.7 + Fabric": "1.21.7",
+        "Minecraft 1.21.8 + Fabric": "1.21.8",
+        "Minecraft 1.21.9 + Fabric": "1.21.9",
+        "Minecraft 1.21.10 + Fabric": "1.21.10",
+
+        # Версии с NeoForge
+        "Minecraft 1.20.2 + NeoForge": "1.20.2",
+        "Minecraft 1.20.3 + NeoForge": "1.20.3",
+        "Minecraft 1.20.4 + NeoForge": "1.20.4",
+        "Minecraft 1.20.5 + NeoForge": "1.20.5",
+        "Minecraft 1.20.6 + NeoForge": "1.20.6",
+        "Minecraft 1.21 + NeoForge": "1.21",
+        "Minecraft 1.21.1 + NeoForge": "1.21.1",
+        "Minecraft 1.21.2 + NeoForge": "1.21.2",
+        "Minecraft 1.21.3 + NeoForge": "1.21.3",
+        "Minecraft 1.21.4 + NeoForge": "1.21.4",
+        "Minecraft 1.21.5 + NeoForge": "1.21.5",
+        "Minecraft 1.21.6 + NeoForge": "1.21.6",
+        "Minecraft 1.21.7 + NeoForge": "1.21.7",
+        "Minecraft 1.21.8 + NeoForge": "1.21.8",
+        "Minecraft 1.21.9 + NeoForge": "1.21.9",
+        "Minecraft 1.21.10 + NeoForge": "1.21.10"
     }
-    return version_map.get(version_name, "1.20.1")
+    return version_map.get(version_name)
 
 
 def get_minecraft_version_for_fabric(version_name):
@@ -8971,32 +8922,16 @@ def select_version(event):
         "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.2": ("1.20.2", None),
         "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
-        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "20.2.93"),
-        "Minecraft 1.20.3 + NeoForge": ("1.20.3", "20.3.8-beta"),
-        "Minecraft 1.20.4 + NeoForge": ("1.20.4", "20.4.251"),
-        "Minecraft 1.20.5 + NeoForge": ("1.20.5", "20.5.21-beta"),
-        "Minecraft 1.20.6 + NeoForge": ("1.20.6", "20.6.139"),
         "Minecraft 1.21": ("1.21", None),
         "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
-        "Minecraft 1.21 + NeoForge": ("1.21", "21.0.167"),
         "Minecraft 1.21.1": ("1.21.1", None),
         "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
-        "Minecraft 1.21.1 + NeoForge": ("1.21.1", "21.1.215"),
         "Minecraft 1.21.2": ("1.21.2", None),
         "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
-        "Minecraft 1.21.2 + NeoForge": ("1.21.2", "21.1.-beta"),  # предупреждение: версия выглядит некорректно
         "Minecraft 1.21.3": ("1.21.3", None),
         "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
-        "Minecraft 1.21.3 + NeoForge": ("1.21.3", "21.3.94"),
         "Minecraft 1.21.4": ("1.21.4", None),
         "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
-        "Minecraft 1.21.4 + NeoForge": ("1.21.4", "21.4.155"),
-        "Minecraft 1.21.5 + NeoForge": ("1.21.5", "21.5.95"),
-        "Minecraft 1.21.6 + NeoForge": ("1.21.6", "21.6.20-beta"),
-        "Minecraft 1.21.7 + NeoForge": ("1.21.7", "21.7.25-beta"),
-        "Minecraft 1.21.8 + NeoForge": ("1.21.8", "21.8.51"),
-        "Minecraft 1.21.9 + NeoForge": ("1.21.9", "21.9.16-beta"),
-        "Minecraft 1.21.10 + NeoForge": ("1.21.10", "21.10.52-beta")
     }
 
     if selected_version in version_configs:

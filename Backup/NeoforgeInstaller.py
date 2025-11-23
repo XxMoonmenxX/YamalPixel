@@ -366,11 +366,25 @@ def get_neoforge_versions_fallback(minecraft_version: str):
     return version_map.get(minecraft_version, ["21.4.155"])  # По умолчанию последняя версия
 
 
-def is_neoforge_installed(minecraft_version: str, neoforge_version: str, minecraft_dir: str):
-    """Проверяет, установлен ли NeoForge"""
+def is_neoforge_installed(minecraft_version, neoforge_version, minecraft_dir):
+    """Проверяет, установлен ли NeoForge (с проверкой всех файлов)"""
     version_name = f"neoforge-{minecraft_version}-{neoforge_version}"
     version_dir = os.path.join(minecraft_dir, "versions", version_name)
-    return os.path.exists(version_dir) and os.path.exists(os.path.join(version_dir, f"{version_name}.json"))
+
+    # Проверяем все необходимые файлы
+    required_files = [
+        os.path.join(version_dir, f"{version_name}.json"),
+        os.path.join(version_dir, f"{version_name}.jar")
+    ]
+
+    if not os.path.exists(version_dir):
+        return False
+
+    for file in required_files:
+        if not os.path.exists(file):
+            return False
+
+    return True
 
 
 # Пример использования
