@@ -5736,7 +5736,11 @@ def check_minecraft_and_fabric_installed():
         print("Fabric не установлен.")
         return False
 
+def is_neoforge_needed(selected_version):
+    # Список версий, где Neoforge поддерживается
+    neoforge_supported_versions = [
 
+    ]
 def is_fabric_needed(selected_version):
     # Список версий, где Fabric поддерживается
     fabric_supported_versions = [
@@ -6526,6 +6530,8 @@ def start_game_launch():
                         raise
                 else:
                     update_ui_log("✅ Fabric готов")
+
+
 
             # Шаг 4: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
@@ -8652,7 +8658,6 @@ versions = [
     "Minecraft 1.21.10 + Fabric",
     "Minecraft 1.21.10 + NeoForge (21.10.52-beta)"
 ]
-
 
 class ModernVersionSelector(tk.Canvas):
     def __init__(
