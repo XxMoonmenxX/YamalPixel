@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import minecraft_launcher_lib
+from minecraft_launcher_lib.mod_loader import get_mod_loader
 import subprocess
 import threading
 import os
@@ -5737,8 +5738,8 @@ def check_minecraft_and_fabric_installed():
         return False
 
 
-def is_fabric_needed(selected_version):
-    # Список версий, где Fabric поддерживается
+def is_modloader_needed(selected_version):
+    """Проверяет нужен ли модлоадер (Fabric/NeoForge)"""
     fabric_supported_versions = [
         "YamalPixel",
         "Minecraft 1.14.4 + Fabric",
@@ -5755,7 +5756,23 @@ def is_fabric_needed(selected_version):
         "Minecraft 1.21.3 + Fabric",
         "Minecraft 1.21.4 + Fabric",
     ]
-    return selected_version in fabric_supported_versions
+
+    neoforge_supported_versions = [
+        "Minecraft 1.20.1 + NeoForge",
+        "Minecraft 1.20.2 + NeoForge",
+        "Minecraft 1.21 + NeoForge",
+        "Minecraft 1.21.1 + NeoForge",
+        "Minecraft 1.21.2 + NeoForge",
+        "Minecraft 1.21.3 + NeoForge",
+        "Minecraft 1.21.4 + NeoForge",
+    ]
+
+    if selected_version in fabric_supported_versions:
+        return "fabric"
+    elif selected_version in neoforge_supported_versions:
+        return "neoforge"
+    else:
+        return None
 
 
 def install_minecraft_version(version, progress_callback=None):
@@ -5966,9 +5983,11 @@ def runn():
 
         def start_game_launch_wrapper():
             """Обертка для запуска игры после подготовки"""
-            # Для версий, отличных от YamalPixel, устанавливаем необходимые компоненты
+            # Для версий, отличных от YamalPixel, устанавливаем Minecraft
             if selected_version != "YamalPixel":
                 install_required_components(selected_version)
+
+            # Запускаем основной процесс (включая установку модлоадеров)
             start_game_launch()
 
         # Если выбрана версия YamalPixel - сначала проверяем моды
@@ -5990,7 +6009,7 @@ def runn():
 
 
 def install_required_components(version_name):
-    """Устанавливает необходимые компоненты для выбранной версии"""
+    """Упрощенная функция установки компонентов - только для версий, отличных от YamalPixel"""
     try:
         # Создаем окно прогресса
         progress_window = tk.Toplevel(win)
@@ -6021,65 +6040,25 @@ def install_required_components(version_name):
 
         def install_thread():
             try:
-                # Определяем параметры версии
-                version_configs = {
-                    "YamalPixel": ("1.20.1", "0.17.2"),
-                    "Minecraft 1.7.10": ("1.7.10", None),
-                    "Minecraft 1.8.9": ("1.8.9", None),
-                    "Minecraft 1.12.2": ("1.12.2", None),
-                    "Minecraft 1.14.4": ("1.14.4", None),
-                    "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
-                    "Minecraft 1.15.2": ("1.15.2", None),
-                    "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2"),
-                    "Minecraft 1.16.5": ("1.16.5", None),
-                    "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2"),
-                    "Minecraft 1.17.1": ("1.17.1", None),
-                    "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2"),
-                    "Minecraft 1.18.2": ("1.18.2", None),
-                    "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
-                    "Minecraft 1.19.2": ("1.19.2", None),
-                    "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
-                    "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
-                    "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
-                    "Minecraft 1.20.2": ("1.20.2", None),
-                    "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
-                    "Minecraft 1.21": ("1.21", None),
-                    "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
-                    "Minecraft 1.21.1": ("1.21.1", None),
-                    "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
-                    "Minecraft 1.21.2": ("1.21.2", None),
-                    "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
-                    "Minecraft 1.21.3": ("1.21.3", None),
-                    "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
-                    "Minecraft 1.21.4": ("1.21.4", None),
-                    "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
-                }
+                # Для версий, отличных от YamalPixel, просто устанавливаем Minecraft
+                if version_name != "YamalPixel":
+                    # Получаем версию Minecraft из названия
+                    minecraft_version = get_minecraft_version(version_name)
 
-                if version_name in version_configs:
-                    minecraft_version, fabric_loader = version_configs[version_name]
+                    win.after(0, lambda: status_label.config(text="Установка Minecraft..."))
 
-                    # 🔥 ИСПРАВЛЕНИЕ: Раздельная логика установки
-                    if fabric_loader and is_fabric_needed(version_name):
-                        # Устанавливаем Minecraft ЧЕРЕЗ Fabric (одной командой)
-                        win.after(0, lambda: status_label.config(text="Установка Fabric..."))
+                    # Устанавливаем чистый Minecraft
+                    success = safe_install_minecraft_version(
+                        version=minecraft_version,
+                        minecraft_directory=CONFIG["minecraft_dir"]
+                    )
 
-                        minecraft_launcher_lib.fabric.install_fabric(
-                            minecraft_version=minecraft_version,
-                            loader_version=fabric_loader,
-                            minecraft_directory=CONFIG["minecraft_dir"]
-                        )
+                    if not success:
+                        raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
 
-                        win.after(0, lambda: status_label.config(text="Fabric установлен!"))
+                    win.after(0, lambda: status_label.config(text="Minecraft установлен!"))
 
-                    else:
-                        # Ванильная установка (только Minecraft)
-                        win.after(0, lambda: status_label.config(text="Установка Minecraft..."))
-                        success = install_minecraft_version(minecraft_version)
-                        if not success:
-                            raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
-
-                        win.after(0, lambda: status_label.config(text="Minecraft установлен!"))
-
+                # Модлоадеры (Fabric/NeoForge) будут установлены позже в execute_launch_process
                 win.after(0, progress_window.destroy)
 
             except Exception as e:
@@ -6505,27 +6484,79 @@ def start_game_launch():
             clear_auth_cache()
             update_ui_log("✅ Файлы подготовлены")
 
-            # Шаг 3: Проверка Fabric (для версий, которые его требуют)
-            if is_fabric_needed(selected_version):
-                update_ui_status("Проверка Fabric", "Проверяем установку...")
-                if not check_fabric_installed():
-                    update_ui_log("🔧 Устанавливаем Fabric...")
-                    try:
-                        # Получаем версию Minecraft для Fabric
-                        minecraft_version = get_minecraft_version_for_fabric(selected_version)
-                        fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
+            def check_modloader_installed(selected_version):
+                """Проверяет установлен ли модлоадер (Fabric/NeoForge) - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+                try:
+                    minecraft_dir = CONFIG["minecraft_dir"]
+                    versions_dir = os.path.join(minecraft_dir, "versions")
 
-                        minecraft_launcher_lib.fabric.install_fabric(
-                            minecraft_version=minecraft_version,
-                            loader_version=fabric_loader,
-                            minecraft_directory=CONFIG["minecraft_dir"],
-                        )
-                        update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
+                    loader_type = is_modloader_needed(selected_version)
+
+                    if loader_type == "fabric":
+                        minecraft_version = get_minecraft_version(selected_version)
+                        fabric_loader = "0.17.2"
+                        fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
+                        fabric_version_dir = os.path.join(versions_dir, fabric_version)
+                        return os.path.exists(fabric_version_dir)
+
+                    elif loader_type == "neoforge":
+                        minecraft_version = get_minecraft_version(selected_version)
+                        # Для NeoForge проверяем наличие версии через правильный формат
+                        neoforge_version = f"neoforge-{minecraft_version}"
+                        neoforge_version_dir = os.path.join(versions_dir, neoforge_version)
+                        return os.path.exists(neoforge_version_dir)
+                    else:
+                        return True  # Для vanilla версий всегда возвращаем True
+
+                except Exception as e:
+                    print(f"Ошибка проверки модлоадера: {e}")
+                    return False
+
+            # Шаг 3: Проверка и установка модлоадеров (Fabric/NeoForge)
+            loader_type = is_modloader_needed(selected_version)
+            if loader_type:
+                update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
+
+                if not check_modloader_installed(selected_version):
+                    update_ui_log(f"🔧 Устанавливаем {loader_type.capitalize()}...")
+                    try:
+                        minecraft_version = get_minecraft_version(selected_version)
+
+                        if loader_type == "fabric":
+                            fabric_loader = "0.17.2"
+                            minecraft_launcher_lib.fabric.install_fabric(
+                                minecraft_version=minecraft_version,
+                                loader_version=fabric_loader,
+                                minecraft_directory=CONFIG["minecraft_dir"],
+                            )
+                            update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
+
+                        elif loader_type == "neoforge":
+                            # Получаем доступные версии NeoForge
+                            neoforge_versions = minecraft_launcher_lib.neoforge.get_loader_versions(
+                                minecraft_version,
+                                stable_only=True
+                            )
+
+                            if not neoforge_versions:
+                                raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
+
+                            # Берем последнюю стабильную версию
+                            latest_neoforge = neoforge_versions[0]
+
+                            # Устанавливаем NeoForge
+                            minecraft_launcher_lib.neoforge.install_neoforge(
+                                minecraft_version=minecraft_version,
+                                minecraft_directory=CONFIG["minecraft_dir"],
+                                loader_version=latest_neoforge
+                            )
+                            update_ui_log(f"✅ NeoForge {latest_neoforge} установлен для {minecraft_version}")
+
                     except Exception as e:
-                        update_ui_log(f"❌ Ошибка Fabric: {e}")
+                        update_ui_log(f"❌ Ошибка {loader_type.capitalize()}: {e}")
                         raise
                 else:
-                    update_ui_log("✅ Fabric готов")
+                    update_ui_log(f"✅ {loader_type.capitalize()} готов")
 
             # Шаг 4: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
@@ -6553,9 +6584,11 @@ def start_game_launch():
             }
 
             # Формируем команду в зависимости от версии
-            if is_fabric_needed(selected_version):
+            loader_type = is_modloader_needed(selected_version)
+
+            if loader_type == "fabric":
                 minecraft_version = get_minecraft_version_for_fabric(selected_version)
-                fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
+                fabric_loader = "0.17.2"
                 fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
 
                 command = minecraft_launcher_lib.command.get_minecraft_command(
@@ -6564,6 +6597,19 @@ def start_game_launch():
                     options=options,
                 )
                 update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
+
+            elif loader_type == "neoforge":
+                minecraft_version = get_minecraft_version(selected_version)
+                # Для NeoForge используем специальный формат версии
+                neoforge_version = f"neoforge-{minecraft_version}"
+
+                command = minecraft_launcher_lib.command.get_minecraft_command(
+                    version=neoforge_version,
+                    minecraft_directory=CONFIG["minecraft_dir"],
+                    options=options,
+                )
+                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version}")
+
             else:
                 # Для vanilla версий используем чистый Minecraft
                 minecraft_version = get_minecraft_version(selected_version)
@@ -6765,6 +6811,7 @@ def repair_single_version(version_name):
         return False
 
 def install_required_components_sync(version_name):
+
     """Синхронная установка компонентов (без отдельного окна)"""
     version_configs = {
         "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
@@ -6797,10 +6844,39 @@ def install_required_components_sync(version_name):
         "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
         "Minecraft 1.21.4": ("1.21.4", None),
         "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
+        # NeoForge конфигурации
+        "Minecraft 1.20.1 + NeoForge": ("1.20.1", "neoforge", "latest"),
+        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", "latest"),
+        "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", "latest"),
+        "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", "latest"),
+        "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", "latest"),
+        "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", "latest"),
+        "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", "latest"),
     }
+    try:
+        if version_name in version_configs:
+            config = version_configs[version_name]
 
+            # ЗАЩИТА: проверяем количество значений
+            if len(config) == 2:
+                # Если 2 значения, добавляем третье (None)
+                minecraft_version, loader_type = config
+                loader_version = None
+            elif len(config) == 3:
+                # Если 3 значения, распаковываем нормально
+                minecraft_version, loader_type, loader_version = config
+            else:
+                raise ValueError(f"Неверная конфигурация для {version_name}")
+    except Exception as e:
+        print(f"❌ Ошибка в install_required_components_sync: {e}")
     if version_name in version_configs:
-        minecraft_version, fabric_loader = version_configs[version_name]
+        config = version_configs[version_name]
+        # Безопасная распаковка
+        if len(config) == 3:
+            minecraft_version, loader_type, loader_version = config
+        else:
+            minecraft_version, loader_type = config
+            loader_version = None
 
         # Устанавливаем Minecraft версию БЕЗОПАСНО
         print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
@@ -6813,15 +6889,54 @@ def install_required_components_sync(version_name):
         if not success:
             raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
 
-        # Устанавливаем Fabric если нужно
-        if fabric_loader and is_fabric_needed(version_name):
-            print(f"Устанавливаем Fabric {fabric_loader} для {minecraft_version}")
+        # Устанавливаем модлоадер если нужно
+        if loader_type == "fabric" and loader_version:
+            print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
             minecraft_launcher_lib.fabric.install_fabric(
                 minecraft_version=minecraft_version,
-                loader_version=fabric_loader,
+                loader_version=loader_version,
                 minecraft_directory=CONFIG["minecraft_dir"]
             )
+        elif loader_type == "neoforge":
+            print(f"Устанавливаем NeoForge для {minecraft_version}")
+            install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
 
+
+
+def install_neoforge_sync(minecraft_version, minecraft_directory):
+    """Синхронная установка NeoForge - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+    try:
+        print(f"🔧 Устанавливаем NeoForge для {minecraft_version}...")
+
+        # Получаем NeoForge лоадер через правильный API
+        neoforge_loader = get_mod_loader("neoforge")
+
+        # Получаем доступные версии NeoForge
+        neoforge_versions = neoforge_loader.get_loader_versions(
+            minecraft_version,
+            stable_only=True
+        )
+
+        if not neoforge_versions:
+            raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
+
+        # Берем последнюю стабильную версию
+        latest_neoforge = neoforge_versions[0]
+        print(f"📦 Используем NeoForge {latest_neoforge}")
+
+        # Устанавливаем NeoForge
+        neoforge_loader.install(
+            minecraft_version=minecraft_version,
+            minecraft_directory=minecraft_directory,
+            loader_version=latest_neoforge
+        )
+
+        print(f"✅ NeoForge успешно установлен!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка установки NeoForge: {e}")
+        return False
 
 def check_network_connectivity():
     """Проверяет доступность серверов Minecraft"""
@@ -8584,6 +8699,7 @@ online_btn.place(relx=0.5, rely=0.61, anchor="c")
 online_btn.start_animation()
 
 # Список версий для селектора
+# Список версий для селектора
 versions = [
     "YamalPixel",
     "Minecraft 1.7.10",
@@ -8603,18 +8719,25 @@ versions = [
     "Minecraft 1.19.2 + Fabric",
     "Minecraft 1.20.1",
     "Minecraft 1.20.1 + Fabric",
+    "Minecraft 1.20.1 + NeoForge",  # НОВОЕ
     "Minecraft 1.20.2",
     "Minecraft 1.20.2 + Fabric",
+    "Minecraft 1.20.2 + NeoForge",  # НОВОЕ
     "Minecraft 1.21",
     "Minecraft 1.21 + Fabric",
+    "Minecraft 1.21 + NeoForge",    # НОВОЕ
     "Minecraft 1.21.1",
     "Minecraft 1.21.1 + Fabric",
+    "Minecraft 1.21.1 + NeoForge",  # НОВОЕ
     "Minecraft 1.21.2",
     "Minecraft 1.21.2 + Fabric",
+    "Minecraft 1.21.2 + NeoForge",  # НОВОЕ
     "Minecraft 1.21.3",
     "Minecraft 1.21.3 + Fabric",
+    "Minecraft 1.21.3 + NeoForge",  # НОВОЕ
     "Minecraft 1.21.4",
     "Minecraft 1.21.4 + Fabric",
+    "Minecraft 1.21.4 + NeoForge",  # НОВОЕ
 ]
 
 
@@ -8837,12 +8960,18 @@ def select_version(event):
         "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
         "Minecraft 1.21.4": ("1.21.4", None),
         "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
+        # NeoForge версии
+        "Minecraft 1.20.1 + NeoForge": ("1.20.1", "neoforge", None),
+        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),
+        "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", None),
+        "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", None),
+        "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", None),
+        "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", None),
+        "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", None),
     }
 
     if selected_version in version_configs:
-        CONFIG["version"], CONFIG["fabric_loader"] = version_configs[selected_version]
-
-        # Красивое сообщение об изменении версии
+        CONFIG["version"], CONFIG["loader_type"], CONFIG["loader_version"] = version_configs[selected_version]
         show_version_change_message(selected_version)
 
 
