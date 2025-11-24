@@ -24,7 +24,7 @@ import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
-from datetime import datetime
+from datetime import datetime as dt
 from pathlib import Path
 import psutil
 import math
@@ -3320,7 +3320,7 @@ def create_backup(folder_path, backup_type):
         if files_in_folder:
             print(f"📄 Примеры файлов: {files_in_folder[:5]}")
 
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
         backup_dir = os.path.join(CONFIG["minecraft_dir"], "backups")
         os.makedirs(backup_dir, exist_ok=True)
 
@@ -5142,13 +5142,28 @@ def create_progress_window():
 
 
 def monitor_game_process(process):
-    """Мониторит процесс игры и разблокирует интерфейс при завершении"""
-    process.wait()
-    # Если процесс завершился, разблокируем интерфейс
-    win.after(0, lambda: set_launch_state(False))
+    """Мониторит процесс игры в фоне"""
+    try:
+        # Ждем завершения процесса
+        process.wait()
+
+        # Читаем вывод если есть
+        try:
+            stdout, stderr = process.communicate(timeout=1)
+            if stdout:
+                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
+            if stderr:
+                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
+        except:
+            pass
+
+        print("[LAUNCHER] Процесс Minecraft завершен")
+
+    except Exception as e:
+        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
 
-# ДОБАВЬ ЭТО ПРЯМО ПЕРЕД СОЗДАНИЕМ menu_bar:
+
 
 
 def show_simple_background_selector():
@@ -6336,6 +6351,55 @@ def checker1_with_callback(completion_callback=None):
     threading.Thread(target=download_thread, daemon=True).start()
 
 
+def setup_launch_logging():
+    """Настройка детального логирования запуска"""
+    log_dir = os.path.join(CONFIG["minecraft_dir"], "logs")
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Логгер для запуска
+    launch_logger = logging.getLogger('minecraft_launch')
+    launch_logger.setLevel(logging.DEBUG)
+
+    # Файловый обработчик
+    log_file = os.path.join(log_dir, f"launch_{dt.now().strftime('%Y%m%d_%H%M%S')}.log")
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+
+    # Форматтер
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+
+    launch_logger.addHandler(file_handler)
+    return launch_logger
+
+
+def log_launch_step(logger, step, details=""):
+    """Логирование шага запуска"""
+    message = f"🚀 {step}"
+    if details:
+        message += f" | {details}"
+    logger.info(message)
+    print(f"[LAUNCH] {message}")
+
+
+def monitor_process_output(process, logger):
+    """Мониторинг вывода процесса Minecraft в реальном времени"""
+
+    def read_output(stream, stream_name):
+        try:
+            for line in iter(stream.readline, ''):
+                if line.strip():
+                    logger.info(f"[MINECRAFT {stream_name}] {line.strip()}")
+                    # Фильтруем важные сообщения для отладки
+                    if any(keyword in line.lower() for keyword in
+                           ['error', 'exception', 'crash', 'failed', 'could not', 'cannot']):
+                        logger.error(f"❌ ПРОБЛЕМА: {line.strip()}")
+        except Exception as e:
+            logger.error(f"Ошибка чтения {stream_name}: {e}")
+
+    # Запускаем мониторинг stdout и stderr
+    threading.Thread(target=read_output, args=(process.stdout, "STDOUT"), daemon=True).start()
+    threading.Thread(target=read_output, args=(process.stderr, "STDERR"), daemon=True).start()
 def start_game_launch():
     """Основной процесс запуска игры (вынесен из runn)"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
@@ -6462,6 +6526,7 @@ def start_game_launch():
         """Основной процесс запуска игры"""
         try:
             selected_version = version_selector.get()
+            update_ui_log(f"🎯 Выбрана версия: {selected_version}")
 
             # Шаг 0: Устанавливаем необходимые компоненты для ВСЕХ версий кроме YamalPixel
             if selected_version != "YamalPixel":
@@ -6471,11 +6536,15 @@ def start_game_launch():
                 # Используем существующую функцию установки компонентов
                 install_required_components_sync(selected_version)
                 update_ui_log("✅ Компоненты установлены")
+            else:
+                update_ui_log("⏭️ Пропускаем установку компонентов для YamalPixel")
 
             # Шаг 1: Проверка модов (только для YamalPixel)
             if selected_version == "YamalPixel":
                 update_ui_status("Проверка завершена", "Моды готовы...")
                 update_ui_log("✅ Все моды проверены и загружены")
+            else:
+                update_ui_log("⏭️ Пропускаем проверку модов")
 
             # Шаг 2: Подготовка игры
             update_ui_status("Подготовка игры", "Очистка и проверка...")
@@ -6519,6 +6588,8 @@ def start_game_launch():
 
             # Шаг 3: Проверка и установка модлоадеров (Fabric/NeoForge)
             loader_type = is_modloader_needed(selected_version)
+            update_ui_log(f"🔍 Определен модлоадер: {loader_type}")
+
             if loader_type:
                 update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
 
@@ -6526,9 +6597,11 @@ def start_game_launch():
                     update_ui_log(f"🔧 Устанавливаем {loader_type.capitalize()}...")
                     try:
                         minecraft_version = get_minecraft_version(selected_version)
+                        update_ui_log(f"📋 Версия Minecraft: {minecraft_version}")
 
                         if loader_type == "fabric":
                             fabric_loader = "0.17.2"
+                            update_ui_log(f"🔄 Устанавливаем Fabric {fabric_loader}...")
                             minecraft_launcher_lib.fabric.install_fabric(
                                 minecraft_version=minecraft_version,
                                 loader_version=fabric_loader,
@@ -6536,14 +6609,19 @@ def start_game_launch():
                             )
                             update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
                         elif loader_type == "neoforge":
-                            minecraft_version = get_minecraft_version(selected_version)
-                            # Получаем доступные версии NeoForge - ПРАВИЛЬНЫЙ МЕТОД
+                            update_ui_log("🔄 Получаем версии NeoForge...")
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+                            update_ui_log(f"📋 Доступные версии NeoForge: {neoforge_versions}")
+
                             if not neoforge_versions:
                                 raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-                            # Берем последнюю стабильную версию
-                            latest_neoforge = neoforge_versions[0]
-                            # Устанавливаем NeoForge - ПРАВИЛЬНЫЙ МЕТОД
+
+                            # Фильтруем стабильные версии
+                            stable_versions = [v for v in neoforge_versions if not any(
+                                x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
+                            latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
+
+                            update_ui_log(f"🔄 Устанавливаем NeoForge {latest_neoforge}...")
                             minecraft_launcher_lib.neoforge.install(
                                 minecraft_version=minecraft_version,
                                 minecraft_directory=CONFIG["minecraft_dir"],
@@ -6556,6 +6634,8 @@ def start_game_launch():
                         raise
                 else:
                     update_ui_log(f"✅ {loader_type.capitalize()} готов")
+            else:
+                update_ui_log("⏭️ Модлоадер не требуется")
 
             # Шаг 4: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
@@ -6564,6 +6644,7 @@ def start_game_launch():
             selected_memory = CONFIG.get("jvm_memory", "4G")
             if selected_memory.startswith("-Xmx"):
                 selected_memory = selected_memory[4:]
+            update_ui_log(f"💾 Память: {selected_memory}")
 
             # JVM аргументы
             jvm_args = [
@@ -6573,23 +6654,46 @@ def start_game_launch():
                 "-Duser.language=ru",
                 "-Duser.country=RU",
             ]
+            import uuid
+
+            def generate_valid_uuid(username):
+                """Генерирует валидный UUID из имени пользователя"""
+                # Создаем хэш от имени пользователя
+                hash_object = hashlib.md5(username.encode('utf-8'))
+                hash_hex = hash_object.hexdigest()
+
+                # Форматируем в правильный UUID формат
+                uuid_str = f"{hash_hex[:8]}-{hash_hex[8:12]}-{hash_hex[12:16]}-{hash_hex[16:20]}-{hash_hex[20:32]}"
+                print(uuid_str, 'UUID - игрока')
+                # Проверяем что UUID валидный
+                try:
+                    uuid_obj = uuid.UUID(uuid_str)
+                    return str(uuid_obj)
+                except ValueError:
+                    # Fallback: генерируем случайный UUID
+                    return str(uuid.uuid4())
 
             options = {
                 "username": username.get(),
-                "uuid": str(hash(username.get())),
+                "uuid": generate_valid_uuid(username.get()),
                 "token": "",
-                "jvmArguments": jvm_args,
+                #"jvmArguments": jvm_args(),  # ИСПРАВЛЕННАЯ ФУНКЦИЯ
                 "gameLocale": "ru_RU",
+                "launcherVersion": "2.10.1",
+                "launcherName": "YamalPixel Launcher",
+                "demo": False,
+                "customResolution": True
             }
+
+            update_ui_log(f"👤 Игрок: {username.get()}")
 
             # Формируем команду в зависимости от версии
             loader_type = is_modloader_needed(selected_version)
+            minecraft_version = get_minecraft_version(selected_version)
 
             if loader_type == "fabric":
-                minecraft_version = get_minecraft_version_for_fabric(selected_version)
                 fabric_loader = "0.17.2"
                 fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
-
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=fabric_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
@@ -6597,15 +6701,16 @@ def start_game_launch():
                 )
                 update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
 
-
             elif loader_type == "neoforge":
-                minecraft_version = get_minecraft_version(selected_version)
-                # Получаем актуальную версию NeoForge
                 neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
                 if not neoforge_versions:
                     raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-                latest_neoforge = neoforge_versions[0]
+
+                stable_versions = [v for v in neoforge_versions if
+                                   not any(x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
+                latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
                 neoforge_version = f"neoforge-{latest_neoforge}"
+
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=neoforge_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
@@ -6615,7 +6720,6 @@ def start_game_launch():
 
             else:
                 # Для vanilla версий используем чистый Minecraft
-                minecraft_version = get_minecraft_version(selected_version)
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=minecraft_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
@@ -6623,20 +6727,24 @@ def start_game_launch():
                 )
                 update_ui_log(f"⚡ Используем Vanilla: {minecraft_version}")
 
+            update_ui_log(f"🖥️ Команда запуска: {' '.join(command[:3])}...")  # Логируем только начало команды
+
             update_ui_log("🚀 Запускаем Minecraft...")
 
             # Запускаем процесс
-            process = launch_minecraft_process(command)
+            process = launch_minecraft_process_with_logging(command)
 
             if process:
                 update_ui_status("Игра запущена", "Minecraft загружается...")
                 update_ui_log("✅ Процесс запущен")
+                #update_ui_log(f"📊 PID процесса: {process.pid}")
 
                 # Ждем немного и проверяем
                 time.sleep(3)
 
                 if is_minecraft_process_running(process):
                     # Успешный запуск
+                    update_ui_log("🎉 Minecraft успешно запущен!")
                     win.after(2000, progress_window.destroy)
                     win.after(0, lambda: set_launch_state(False))
 
@@ -6653,22 +6761,30 @@ def start_game_launch():
                         target=monitor_game_process, args=(process,), daemon=True
                     ).start()
                 else:
-                    raise Exception("Minecraft не запустился")
+                    update_ui_log("❌ Процесс Minecraft завершился слишком быстро")
+                    raise Exception("Minecraft не запустился (процесс завершился)")
             else:
+                update_ui_log("❌ Не удалось создать процесс")
                 raise Exception("Не удалось создать процесс")
 
         except Exception as e:
             error_msg = f"Ошибка запуска: {str(e)}"
             print(f"[LAUNCH ERROR] {error_msg}")
+            import traceback
+            print(f"[LAUNCH TRACEBACK] {traceback.format_exc()}")
 
-            if progress_window.winfo_exists():
-                progress_window.destroy()
+            # Безопасное уничтожение окна
+            try:
+                if 'progress_window' in locals() and progress_window.winfo_exists():
+                    progress_window.destroy()
+            except Exception as destroy_error:
+                print(f"[WINDOW DESTROY ERROR] {destroy_error}")
 
             set_launch_state(False)
 
             messagebox.showerror(
                 "Ошибка запуска",
-                f"❌ Не удалось запустить игру:\n\n{error_msg}"
+                f"❌ Не удалось запустить игру:\n\n{error_msg}\n\nПроверьте логи для подробностей."
             )
 
     # Запускаем основной процесс в отдельном потоке
@@ -7096,28 +7212,50 @@ def safe_destroy_window(window):
         print(f"Ошибка при закрытии окна: {e}")
 
 
-def launch_minecraft_process(command, log_callback=None):
-    """Запускает процесс Minecraft БЕЗ перехвата вывода"""
-    try:
-        if log_callback:
-            log_callback("Запускаем Minecraft...")
+def launch_minecraft_process_with_logging(command):
+    """Запускает процесс Minecraft с детальным логированием"""
+    logger = setup_launch_logging()
 
-        # ЗАПУСКАЕМ БЕЗ ПЕРЕХВАТА ВЫВОДА - это убирает белое окно
+    try:
+        log_launch_step(logger, "Начинаем запуск Minecraft")
+        log_launch_step(logger, "Команда запуска", ' '.join(command))
+
+        minecraft_dir = CONFIG["minecraft_dir"]
+        log_launch_step(logger, "Рабочая директория", minecraft_dir)
+
+        # Логируем переменные окружения
+        log_launch_step(logger, "JAVA_HOME", os.environ.get('JAVA_HOME', 'Не установлен'))
+        log_launch_step(logger, "PATH", os.environ.get('PATH', 'Не установлен'))
+
+        # Проверяем существование Java
+        java_check = subprocess.run(['java', '-version'], capture_output=True, text=True)
+        if java_check.returncode == 0:
+            log_launch_step(logger, "Java проверена", "Версия найдена")
+        else:
+            log_launch_step(logger, "Java проверка", "ОШИБКА - Java не найдена")
+
         process = subprocess.Popen(
             command,
-            stdout=subprocess.DEVNULL,  # Игнорируем stdout
-            stderr=subprocess.DEVNULL,  # Игнорируем stderr
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            cwd=minecraft_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            errors='ignore',
+            bufsize=1,
+            universal_newlines=True
         )
 
-        if log_callback:
-            log_callback("✅ Minecraft запущен в фоновом режиме")
-        return process
+        log_launch_step(logger, "Процесс создан", f"PID: {process.pid}")
+
+        # Запускаем мониторинг вывода
+        monitor_process_output(process, logger)
+
+        return process, logger
 
     except Exception as e:
-        if log_callback:
-            log_callback(f"❌ Ошибка запуска: {str(e)}")
-        return None
+        log_launch_step(logger, "КРИТИЧЕСКАЯ ОШИБКА", f"Не удалось создать процесс: {e}")
+        return None, logger
 
 
 def format_minecraft_output(line):
@@ -7177,51 +7315,36 @@ def format_minecraft_output(line):
 
 
 def is_minecraft_process_running(process):
-    """Проверяет, запущен ли процесс Minecraft"""
+    """Проверяет, работает ли процесс Minecraft"""
     try:
-        # Проверяем наш процесс
-        if process and process.poll() is None:
+        if process is None:
+            return False
+
+        return_code = process.poll()
+        if return_code is None:
+            # Процесс все еще работает
             return True
-
-        # Дополнительная проверка через tasklist для Windows
-        if os.name == "nt":
-            result = subprocess.run(
-                ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
-                capture_output=True,
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            return "javaw.exe" in result.stdout
         else:
-            result = subprocess.run(
-                ["pgrep", "-f", "minecraft"], capture_output=True, text=True
-            )
-            return result.returncode == 0
+            print(f"[PROCESS] Процесс завершился с кодом: {return_code}")
 
-    except:
+            # Логируем вывод если процесс завершился
+            try:
+                stdout, stderr = process.communicate(timeout=1)
+                if stdout:
+                    print(f"[PROCESS STDOUT] {stdout[:500]}...")  # Первые 500 символов
+                if stderr:
+                    print(f"[PROCESS STDERR] {stderr[:500]}...")
+            except:
+                pass
+
+            return False
+
+    except Exception as e:
+        print(f"[PROCESS CHECK ERROR] {e}")
         return False
 
 
-def monitor_game_process(process):
-    """Мониторит процесс игры в фоне"""
-    try:
-        # Ждем завершения процесса
-        process.wait()
 
-        # Читаем вывод если есть
-        try:
-            stdout, stderr = process.communicate(timeout=1)
-            if stdout:
-                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
-            if stderr:
-                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
-        except:
-            pass
-
-        print("[LAUNCHER] Процесс Minecraft завершен")
-
-    except Exception as e:
-        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
 
 def update_log(message):
@@ -7326,26 +7449,7 @@ def is_minecraft_process_running(process):
         return False
 
 
-def monitor_game_process(process):
-    """Мониторит процесс игры в фоне"""
-    try:
-        # Ждем завершения процесса
-        process.wait()
 
-        # Читаем вывод если есть
-        try:
-            stdout, stderr = process.communicate(timeout=1)
-            if stdout:
-                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
-            if stderr:
-                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
-        except:
-            pass
-
-        print("[LAUNCHER] Процесс Minecraft завершен")
-
-    except Exception as e:
-        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
 
 class ModernButton(tk.Canvas):
@@ -9700,7 +9804,7 @@ def create_new_collection():
                 "name": name,
                 "minecraft_version": version_var.get(),
                 "loader": loader_var.get(),
-                "created_at": datetime.datetime.now().isoformat(),
+                "created_at": dt.now().isoformat(),
                 "mods": mods,
                 "mod_count": len(mods),
             }
@@ -10488,7 +10592,7 @@ def create_mods_backup(collection_name):
     if os.path.exists(mods_dir) and any(
         f.endswith(".jar") for f in os.listdir(mods_dir)
     ):
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"backup_{collection_name}_{timestamp}"
         backup_path = os.path.join(backup_dir, backup_name)
         try:
@@ -10727,7 +10831,7 @@ def save_java_state(installed=True):
     try:
         state = {
             "java_installed": installed,
-            "last_check": datetime.now().isoformat(),
+            "last_check": dt.now().isoformat(),
             "version": CURRENT_VERSION,
         }
         with open(JAVA_STATE_FILE, "w", encoding="utf-8") as f:
