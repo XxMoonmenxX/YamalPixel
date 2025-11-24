@@ -20,7 +20,7 @@ except ImportError as e:
         return "1.20.1"
     def get_neoforge_version_from_name(version_name):
         return None
-    def is_neoforge_installed(minecraft_version, neoforge_version, minecraft_dir):  # Добавьте эту заглушку
+    def is_neoforge_installed(neoforge_version, minecraft_dir):  # Добавьте эту заглушку
         return False
 
 import tkinter as tk
@@ -2373,16 +2373,29 @@ def show_manual_update_option(download_url):
 
 # Функция очистки перед запуском
 def cleanup_before_launch():
+    """Очистка перед запуском игры"""
     try:
-        # Закрываем возможные висящие процессы Minecraft
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/f", "/im", "javaw.exe"],
-                capture_output=True,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-        else:
-            subprocess.run(["pkill", "-f", "minecraft"], capture_output=True)
+        minecraft_dir = CONFIG["minecraft_dir"]
+
+        # Очищаем только временные файлы, не библиотеки
+        temp_dirs = [
+            os.path.join(minecraft_dir, "crash-reports"),
+            os.path.join(minecraft_dir, "logs"),
+            os.path.join(minecraft_dir, "temp")
+        ]
+
+        for temp_dir in temp_dirs:
+            if os.path.exists(temp_dir):
+                for file in os.listdir(temp_dir):
+                    if file.endswith('.tmp') or file.endswith('.temp'):
+                        try:
+                            os.remove(os.path.join(temp_dir, file))
+                        except:
+                            pass
+
+        print("✅ Очистка перед запуском завершена")
+    except Exception as e:
+        print(f"⚠️ Ошибка очистки: {e}")
 
         # Небольшая пауза для завершения процессов
         time.sleep(2)
@@ -6661,7 +6674,7 @@ def start_game_launch():
                 neoforge_version = get_neoforge_version_from_name(selected_version)
 
                 # Проверяем установлен ли NeoForge
-                if not is_neoforge_installed(minecraft_version, neoforge_version, CONFIG["minecraft_dir"]):
+                if not is_neoforge_installed(neoforge_version, CONFIG["minecraft_dir"]):
                     update_ui_log("🔧 Устанавливаем NeoForge...")
                     success, installed_version = download_neoforge(
                         selected_version,
@@ -6740,12 +6753,12 @@ def start_game_launch():
                 update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
                 print('fabric - enabled')
 
+
             elif is_neoforge_needed(selected_version) and NEOFORGE_AVAILABLE:
                 minecraft_version = get_minecraft_version_for_neoforge(selected_version)
                 neoforge_version = get_neoforge_version_from_name(selected_version)
-                minecraft_major = get_minecraft_major_version(minecraft_version)
-                neoforge_version_name = f"neoforge-{minecraft_major}-{neoforge_version}"
-
+                # ИСПРАВЛЕНИЕ: используем то же имя, что и в is_neoforge_installed
+                neoforge_version_name = f"neoforge-{neoforge_version}"
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=neoforge_version_name,
                     minecraft_directory=CONFIG["minecraft_dir"],
