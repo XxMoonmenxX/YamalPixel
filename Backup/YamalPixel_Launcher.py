@@ -53,8 +53,10 @@ import psutil
 import math
 import json
 from PIL import Image, ImageTk
-
 import tempfile
+
+minecraft_dir = os.path.expanduser("~/YamalPixel")
+print('Minecraft directory is', minecraft_dir)
 
 
 def fix_python314_dll_issue():
