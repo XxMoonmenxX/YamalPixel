@@ -278,7 +278,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.723"  # обновление
+CURRENT_VERSION = "0.7.0"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -6762,7 +6762,7 @@ def start_game_launch():
                     ).start()
                 else:
                     update_ui_log("❌ Процесс Minecraft завершился слишком быстро")
-                    raise Exception("Minecraft не запустился (процесс завершился)")
+                    #raise Exception("Minecraft не запустился (процесс завершился)")
             else:
                 update_ui_log("❌ Не удалось создать процесс")
                 raise Exception("Не удалось создать процесс")
