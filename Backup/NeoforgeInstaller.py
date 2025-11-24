@@ -8,12 +8,13 @@ import shutil
 from urllib.parse import urljoin
 from pathlib import Path
 
+minecraft_dir = os.path.expanduser("~/YamalPixel")
+print('Minecraft directory is', minecraft_dir)
+
 CONFIG = {
     "version": "1.20.1",
     "fabric_loader": "0.17.2",
-    "minecraft_dir": os.path.expanduser("~/YamalPixel")
 }
-
 
 def get_minecraft_major_version(full_version):
     """Извлекает основную версию Minecraft (1.21.1 -> 1.21)"""
@@ -22,13 +23,11 @@ def get_minecraft_major_version(full_version):
         return f"{parts[0]}.{parts[1]}"
     return full_version
 
-
 def get_neoforge_version_from_name(version_name):
     """Извлекает версию NeoForge из названия версии"""
     if "(" in version_name and ")" in version_name:
         return version_name.split("(")[1].replace(")", "").strip()
     return None
-
 
 def get_minecraft_version_for_neoforge(version_name):
     """Получает версию Minecraft для NeoForge"""
@@ -54,7 +53,6 @@ def get_minecraft_version_for_neoforge(version_name):
         return "1.20.1"
     else:
         return "1.20.1"
-
 
 def is_neoforge_needed(selected_version):
     """Проверяет, требуется ли NeoForge для выбранной версии"""
@@ -82,7 +80,6 @@ def is_neoforge_needed(selected_version):
         "Minecraft 1.17.1 + NeoForge",
     ]
     return selected_version in neoforge_supported_versions
-
 
 def create_minecraft_launcher_profile(minecraft_dir, minecraft_version):
     """Создает необходимые файлы для Minecraft Launcher"""
@@ -158,7 +155,6 @@ def create_minecraft_launcher_profile(minecraft_dir, minecraft_version):
     except Exception as e:
         print(f"❌ Ошибка создания профиля лаунчера: {e}")
         return False
-
 
 def download_neoforge(version, minecraft_dir, callback=None):
     """Скачать указанную версию NeoForge с улучшенными источниками"""
