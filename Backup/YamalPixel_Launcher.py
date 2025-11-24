@@ -1,28 +1,3 @@
-try:
-    from NeoforgeInstaller import (
-        is_neoforge_needed,
-        download_neoforge,
-        get_minecraft_version_for_neoforge,
-        get_neoforge_version_from_name,
-        is_neoforge_installed,  # Добавьте эту функцию в импорт
-        get_minecraft_major_version
-    )
-    NEOFORGE_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ NeoForgeInstaller не доступен: {e}")
-    NEOFORGE_AVAILABLE = False
-    # Заглушки для случаев когда NeoForgeInstaller недоступен
-    def is_neoforge_needed(selected_version):
-        return False
-    def download_neoforge(version, minecraft_dir, callback=None):
-        return False, None
-    def get_minecraft_version_for_neoforge(version_name):
-        return "1.20.1"
-    def get_neoforge_version_from_name(version_name):
-        return None
-    def is_neoforge_installed(neoforge_version, minecraft_dir):  # Добавьте эту заглушку
-        return False
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 import minecraft_launcher_lib
@@ -42,21 +17,20 @@ import shutil
 import logging
 from pypresence import Presence
 from pathlib import Path
+import datetime
 import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
-from datetime import datetime as dt
+from datetime import datetime
 from pathlib import Path
 import psutil
 import math
 import json
 from PIL import Image, ImageTk
-import tempfile
 
-minecraft_dir = os.path.expanduser("~/YamalPixel")
-print('Minecraft directory is', minecraft_dir)
+import tempfile
 
 
 def fix_python314_dll_issue():
@@ -303,7 +277,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.722"  # обновление
+CURRENT_VERSION = "0.6.723"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -2375,29 +2349,16 @@ def show_manual_update_option(download_url):
 
 # Функция очистки перед запуском
 def cleanup_before_launch():
-    """Очистка перед запуском игры"""
     try:
-        minecraft_dir = CONFIG["minecraft_dir"]
-
-        # Очищаем только временные файлы, не библиотеки
-        temp_dirs = [
-            os.path.join(minecraft_dir, "crash-reports"),
-            os.path.join(minecraft_dir, "logs"),
-            os.path.join(minecraft_dir, "temp")
-        ]
-
-        for temp_dir in temp_dirs:
-            if os.path.exists(temp_dir):
-                for file in os.listdir(temp_dir):
-                    if file.endswith('.tmp') or file.endswith('.temp'):
-                        try:
-                            os.remove(os.path.join(temp_dir, file))
-                        except:
-                            pass
-
-        print("✅ Очистка перед запуском завершена")
-    except Exception as e:
-        print(f"⚠️ Ошибка очистки: {e}")
+        # Закрываем возможные висящие процессы Minecraft
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/f", "/im", "javaw.exe"],
+                capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        else:
+            subprocess.run(["pkill", "-f", "minecraft"], capture_output=True)
 
         # Небольшая пауза для завершения процессов
         time.sleep(2)
@@ -3333,6 +3294,7 @@ def open_game_folder():
 import os
 import zipfile
 import shutil
+import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -3357,7 +3319,7 @@ def create_backup(folder_path, backup_type):
         if files_in_folder:
             print(f"📄 Примеры файлов: {files_in_folder[:5]}")
 
-        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_dir = os.path.join(CONFIG["minecraft_dir"], "backups")
         os.makedirs(backup_dir, exist_ok=True)
 
@@ -3412,7 +3374,7 @@ def get_available_backups():
     for filename in os.listdir(backup_dir):
         if filename.endswith(".zip"):
             file_path = os.path.join(backup_dir, filename)
-            time_created = dt.fromtimestamp(os.path.getctime(file_path))
+            time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
 
             # ПРАВИЛЬНО определяем тип бэкапа - используем startswith вместо in
             if filename.startswith("mods_backup_"):
@@ -3806,7 +3768,7 @@ def show_backup_info():
             file_path = os.path.join(backup_dir, filename)
             size = os.path.getsize(file_path) / (1024 * 1024)  # Размер в МБ
             total_size += size
-            time_created = dt.fromtimestamp(os.path.getctime(file_path))
+            time_created = datetime.datetime.fromtimestamp(os.path.getctime(file_path))
 
             # Определяем тип бэкапа
             if filename.startswith("mods_backup_"):
@@ -5776,7 +5738,7 @@ def check_minecraft_and_fabric_installed():
 
 
 def is_fabric_needed(selected_version):
-    """Проверяет, требуется ли Fabric для выбранной версии"""
+    # Список версий, где Fabric поддерживается
     fabric_supported_versions = [
         "YamalPixel",
         "Minecraft 1.14.4 + Fabric",
@@ -5787,28 +5749,13 @@ def is_fabric_needed(selected_version):
         "Minecraft 1.19.2 + Fabric",
         "Minecraft 1.20.1 + Fabric",
         "Minecraft 1.20.2 + Fabric",
+        "Minecraft 1.21 + Fabric",
         "Minecraft 1.21.1 + Fabric",
         "Minecraft 1.21.2 + Fabric",
         "Minecraft 1.21.3 + Fabric",
         "Minecraft 1.21.4 + Fabric",
     ]
     return selected_version in fabric_supported_versions
-
-def is_neoforge_needed(selected_version):
-    """Проверяет, требуется ли NeoForge для выбранной версии"""
-    neoforge_supported_versions = [
-        "Minecraft 1.20.1 + NeoForge",
-        "Minecraft 1.20.2 + NeoForge (20.2.93)",
-        "Minecraft 1.20.3 + NeoForge (20.3.8-beta)",
-        "Minecraft 1.20.4 + NeoForge (20.4.251)",
-        "Minecraft 1.20.5 + NeoForge (20.5.21-beta)",
-        "Minecraft 1.20.6 + NeoForge (20.6.139)",
-        "Minecraft 1.21.1 + NeoForge (21.1.215)",
-        "Minecraft 1.21.2 + NeoForge (21.1.-beta)",
-        "Minecraft 1.21.3 + NeoForge (21.3.94)",
-        "Minecraft 1.21.4 + NeoForge (21.4.155)",
-    ]
-    return selected_version in neoforge_supported_versions
 
 
 def install_minecraft_version(version, progress_callback=None):
@@ -5829,13 +5776,8 @@ def install_minecraft_version(version, progress_callback=None):
             )
             print(f"✅ Версия {version} успешно установлена")
             return True
-        except Exception as install_error:
-            print(f"❌ Ошибка установки версии {version}: {install_error}")
-
-            # Если есть callback для ошибок, вызываем его
-            if progress_callback and hasattr(progress_callback, 'error'):
-                progress_callback.error(str(install_error))
-
+        except Exception as e:
+            print(f"❌ Ошибка установки версии {version}: {e}")
             return False
     else:
         print(f"Версия {version} уже установлена.")
@@ -6047,7 +5989,7 @@ def runn():
         )
 
 
-def install_required_components(selected_version):
+def install_required_components(version_name):
     """Устанавливает необходимые компоненты для выбранной версии"""
     try:
         # Создаем окно прогресса
@@ -6101,6 +6043,8 @@ def install_required_components(selected_version):
                     "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
                     "Minecraft 1.20.2": ("1.20.2", None),
                     "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
+                    "Minecraft 1.21": ("1.21", None),
+                    "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
                     "Minecraft 1.21.1": ("1.21.1", None),
                     "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
                     "Minecraft 1.21.2": ("1.21.2", None),
@@ -6111,11 +6055,11 @@ def install_required_components(selected_version):
                     "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
                 }
 
-                if selected_version in version_configs:
-                    minecraft_version, fabric_loader = version_configs[selected_version]
+                if version_name in version_configs:
+                    minecraft_version, fabric_loader = version_configs[version_name]
 
                     # 🔥 ИСПРАВЛЕНИЕ: Раздельная логика установки
-                    if fabric_loader and is_fabric_needed(selected_version):
+                    if fabric_loader and is_fabric_needed(version_name):
                         # Устанавливаем Minecraft ЧЕРЕЗ Fabric (одной командой)
                         win.after(0, lambda: status_label.config(text="Установка Fabric..."))
 
@@ -6136,17 +6080,12 @@ def install_required_components(selected_version):
 
                         win.after(0, lambda: status_label.config(text="Minecraft установлен!"))
 
-                # УСПЕШНОЕ ЗАВЕРШЕНИЕ - закрываем окно
                 win.after(0, progress_window.destroy)
-                print("✅ Установка компонентов завершена успешно")
 
-            except Exception as install_error:
-                # ОШИБКА - показываем сообщение и закрываем окно
-                win.after(0, progress_window.destroy)
-                win.after(0, lambda error=install_error: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(error)}"))
-                print(f"❌ Ошибка установки компонентов: {install_error}")
+            except Exception as e:
+                win.after(0, lambda: progress_window.destroy())
+                win.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}"))
 
-        # Запускаем установку в отдельном потоке
         threading.Thread(target=install_thread, daemon=True).start()
 
     except Exception as e:
@@ -6420,35 +6359,6 @@ def checker1_with_callback(completion_callback=None):
 
 
 def start_game_launch():
-    def validate_launch_command(command):
-        """Проверяет команду перед запуском"""
-        if not command:
-            return False, "Команда запуска не сформирована"
-
-        # Проверяем Java
-        java_exe = command[0]
-        if not os.path.exists(java_exe):
-            # Проверяем через which/where
-            try:
-                if os.name == 'nt':
-                    result = subprocess.run(['where', 'java'], capture_output=True, text=True)
-                else:
-                    result = subprocess.run(['which', 'java'], capture_output=True, text=True)
-
-                if result.returncode != 0:
-                    return False, "Java не найдена в системе"
-            except:
-                return False, "Ошибка проверки Java"
-
-        # Проверяем параметры памяти
-        for i, arg in enumerate(command):
-            if arg.startswith("-Xmx"):
-                memory_arg = arg[4:]
-                # Проверяем формат: число + G/M
-                if not (memory_arg[:-1].isdigit() and memory_arg[-1] in ['G', 'M']):
-                    return False, f"Неверный формат памяти: {arg}"
-
-        return True, "Команда валидна"
     """Основной процесс запуска игры (вынесен из runn)"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
 
@@ -6571,60 +6481,9 @@ def start_game_launch():
 
     # ГЛАВНЫЙ ПРОЦЕСС ЗАПУСКА
     def execute_launch_process():
-
-        import uuid
-        def get_java_executable():
-            """Возвращает путь к Java исполняемому файлу"""
-            try:
-                # Пробуем найти Java в системе
-                if os.name == 'nt':
-                    result = subprocess.run(['where', 'java'], capture_output=True, text=True)
-                else:
-                    result = subprocess.run(['which', 'java'], capture_output=True, text=True)
-
-                if result.returncode == 0:
-                    java_path = result.stdout.strip().split('\n')[0]
-                    print(f"✅ Найдена Java: {java_path}")
-                    return java_path
-            except Exception as e:
-                print(f"⚠️ Ошибка поиска Java: {e}")
-
-                # Возвращаем путь по умолчанию
-                default_java = "java"  # Просто используем java из PATH
-                print(f"🔧 Используем Java из PATH: {default_java}")
-                return default_java
-
-        def generate_valid_uuid(username):
-            """Генерирует правильный UUID из имени пользователя"""
-            namespace = uuid.NAMESPACE_DNS
-            return str(uuid.uuid5(namespace, username))
-
-        def generate_offline_uuid(username):
-            """Генерирует UUID для оффлайн режима"""
-            import hashlib
-            md5_hash = hashlib.md5(username.encode('utf-8')).hexdigest()
-            return f"{md5_hash[:8]}-{md5_hash[8:12]}-{md5_hash[12:16]}-{md5_hash[16:20]}-{md5_hash[20:]}"
-
-        def create_offline_launch_options(username_text):
-            """Создает настройки для оффлайн запуска"""
-            return {
-                "username": username_text,
-                "uuid": generate_valid_uuid(username_text),
-                "token": "",
-                "executablePath": get_java_executable(),
-                "jvmArguments": get_jvm_memory_args(),  # Используем исправленную функцию
-                "gameDirectory": CONFIG["minecraft_dir"],
-                #"demo": False,
-                "customResolution": False
-            }
-        def get_minecraft_version_for_fabric(selected_version):
-            """Получает версию Minecraft для Fabric"""
-            return get_minecraft_version(selected_version)
-
         """Основной процесс запуска игры"""
         try:
             selected_version = version_selector.get()
-            command = None  # Инициализируем переменную заранее
 
             # Шаг 0: Устанавливаем необходимые компоненты для ВСЕХ версий кроме YamalPixel
             if selected_version != "YamalPixel":
@@ -6668,28 +6527,7 @@ def start_game_launch():
                 else:
                     update_ui_log("✅ Fabric готов")
 
-            # Шаг 4: Проверка NeoForge (для версий, которые его требуют)
-            if is_neoforge_needed(selected_version) and NEOFORGE_AVAILABLE:
-                update_ui_status("Проверка NeoForge", "Проверяем установку...")
-
-                minecraft_version = get_minecraft_version_for_neoforge(selected_version)
-                neoforge_version = get_neoforge_version_from_name(selected_version)
-
-                # Проверяем установлен ли NeoForge
-                if not is_neoforge_installed(neoforge_version, CONFIG["minecraft_dir"]):
-                    update_ui_log("🔧 Устанавливаем NeoForge...")
-                    success, installed_version = download_neoforge(
-                        selected_version,
-                        CONFIG["minecraft_dir"],
-                        callback=lambda data: update_ui_log(data.get("message", ""))
-                    )
-                    if not success:
-                        raise Exception(f"Не удалось установить NeoForge {neoforge_version}")
-                    update_ui_log(f"✅ Установлен NeoForge {installed_version}")
-                else:
-                    update_ui_log("✅ NeoForge готов")
-
-            # Шаг 5: Запуск игры
+            # Шаг 4: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
 
             # Настройки памяти
@@ -6699,52 +6537,25 @@ def start_game_launch():
 
             # JVM аргументы
             jvm_args = [
-                f"-Xmx{selected_memory.replace('-Xmx', '')}",
-                f"-Xms{selected_memory.replace('-Xmx', '').replace('G', '')}G",
+                f"-Xmx{selected_memory}",
+                f"-Xms{selected_memory}",
                 "-XX:+UseG1GC",
                 "-Duser.language=ru",
                 "-Duser.country=RU",
             ]
 
-            def get_jvm_memory_args():
-                """Корректно формирует параметры памяти JVM"""
-                memory_config = CONFIG.get("jvm_memory", "4G")
-
-                # Убираем возможный префикс -Xmx если он есть
-                if memory_config.startswith("-Xmx"):
-                    memory_value = memory_config[4:]
-                else:
-                    memory_value = memory_config
-
-                # Убеждаемся что есть суффикс G
-                if not memory_value.endswith("G"):
-                    memory_value = memory_value + "G"
-
-                return [
-                    f"-Xmx{memory_value}",
-                    f"-Xms{memory_value}",
-                    "-XX:+UseG1GC",
-                    "-Duser.language=ru",
-                    "-Duser.country=RU",
-                ]
-
             options = {
                 "username": username.get(),
-                "uuid": generate_valid_uuid(username.get()),
+                "uuid": str(hash(username.get())),
                 "token": "",
-                "jvmArguments": get_jvm_memory_args(),  # ИСПРАВЛЕННАЯ ФУНКЦИЯ
+                "jvmArguments": jvm_args,
                 "gameLocale": "ru_RU",
-                "launcherVersion": "2.10.1",
-                "launcherName": "YamalPixel Launcher",
-                "demo": False,
-                "customResolution": True
             }
-            print('options - enabled')
 
             # Формируем команду в зависимости от версии
             if is_fabric_needed(selected_version):
                 minecraft_version = get_minecraft_version_for_fabric(selected_version)
-                fabric_loader = "0.17.2"
+                fabric_loader = "0.17.2"  # ИСПРАВЛЕНО: правильная версия fabric
                 fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
 
                 command = minecraft_launcher_lib.command.get_minecraft_command(
@@ -6753,117 +6564,67 @@ def start_game_launch():
                     options=options,
                 )
                 update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
-                print('fabric - enabled')
-
-
-            elif is_neoforge_needed(selected_version) and NEOFORGE_AVAILABLE:
-                minecraft_version = get_minecraft_version_for_neoforge(selected_version)
-                neoforge_version = get_neoforge_version_from_name(selected_version)
-                # ИСПРАВЛЕНИЕ: используем то же имя, что и в is_neoforge_installed
-                neoforge_version_name = f"neoforge-{neoforge_version}"
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=neoforge_version_name,
-                    minecraft_directory=CONFIG["minecraft_dir"],
-                    options=options,
-                )
-                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version_name}")
-                print('neoforge - command created')
-
             else:
-                print('vanilla - оффлайн режим')
+                # Для vanilla версий используем чистый Minecraft
                 minecraft_version = get_minecraft_version(selected_version)
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=minecraft_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
                     options=options,
                 )
-                update_ui_log(f"⚡ Используем Vanilla (оффлайн): {minecraft_version}")
-
-            # Проверяем, что команда сформирована
-            if command is None:
-                raise Exception("Не удалось сформировать команду запуска")
-
-            # ВАЖНО: Проверяем команду перед запуском
-            is_valid, validation_msg = validate_launch_command(command)
-            if not is_valid:
-                raise Exception(f"Неверная команда запуска: {validation_msg}")
+                update_ui_log(f"⚡ Используем Vanilla: {minecraft_version}")
 
             update_ui_log("🚀 Запускаем Minecraft...")
-            print(f"🔧 Проверенная команда: {' '.join(command[:5])}...")  # Сокращенный вывод
 
-            # Запускаем процесс с улучшенной обработкой
+            # Запускаем процесс
             process = launch_minecraft_process(command)
 
-            if not process:
-                raise Exception("Не удалось создать процесс Minecraft")
+            if process:
+                update_ui_status("Игра запущена", "Minecraft загружается...")
+                update_ui_log("✅ Процесс запущен")
 
-            # Даем время на инициализацию
-            time.sleep(5)
+                # Ждем немного и проверяем
+                time.sleep(3)
 
-            # Проверяем статус процесса
-            return_code = process.poll()
-            if return_code is not None:
-                # Процесс завершился сразу - читаем ошибки
-                stdout, stderr = process.communicate()
-                error_msg = f"Minecraft завершился с кодом {return_code}"
-                if stderr:
-                    # Берем последние строки ошибки
-                    error_lines = stderr.strip().split('\n')[-10:]
-                    error_msg += f"\nПоследние ошибки:\n" + "\n".join(error_lines)
-                raise Exception(error_msg)
+                if is_minecraft_process_running(process):
+                    # Успешный запуск
+                    win.after(2000, progress_window.destroy)
+                    win.after(0, lambda: set_launch_state(False))
 
-            # Процесс запущен успешно
-            update_ui_status("Игра запущена", "Minecraft загружается...")
-            update_ui_log("✅ Процесс запущен успешно")
+                    win.after(
+                        100,
+                        lambda: messagebox.showinfo(
+                            "Успешный запуск",
+                            f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
+                        ),
+                    )
 
-            # Успешный запуск
-            win.after(3000, lambda: progress_window.destroy() if progress_window.winfo_exists() else None)
-            win.after(0, lambda: set_launch_state(False))
-
-            win.after(
-                100,
-                lambda: messagebox.showinfo(
-                    "Успешный запуск",
-                    f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}"
-                ),
-            )
-
-            # Мониторим процесс
-            threading.Thread(
-                target=monitor_game_process, args=(process,), daemon=True
-            ).start()
+                    # Мониторим процесс
+                    threading.Thread(
+                        target=monitor_game_process, args=(process,), daemon=True
+                    ).start()
+                else:
+                    raise Exception("Minecraft не запустился")
+            else:
+                raise Exception("Не удалось создать процесс")
 
         except Exception as e:
             error_msg = f"Ошибка запуска: {str(e)}"
             print(f"[LAUNCH ERROR] {error_msg}")
 
-            if progress_window and progress_window.winfo_exists():
+            if progress_window.winfo_exists():
                 progress_window.destroy()
 
             set_launch_state(False)
 
             messagebox.showerror(
                 "Ошибка запуска",
-                f"❌ Не удалось запустить игру:\n\n{error_msg}\n\nПроверьте:\n• Установлена ли Java 17+\n• Достаточно ли памяти\n• Целостность файлов игры"
+                f"❌ Не удалось запустить игру:\n\n{error_msg}"
             )
 
     # Запускаем основной процесс в отдельном потоке
     threading.Thread(target=execute_launch_process, daemon=True).start()
 
-
-def setup_launcher_logging():
-    """Настраивает расширенное логирование"""
-    log_dir = os.path.join(CONFIG["minecraft_dir"], "logs")
-    os.makedirs(log_dir, exist_ok=True)
-
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(os.path.join(log_dir, "launcher_debug.log")),
-            logging.StreamHandler()
-        ]
-    )
 
 def update_system_certificates():
     """Пытается обновить системные сертификаты (для Windows)"""
@@ -7006,64 +6767,44 @@ def repair_single_version(version_name):
 def install_required_components_sync(version_name):
     """Синхронная установка компонентов (без отдельного окна)"""
     version_configs = {
-        "YamalPixel": ("1.20.1", "0.17.2", None),
-
-        "Minecraft 1.7.10": ("1.7.10", None, None),
-        "Minecraft 1.8.9": ("1.8.9", None, None),
-        "Minecraft 1.12.2": ("1.12.2", None, None),
-
-        "Minecraft 1.14.4": ("1.14.4", None, None),
-        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2", None),
-
-        "Minecraft 1.15.2": ("1.15.2", None, None),
-        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2", None),
-
-        "Minecraft 1.16.5": ("1.16.5", None, None),
-        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2", None),
-
-        "Minecraft 1.17.1": ("1.17.1", None, None),
-        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2", None),
-
-        "Minecraft 1.18.2": ("1.18.2", None, None),
-        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2", None),
-
-        "Minecraft 1.19.2": ("1.19.2", None, None),
-        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2", None),
-
-        "Minecraft 1.20.1": ("1.20.1", "0.17.2", None),
-        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2", None),
-
-        "Minecraft 1.20.2": ("1.20.2", None, None),
-        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2", None),
-        "Minecraft 1.20.2 + NeoForge (20.2.93)": ("1.20.2", None, "20.2.93"),
-
-        "Minecraft 1.20.3 + NeoForge (20.3.8-beta)": ("1.20.3", None, "20.3.8-beta"),
-        "Minecraft 1.20.4 + NeoForge (20.4.251)": ("1.20.4", None, "20.4.251"),
-        "Minecraft 1.20.5 + NeoForge (20.5.21-beta)": ("1.20.5", None, "20.5.21-beta"),
-        "Minecraft 1.20.6 + NeoForge (20.6.139)": ("1.20.6", None, "20.6.139"),
-
-        "Minecraft 1.21.1": ("1.21.1", None, None),
-        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2", None),
-        "Minecraft 1.21.1 + NeoForge (21.1.215)": ("1.21.1", None, "21.1.215"),
-
-        "Minecraft 1.21.2": ("1.21.2", None, None),
-        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2", None),
-        "Minecraft 1.21.2 + NeoForge (21.1.-beta)": ("1.21.2", None, "21.1.-beta"),
-
-        "Minecraft 1.21.3": ("1.21.3", None, None),
-        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2", None),
-        "Minecraft 1.21.3 + NeoForge (21.3.94)": ("1.21.3", None, "21.3.94"),
-
-        "Minecraft 1.21.4": ("1.21.4", None, None),
-        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2", None),
-        "Minecraft 1.21.4 + NeoForge (21.4.155)": ("1.21.4", None, "21.4.155")
+        "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
+        "Minecraft 1.7.10": ("1.7.10", None),
+        "Minecraft 1.8.9": ("1.8.9", None),
+        "Minecraft 1.12.2": ("1.12.2", None),
+        "Minecraft 1.14.4": ("1.14.4", None),
+        "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
+        "Minecraft 1.15.2": ("1.15.2", None),
+        "Minecraft 1.15.2 + Fabric": ("1.15.2", "0.17.2"),
+        "Minecraft 1.16.5": ("1.16.5", None),
+        "Minecraft 1.16.5 + Fabric": ("1.16.5", "0.17.2"),
+        "Minecraft 1.17.1": ("1.17.1", None),
+        "Minecraft 1.17.1 + Fabric": ("1.17.1", "0.17.2"),
+        "Minecraft 1.18.2": ("1.18.2", None),
+        "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
+        "Minecraft 1.19.2": ("1.19.2", None),
+        "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
+        "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.2": ("1.20.2", None),
+        "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
+        "Minecraft 1.21": ("1.21", None),
+        "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
+        "Minecraft 1.21.1": ("1.21.1", None),
+        "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
+        "Minecraft 1.21.2": ("1.21.2", None),
+        "Minecraft 1.21.2 + Fabric": ("1.21.2", "0.17.2"),
+        "Minecraft 1.21.3": ("1.21.3", None),
+        "Minecraft 1.21.3 + Fabric": ("1.21.3", "0.17.2"),
+        "Minecraft 1.21.4": ("1.21.4", None),
+        "Minecraft 1.21.4 + Fabric": ("1.21.4", "0.17.2"),
     }
 
     if version_name in version_configs:
-        minecraft_version, fabric_loader, loader_type = version_configs[version_name]
+        minecraft_version, fabric_loader = version_configs[version_name]
 
-        # Устанавливаем Minecraft версию
+        # Устанавливаем Minecraft версию БЕЗОПАСНО
         print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
+
         success = safe_install_minecraft_version(
             version=minecraft_version,
             minecraft_directory=CONFIG["minecraft_dir"]
@@ -7072,22 +6813,14 @@ def install_required_components_sync(version_name):
         if not success:
             raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
 
-        # Устанавливаем соответствующий загрузчик
-        if loader_type == "fabric" and fabric_loader:
+        # Устанавливаем Fabric если нужно
+        if fabric_loader and is_fabric_needed(version_name):
             print(f"Устанавливаем Fabric {fabric_loader} для {minecraft_version}")
             minecraft_launcher_lib.fabric.install_fabric(
                 minecraft_version=minecraft_version,
                 loader_version=fabric_loader,
                 minecraft_directory=CONFIG["minecraft_dir"]
             )
-        elif loader_type == "neoforge" and NEOFORGE_AVAILABLE:
-            print(f"Устанавливаем NeoForge для {minecraft_version}")
-            success, neoforge_version = download_neoforge(
-                version_name,
-                CONFIG["minecraft_dir"]
-            )
-            if not success:
-                raise Exception(f"Не удалось установить NeoForge для {minecraft_version}")
 
 
 def check_network_connectivity():
@@ -7142,12 +6875,6 @@ def repair_minecraft_installation(version):
         print(f"❌ Не удалось восстановить {version}: {e}")
         return False
 def get_minecraft_version(version_name):
-    if "NeoForge" in version_name:
-        # Ищем паттерн "Minecraft X.X.X + NeoForge"
-        import re
-        match = re.search(r'Minecraft\s+([\d\.]+)', version_name)
-        if match:
-            return match.group(1)
     """Получает версию Minecraft для выбранной версии"""
     version_map = {
         "YamalPixel": "1.20.1",
@@ -7170,6 +6897,8 @@ def get_minecraft_version(version_name):
         "Minecraft 1.20.1 + Fabric": "1.20.1",
         "Minecraft 1.20.2": "1.20.2",
         "Minecraft 1.20.2 + Fabric": "1.20.2",
+        "Minecraft 1.21": "1.21",
+        "Minecraft 1.21 + Fabric": "1.21",
         "Minecraft 1.21.1": "1.21.1",
         "Minecraft 1.21.1 + Fabric": "1.21.1",
         "Minecraft 1.21.2": "1.21.2",
@@ -7178,15 +6907,6 @@ def get_minecraft_version(version_name):
         "Minecraft 1.21.3 + Fabric": "1.21.3",
         "Minecraft 1.21.4": "1.21.4",
         "Minecraft 1.21.4 + Fabric": "1.21.4",
-        "Minecraft 1.20.2 + NeoForge (20.2.93)": "1.20.2-neoforge-20.2.93",
-        "Minecraft 1.20.3 + NeoForge (20.3.8-beta)": "1.20.3-neoforge-20.3.8-beta",
-        "Minecraft 1.20.4 + NeoForge (20.4.251)": "1.20.4-neoforge-20.4.251",
-        "Minecraft 1.20.5 + NeoForge (20.5.21-beta)": "1.20.5-neoforge-20.5.21-beta",
-        "Minecraft 1.20.6 + NeoForge (20.6.139)": "1.20.6-neoforge-20.6.139",
-        "Minecraft 1.21.1 + NeoForge (21.1.215)": "1.21.1-neoforge-21.1.215",
-        "Minecraft 1.21.2 + NeoForge (21.1.-beta)": "1.21.2-neoforge-21.1.-beta",
-        "Minecraft 1.21.3 + NeoForge (21.3.94)": "1.21.3-neoforge-21.3.94",
-        "Minecraft 1.21.4 + NeoForge (21.4.155)": "1.21.4-neoforge-21.4.155",
     }
     return version_map.get(version_name, "1.20.1")
 
@@ -7253,56 +6973,28 @@ def safe_destroy_window(window):
 
 
 def launch_minecraft_process(command, log_callback=None):
-    """Запускает процесс Minecraft с правильной обработкой ошибок"""
+    """Запускает процесс Minecraft БЕЗ перехвата вывода"""
     try:
         if log_callback:
             log_callback("Запускаем Minecraft...")
 
-        print(f"🔧 Полная команда запуска: {' '.join(command)}")
-
-        # Создаем файл лога для отладки
-        log_dir = os.path.join(CONFIG["minecraft_dir"], "logs")
-        os.makedirs(log_dir, exist_ok=True)
-
-        log_file = os.path.join(log_dir, "launcher_debug.log")
-
-        with open(log_file, "w", encoding="utf-8") as f:
-            f.write(f"Команда запуска: {' '.join(command)}\n")
-            f.write(f"Рабочая директория: {CONFIG['minecraft_dir']}\n")
-            f.write(f"Время: {dt.now().isoformat()}\n\n")
-
-        # Запускаем процесс с логированием
+        # ЗАПУСКАЕМ БЕЗ ПЕРЕХВАТА ВЫВОДА - это убирает белое окно
         process = subprocess.Popen(
             command,
-            cwd=CONFIG["minecraft_dir"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
+            stdout=subprocess.DEVNULL,  # Игнорируем stdout
+            stderr=subprocess.DEVNULL,  # Игнорируем stderr
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
 
-        # Читаем вывод в реальном времени
-        def log_output():
-            for line in iter(process.stdout.readline, ''):
-                if line:
-                    debug_line = f"[MC] {line.strip()}"
-                    print(debug_line)
-                    with open(log_file, "a", encoding="utf-8") as f:
-                        f.write(debug_line + "\n")
-
-        threading.Thread(target=log_output, daemon=True).start()
-
         if log_callback:
-            log_callback("✅ Minecraft запущен")
-
+            log_callback("✅ Minecraft запущен в фоновом режиме")
         return process
 
     except Exception as e:
-        error_msg = f"Ошибка запуска Minecraft: {e}"
-        print(f"💥 {error_msg}")
         if log_callback:
-            log_callback(f"❌ {error_msg}")
+            log_callback(f"❌ Ошибка запуска: {str(e)}")
         return None
+
 
 def format_minecraft_output(line):
     """Форматирует вывод Minecraft для отображения в лаунчере"""
@@ -7361,56 +7053,29 @@ def format_minecraft_output(line):
 
 
 def is_minecraft_process_running(process):
-    """Проверяет, запущен ли процесс Minecraft с улучшенной логикой"""
+    """Проверяет, запущен ли процесс Minecraft"""
     try:
-        return_code = process.poll()
-        print(f"🔍 Проверка процесса: return_code={return_code}")
-
-        if return_code is not None:
-            print(f"❌ Процесс завершился с кодом: {return_code}")
-            return False
-
-        # Более надежная проверка через время жизни процесса
-        # Если процесс жив более 5 секунд - считаем успешным
-        if LAUNCH_START_TIME and (time.time() - LAUNCH_START_TIME) > 5:
-            print("✅ Процесс Minecraft жив более 5 секунд - считаем успешным")
+        # Проверяем наш процесс
+        if process and process.poll() is None:
             return True
 
-        # Дополнительная проверка для Windows
+        # Дополнительная проверка через tasklist для Windows
         if os.name == "nt":
-            try:
-                result = subprocess.run(
-                    ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                )
-                has_javaw = "javaw.exe" in result.stdout
-                print(f"🔍 Проверка javaw.exe: {has_javaw}")
-                return has_javaw
-            except:
-                # Если проверка tasklist не сработала, но процесс жив - считаем успешным
-                return True
+            result = subprocess.run(
+                ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return "javaw.exe" in result.stdout
         else:
-            # Для Linux/MacOS
-            try:
-                result = subprocess.run(
-                    ["pgrep", "-f", "minecraft"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                return result.returncode == 0
-            except:
-                return True
+            result = subprocess.run(
+                ["pgrep", "-f", "minecraft"], capture_output=True, text=True
+            )
+            return result.returncode == 0
 
-        return True  # По умолчанию считаем что процесс работает
-
-    except Exception as e:
-        print(f"⚠️ Ошибка проверки процесса: {e}")
-        # В случае ошибки проверки считаем что процесс работает
-        return True
+    except:
+        return False
 
 
 def monitor_game_process(process):
@@ -7511,6 +7176,30 @@ def format_minecraft_output(line):
     return None
 
 
+def is_minecraft_process_running(process):
+    """Проверяет, запущен ли процесс Minecraft"""
+    try:
+        # Проверяем наш процесс
+        if process.poll() is None:
+            return True
+
+        # Дополнительная проверка через tasklist
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return "javaw.exe" in result.stdout
+        else:
+            result = subprocess.run(
+                ["pgrep", "-f", "minecraft"], capture_output=True, text=True
+            )
+            return result.returncode == 0
+
+    except:
+        return False
 
 
 def monitor_game_process(process):
@@ -8897,58 +8586,35 @@ online_btn.start_animation()
 # Список версий для селектора
 versions = [
     "YamalPixel",
-
     "Minecraft 1.7.10",
-
     "Minecraft 1.8.9",
-
     "Minecraft 1.12.2",
-
     "Minecraft 1.14.4",
     "Minecraft 1.14.4 + Fabric",
-
     "Minecraft 1.15.2",
     "Minecraft 1.15.2 + Fabric",
-
     "Minecraft 1.16.5",
     "Minecraft 1.16.5 + Fabric",
-
     "Minecraft 1.17.1",
     "Minecraft 1.17.1 + Fabric",
-
     "Minecraft 1.18.2",
     "Minecraft 1.18.2 + Fabric",
-
     "Minecraft 1.19.2",
     "Minecraft 1.19.2 + Fabric",
-
     "Minecraft 1.20.1",
     "Minecraft 1.20.1 + Fabric",
-
     "Minecraft 1.20.2",
     "Minecraft 1.20.2 + Fabric",
-    "Minecraft 1.20.2 + NeoForge (20.2.93)",
-
-    "Minecraft 1.20.3 + NeoForge (20.3.8-beta)",
-    "Minecraft 1.20.4 + NeoForge (20.4.251)",
-    "Minecraft 1.20.5 + NeoForge (20.5.21-beta)",
-    "Minecraft 1.20.6 + NeoForge (20.6.139)",
-
+    "Minecraft 1.21",
+    "Minecraft 1.21 + Fabric",
     "Minecraft 1.21.1",
     "Minecraft 1.21.1 + Fabric",
-    "Minecraft 1.21.1 + NeoForge (21.1.215)",
-
     "Minecraft 1.21.2",
     "Minecraft 1.21.2 + Fabric",
-    "Minecraft 1.21.2 + NeoForge (21.1.-beta)",
-
     "Minecraft 1.21.3",
     "Minecraft 1.21.3 + Fabric",
-    "Minecraft 1.21.3 + NeoForge (21.3.94)",
-
     "Minecraft 1.21.4",
     "Minecraft 1.21.4 + Fabric",
-    "Minecraft 1.21.4 + NeoForge (21.4.155)"
 ]
 
 
@@ -9161,6 +8827,8 @@ def select_version(event):
         "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.2": ("1.20.2", None),
         "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
+        "Minecraft 1.21": ("1.21", None),
+        "Minecraft 1.21 + Fabric": ("1.21", "0.17.2"),
         "Minecraft 1.21.1": ("1.21.1", None),
         "Minecraft 1.21.1 + Fabric": ("1.21.1", "0.17.2"),
         "Minecraft 1.21.2": ("1.21.2", None),
@@ -9892,7 +9560,7 @@ def create_new_collection():
                 "name": name,
                 "minecraft_version": version_var.get(),
                 "loader": loader_var.get(),
-                "created_at": dt.now().isoformat(),
+                "created_at": datetime.datetime.now().isoformat(),
                 "mods": mods,
                 "mod_count": len(mods),
             }
@@ -10391,7 +10059,7 @@ def show_collection_manager():
                             "created_at",
                         ]
                     ):
-                        created = dt.fromisoformat(
+                        created = datetime.datetime.fromisoformat(
                             data["created_at"]
                         ).strftime("%d.%m.%Y")
                         tree.insert(
@@ -10680,7 +10348,7 @@ def create_mods_backup(collection_name):
     if os.path.exists(mods_dir) and any(
         f.endswith(".jar") for f in os.listdir(mods_dir)
     ):
-        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"backup_{collection_name}_{timestamp}"
         backup_path = os.path.join(backup_dir, backup_name)
         try:
@@ -10919,7 +10587,7 @@ def save_java_state(installed=True):
     try:
         state = {
             "java_installed": installed,
-            "last_check": dt.now().isoformat(),
+            "last_check": datetime.now().isoformat(),
             "version": CURRENT_VERSION,
         }
         with open(JAVA_STATE_FILE, "w", encoding="utf-8") as f:
@@ -11039,7 +10707,7 @@ def add_java_tools_to_menu():
     settings_menu.add_command(
         label="🔄 Сбросить проверку Java", command=reset_java_state
     )
-
+    settings_menu.add_command(label="ℹ️ Проверить Java сейчас", command=check_java_now)
 
 
 win.after(100, initial_check_simple)
