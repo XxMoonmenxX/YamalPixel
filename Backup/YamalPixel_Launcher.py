@@ -278,7 +278,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.7.0"  # обновление
+CURRENT_VERSION = "0.7.01"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -6553,7 +6553,7 @@ def start_game_launch():
             update_ui_log("✅ Файлы подготовлены")
 
             def check_modloader_installed(selected_version):
-                """Проверяет установлен ли модлоадер (Fabric/NeoForge) - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+                """Проверяет установлен ли модлоадер (Fabric/NeoForge) - ОБНОВЛЕННАЯ ВЕРСИЯ"""
                 try:
                     minecraft_dir = CONFIG["minecraft_dir"]
                     versions_dir = os.path.join(minecraft_dir, "versions")
@@ -6569,23 +6569,115 @@ def start_game_launch():
 
                     elif loader_type == "neoforge":
                         minecraft_version = get_minecraft_version(selected_version)
-                        # Для NeoForge проверяем наличие версии в правильном формате
-                        # NeoForge создает версии в формате "neoforge-<версия_неофоржа>"
-                        # Например: "neoforge-21.1.215"
+
+                        # Получаем доступные версии NeoForge
                         neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                        if neoforge_versions:
-                            latest_version = neoforge_versions[0]
-                            neoforge_version_name = f"neoforge-{latest_version}"
-                            neoforge_version_dir = os.path.join(versions_dir, neoforge_version_name)
-                            return os.path.exists(neoforge_version_dir)
-                        return False
+                        if not neoforge_versions:
+                            return False
+
+                        # Выбираем стабильную версию
+                        stable_versions = [v for v in neoforge_versions if not any(
+                            x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
+                        latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
+
+                        # Формируем правильное имя версии
+                        neoforge_version_name = f"neoforge-{latest_neoforge}"
+                        neoforge_jar_path = os.path.join(versions_dir, neoforge_version_name,
+                                                         f"{neoforge_version_name}.jar")
+
+                        # Проверяем существование и целостность
+                        return os.path.exists(neoforge_jar_path) and is_valid_neoforge_jar(neoforge_jar_path)
+
                     else:
-                        return True  # Для vanilla версий всегда возвращаем True
+                        return True  # Для vanilla версий
 
                 except Exception as e:
-                    print(f"Ошибка проверки модлоадера: {e}")
+                    print(f"❌ Ошибка проверки модлоадера: {e}")
                     return False
 
+                except Exception as e:
+                    print(f"❌ Ошибка проверки модлоадера: {e}")
+                    return False
+
+            def is_valid_neoforge_jar(jar_path):
+                """Проверяет валидность NeoForge JAR файла"""
+                try:
+                    # Проверяем размер файла (должен быть достаточно большим)
+                    file_size = os.path.getsize(jar_path)
+                    if file_size < 500 * 1024:  # Меньше 500KB - подозрительно
+                        print(f"⚠️ Подозрительно маленький JAR: {file_size} bytes")
+                        return False
+
+                    # Пытаемся прочитать JAR как архив
+                    import zipfile
+                    with zipfile.ZipFile(jar_path, 'r') as jar:
+                        file_list = jar.namelist()
+
+                        # КРИТИЧЕСКАЯ ПРОВЕРКА: нет ли классов в корне (что вызывает ошибку модулей)
+                        root_classes = [f for f in file_list if f.endswith('.class') and '/' not in f]
+                        if root_classes:
+                            print(f"❌ Найдены классы в корне JAR: {root_classes}")
+                            return False
+
+                        # Проверяем наличие основных необходимых файлов
+                        has_manifest = any('META-INF/MANIFEST.MF' in f for f in file_list)
+                        has_bootstrap = any('cpw/mods/bootstraplauncher/' in f for f in file_list)
+
+                        if not has_bootstrap:
+                            print("⚠️ Отсутствуют файлы bootstraplauncher")
+                            return False
+
+                        print(f"✅ JAR проверен: {len(file_list)} файлов, размер: {file_size} bytes")
+                        return True
+
+                except zipfile.BadZipFile:
+                    print(f"❌ JAR поврежден (BadZipFile): {jar_path}")
+                    return False
+                except Exception as e:
+                    print(f"❌ Ошибка проверки JAR: {e}")
+                    return False
+
+            def repair_neoforge_installation(selected_version):
+                """Переустанавливает NeoForge если он поврежден"""
+                try:
+                    minecraft_version = get_minecraft_version(selected_version)
+                    minecraft_dir = CONFIG["minecraft_dir"]
+
+                    update_ui_log("🔧 Восстановление NeoForge...")
+
+                    # Получаем доступные версии
+                    neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+                    if not neoforge_versions:
+                        raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
+
+                    # Выбираем стабильную версию
+                    stable_versions = [v for v in neoforge_versions if not any(
+                        x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
+                    latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
+
+                    # Удаляем старую версию если она существует
+                    neoforge_version_name = f"neoforge-{latest_neoforge}"
+                    neoforge_version_dir = os.path.join(minecraft_dir, "versions", neoforge_version_name)
+
+                    if os.path.exists(neoforge_version_dir):
+                        import shutil
+                        shutil.rmtree(neoforge_version_dir)
+                        update_ui_log("🗑️ Удалена поврежденная версия NeoForge")
+
+                    # Устанавливаем заново
+                    update_ui_log(f"🔄 Установка NeoForge {latest_neoforge}...")
+                    minecraft_launcher_lib.neoforge.install(
+                        minecraft_version=minecraft_version,
+                        minecraft_directory=minecraft_dir,
+                        loader_version=latest_neoforge
+                    )
+
+                    update_ui_log(f"✅ NeoForge {latest_neoforge} восстановлен")
+                    return True
+
+                except Exception as e:
+                    update_ui_log(f"❌ Ошибка восстановления NeoForge: {e}")
+                    return False
             # Шаг 3: Проверка и установка модлоадеров (Fabric/NeoForge)
             loader_type = is_modloader_needed(selected_version)
             update_ui_log(f"🔍 Определен модлоадер: {loader_type}")
@@ -6600,6 +6692,7 @@ def start_game_launch():
                         update_ui_log(f"📋 Версия Minecraft: {minecraft_version}")
 
                         if loader_type == "fabric":
+                            # ... существующий код Fabric
                             fabric_loader = "0.17.2"
                             update_ui_log(f"🔄 Устанавливаем Fabric {fabric_loader}...")
                             minecraft_launcher_lib.fabric.install_fabric(
@@ -6694,6 +6787,15 @@ def start_game_launch():
             if loader_type == "fabric":
                 fabric_loader = "0.17.2"
                 fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
+                update_ui_log(f"🔄 Устанавливаем Fabric {fabric_loader}...")
+                minecraft_launcher_lib.fabric.install_fabric(
+                    minecraft_version=minecraft_version,
+                    loader_version=fabric_loader,
+                    minecraft_directory=CONFIG["minecraft_dir"],
+                )
+                update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
+
+                # Определяем command для Fabric
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=fabric_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
@@ -6701,22 +6803,59 @@ def start_game_launch():
                 )
                 update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
 
+
+
             elif loader_type == "neoforge":
+                update_ui_log("🔄 Получаем версии NeoForge...")
                 neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+                update_ui_log(f"📋 Доступные версии NeoForge: {neoforge_versions}")
                 if not neoforge_versions:
                     raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-
-                stable_versions = [v for v in neoforge_versions if
-                                   not any(x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
+                # Фильтруем стабильные версии
+                stable_versions = [v for v in neoforge_versions if not any(
+                    x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
                 latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
-                neoforge_version = f"neoforge-{latest_neoforge}"
-
+                # ПРОВЕРЯЕМ ЦЕЛОСТНОСТЬ ПЕРЕД УСТАНОВКОЙ
+                neoforge_version_name = f"neoforge-{latest_neoforge}"
+                neoforge_jar_path = os.path.join(CONFIG["minecraft_dir"], "versions", neoforge_version_name,
+                                                 f"{neoforge_version_name}.jar")
+                # Если версия уже установлена, проверяем её целостность
+                if os.path.exists(neoforge_jar_path):
+                    update_ui_log(f"🔍 Проверяем целостность {neoforge_version_name}...")
+                    if is_valid_neoforge_jar(neoforge_jar_path):
+                        update_ui_log(f"✅ NeoForge {latest_neoforge} уже установлен и проверен")
+                    else:
+                        update_ui_log(f"🔄 Восстанавливаем поврежденный NeoForge...")
+                        # Удаляем поврежденную версию и устанавливаем заново
+                        import shutil
+                        neoforge_version_dir = os.path.dirname(neoforge_jar_path)
+                        if os.path.exists(neoforge_version_dir):
+                            shutil.rmtree(neoforge_version_dir)
+                        update_ui_log("🗑️ Удалена поврежденная версия NeoForge")
+                        # Устанавливаем заново
+                        update_ui_log(f"🔄 Устанавливаем NeoForge {latest_neoforge}...")
+                        minecraft_launcher_lib.neoforge.install(
+                            minecraft_version=minecraft_version,
+                            minecraft_directory=CONFIG["minecraft_dir"],
+                            loader_version=latest_neoforge
+                        )
+                        update_ui_log(f"✅ NeoForge {latest_neoforge} восстановлен")
+                else:
+                    # Устанавливаем если не установлен
+                    update_ui_log(f"🔄 Устанавливаем NeoForge {latest_neoforge}...")
+                    minecraft_launcher_lib.neoforge.install(
+                        minecraft_version=minecraft_version,
+                        minecraft_directory=CONFIG["minecraft_dir"],
+                        loader_version=latest_neoforge
+                    )
+                    update_ui_log(f"✅ NeoForge {latest_neoforge} установлен для {minecraft_version}")
+                # ВАЖНО: Определяем command для NeoForge
                 command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=neoforge_version,
+                    version=neoforge_version_name,
                     minecraft_directory=CONFIG["minecraft_dir"],
                     options=options,
                 )
-                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version}")
+                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version_name}")
 
             else:
                 # Для vanilla версий используем чистый Minecraft
@@ -7021,36 +7160,42 @@ def install_required_components_sync(version_name):
             install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
 
 
-
 def install_neoforge_sync(minecraft_version, minecraft_directory):
     """Синхронная установка NeoForge - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     try:
         print(f"🔧 Устанавливаем NeoForge для {minecraft_version}...")
 
-        # Получаем NeoForge лоадер через правильный API
-        neoforge_loader = get_mod_loader("neoforge")
-
-        # Получаем доступные версии NeoForge
-        neoforge_versions = neoforge_loader.get_loader_versions(
-            minecraft_version,
-            stable_only=True
-        )
+        # Получаем доступные версии NeoForge через правильный API
+        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
 
         if not neoforge_versions:
             raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
 
-        # Берем последнюю стабильную версию
-        latest_neoforge = neoforge_versions[0]
-        print(f"📦 Используем NeoForge {latest_neoforge}")
+        print(f"📋 Доступные версии NeoForge: {neoforge_versions}")
+
+        # Фильтруем стабильные версии (исключаем beta, alpha, snapshot)
+        stable_versions = []
+        for version in neoforge_versions:
+            version_lower = version.lower()
+            if not any(x in version_lower for x in ['beta', 'alpha', 'test', 'rc', 'snapshot']):
+                stable_versions.append(version)
+
+        # Используем стабильную версию если есть, иначе первую доступную
+        if stable_versions:
+            latest_neoforge = stable_versions[0]
+        else:
+            latest_neoforge = neoforge_versions[0]
+
+        print(f"🎯 Выбрана версия NeoForge: {latest_neoforge}")
 
         # Устанавливаем NeoForge
-        neoforge_loader.install(
+        minecraft_launcher_lib.neoforge.install(
             minecraft_version=minecraft_version,
             minecraft_directory=minecraft_directory,
             loader_version=latest_neoforge
         )
 
-        print(f"✅ NeoForge успешно установлен!")
+        print(f"✅ NeoForge {latest_neoforge} успешно установлен для {minecraft_version}!")
         return True
 
     except Exception as e:
@@ -9074,7 +9219,8 @@ def select_version(event):
         "Minecraft 1.21.4": ("1.21.4", None, None),
         "Minecraft 1.21.4 + Fabric": ("1.21.4", "fabric", "0.17.2"),
         # NeoForge версии
-        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),  # NeoForge сам выберет версию
+        "Minecraft 1.20.1 + NeoForge": ("1.20.1", "neoforge", None),
+        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),
         "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", None),
         "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", None),
         "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", None),
@@ -9151,6 +9297,36 @@ class ModrinthAPI:
         self.session.headers.update(
             {"User-Agent": "YamalPixel-Launcher/1.0 (moonmen@example.com)"}
         )
+
+        # Поддерживаемые версии и загрузчики
+        self.supported_versions = {
+            "fabric": [
+                "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
+                "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+                "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ],
+            "neoforge": [
+                "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.6",
+                "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ],
+            "forge": [
+                "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
+                "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+                "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ],
+            "quilt": [
+                "1.18.2", "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+                "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ]
+        }
+
+    def get_supported_loaders(self, minecraft_version):
+        """Получить доступные загрузчики для версии Minecraft"""
+        available_loaders = []
+        for loader, versions in self.supported_versions.items():
+            if minecraft_version in versions:
+                available_loaders.append(loader)
+        return available_loaders
 
     def search_mods(self, query, limit=20):
         """Поиск модов на Modrinth"""
@@ -9302,27 +9478,59 @@ def create_new_collection():
     meta_frame = ttk.Frame(settings_frame)
     meta_frame.pack(fill="x")
 
+    # Версия Minecraft
     ttk.Label(meta_frame, text="Версия:").pack(side="left")
     version_var = tk.StringVar(value="1.20.1")
+
+    # Все доступные версии
+    all_versions = [
+        "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
+        "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+        "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+    ]
+
     version_combo = ttk.Combobox(
         meta_frame,
         textvariable=version_var,
-        values=["1.20.1", "1.19.2", "1.18.2", "1.17.1", "1.16.5"],
+        values=all_versions,
         state="readonly",
         width=12,
     )
     version_combo.pack(side="left", padx=(5, 20))
 
+    # Загрузчик
     ttk.Label(meta_frame, text="Загрузчик:").pack(side="left")
-    loader_var = tk.StringVar(value="Fabric")
+    loader_var = tk.StringVar(value="fabric")
+
+    # Создаем API для получения доступных загрузчиков
+    api = ModrinthAPI()
+
+    def update_loaders(*args):
+        """Обновляет список доступных загрузчиков для выбранной версии"""
+        selected_version = version_var.get()
+        available_loaders = api.get_supported_loaders(selected_version)
+
+        # Обновляем значения комбобокса
+        loader_combo['values'] = available_loaders
+
+        # Если текущий загрузчик не доступен, выбираем первый доступный
+        if loader_var.get() not in available_loaders and available_loaders:
+            loader_var.set(available_loaders[0])
+
+    # Привязываем обновление загрузчиков к изменению версии
+    version_var.trace('w', update_loaders)
+
     loader_combo = ttk.Combobox(
         meta_frame,
         textvariable=loader_var,
-        values=["Fabric", "Forge", "Quilt"],
+        values=api.get_supported_loaders(version_var.get()),
         state="readonly",
         width=12,
     )
     loader_combo.pack(side="left", padx=5)
+
+    # Инициализируем загрузчики для начальной версии
+    update_loaders()
 
     # Вкладки выбора модов
     notebook = ttk.Notebook(main_frame)
@@ -9389,9 +9597,9 @@ def create_new_collection():
                         [
                             word.capitalize()
                             for word in file.replace(".jar", "")
-                            .replace("_", " ")
-                            .replace("-", " ")
-                            .split()
+                        .replace("_", " ")
+                        .replace("-", " ")
+                        .split()
                         ]
                     )
 
@@ -9901,8 +10109,8 @@ def aggressive_clean_name(mod_name):
 
     # Удаляем версии, загрузчики и другие мусорные слова
     patterns_to_remove = [
-        r"[\d\.\-_]+(?:fabric|forge|quilt|mc|minecraft)",
-        r"\b(?:fabric|forge|quilt|mc|minecraft|mod|jar)\b",
+        r"[\d\.\-_]+(?:fabric|forge|quilt|neoforge|mc|minecraft)",
+        r"\b(?:fabric|forge|quilt|neoforge|mc|minecraft|mod|jar)\b",
         r"[\(\\)\[\]\{\}]",
         r"\s+",
     ]
@@ -9983,7 +10191,7 @@ def try_find_by_filename(api, filename, minecraft_version, loader):
         base_name = filename.replace(".jar", "")
 
         # Удаляем информацию о версии и загрузчике
-        clean_file_name = re.sub(r"[\d\.\-_]+(?:fabric|forge|quilt).*$", "", base_name)
+        clean_file_name = re.sub(r"[\d\.\-_]+(?:fabric|forge|quilt|neoforge).*$", "", base_name)
         clean_file_name = re.sub(r"\s+", " ", clean_file_name).strip()
 
         if len(clean_file_name) > 3:
@@ -10174,10 +10382,10 @@ def clean_mod_name(mod_name):
     import re
 
     cleaned = re.sub(
-        r"[\d\.\-_]+(?:fabric|forge|quilt)?", " ", mod_name, flags=re.IGNORECASE
+        r"[\d\.\-_]+(?:fabric|forge|quilt|neoforge)?", " ", mod_name, flags=re.IGNORECASE
     )
     cleaned = re.sub(
-        r"\b(?:fabric|forge|quilt|mc|minecraft|mod)\b",
+        r"\b(?:fabric|forge|quilt|neoforge|mc|minecraft|mod)\b",
         " ",
         cleaned,
         flags=re.IGNORECASE,
@@ -10231,7 +10439,7 @@ COLLECTIONS_CONFIG = {
 def show_collection_manager():
     manager_window = tk.Toplevel(win)
     set_window_icon(manager_window)
-    manager_window.title("Менеджер  (Бета)")
+    manager_window.title("Менеджер сборок (Бета)")
     manager_window.geometry("1000x500")
     manager_window.transient(win)
     manager_window.grab_set()
@@ -10294,14 +10502,14 @@ def show_collection_manager():
 
                     # Проверяем структуру данных
                     if all(
-                        field in data
-                        for field in [
-                            "name",
-                            "minecraft_version",
-                            "loader",
-                            "mod_count",
-                            "created_at",
-                        ]
+                            field in data
+                            for field in [
+                                "name",
+                                "minecraft_version",
+                                "loader",
+                                "mod_count",
+                                "created_at",
+                            ]
                     ):
                         created = datetime.datetime.fromisoformat(
                             data["created_at"]
@@ -10590,7 +10798,7 @@ def create_mods_backup(collection_name):
     os.makedirs(backup_dir, exist_ok=True)
 
     if os.path.exists(mods_dir) and any(
-        f.endswith(".jar") for f in os.listdir(mods_dir)
+            f.endswith(".jar") for f in os.listdir(mods_dir)
     ):
         timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
         backup_name = f"backup_{collection_name}_{timestamp}"
