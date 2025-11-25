@@ -4943,11 +4943,41 @@ settings_menu.configure(
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
+def force_neoforge_repair():
+    """Принудительное восстановление NeoForge"""
+    selected_version = version_selector.get()
+    if "NeoForge" not in selected_version:
+        messagebox.showwarning("Ошибка", "Выберите версию с NeoForge")
+        return
+
+    result = messagebox.askyesno(
+        "Восстановление NeoForge",
+        "Это удалит ВСЕ библиотеки NeoForge и установит заново.\n\nПродолжить?"
+    )
+
+    if result:
+        minecraft_version = get_minecraft_version(selected_version)
+        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+
+        if neoforge_versions:
+            latest_neoforge = neoforge_versions[0]
+
+            # Очищаем ВСЕ конфликтующие библиотеки
+            cleanup_conflicting_neoforge_libraries(CONFIG["minecraft_dir"])
+
+            # Удаляем версию NeoForge чтобы установить заново
+            version_name = f"neoforge-{latest_neoforge}"
+            version_dir = os.path.join(CONFIG["minecraft_dir"], "versions", version_name)
+            if os.path.exists(version_dir):
+                import shutil
+                shutil.rmtree(version_dir, ignore_errors=True)
+                print(f"🗑️ Удалена версия: {version_name}")
+
+            messagebox.showinfo("Успех",
+                                "Библиотеки очищены! Теперь запустите игру - NeoForge установится заново с правильными библиотеками.")
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
-settings_menu.add_command(
-    label="🎨 Скачать шейдеры", command=download_shaders
-)  # НОВАЯ КНОПКА
+settings_menu.add_command(label="🎨 Скачать шейдеры", command=download_shaders)
 settings_menu.add_separator()
 settings_menu.add_command(label="🔧 Починка файлов", command=auto_repair_game_files)
 settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
@@ -4959,13 +4989,12 @@ settings_menu.add_command(label="🗑️ Удалить ВСЕ бэкапы", co
 settings_menu.add_separator()
 settings_menu.add_command(label="🔄 Полная переустановка", command=complete_reinstall)
 settings_menu.add_separator()
-settings_menu.add_command(
-    label="🔧 Диагностика проблем", command=create_diagnostic_panel
-)
+settings_menu.add_command(label="🔧 Диагностика проблем", command=create_diagnostic_panel)
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
-settings_menu.add_command(
-    label="🎨 Выбрать фон вручную", command=show_simple_background_selector
-)
+settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
+
+settings_menu.add_command(label="🔄 Принудительно восстановить NeoForge", command=force_neoforge_repair)
+settings_menu.add_separator()
 
 # Или если хотите в выпадающем меню "Справка":
 help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -5871,6 +5900,37 @@ def monitor_process_output(process, logger):
     # Запускаем мониторинг stdout и stderr
     threading.Thread(target=read_output, args=(process.stdout, "STDOUT"), daemon=True).start()
     threading.Thread(target=read_output, args=(process.stderr, "STDERR"), daemon=True).start()
+
+
+def cleanup_conflicting_neoforge_libraries(minecraft_dir):
+    """Удаляет конфликтующие версии библиотек NeoForge"""
+    libraries_dir = os.path.join(minecraft_dir, "libraries")
+
+    # Библиотеки которые могут конфликтовать
+    conflicting_paths = [
+        "cpw/mods/bootstraplauncher",
+        "cpw/mods/securejarhandler",
+    ]
+
+    removed_count = 0
+    for lib_path in conflicting_paths:
+        full_path = os.path.join(libraries_dir, lib_path)
+        if os.path.exists(full_path):
+            print(f"🗑️ Очищаем библиотеки: {lib_path}")
+            try:
+                for version_dir in os.listdir(full_path):
+                    version_path = os.path.join(full_path, version_dir)
+                    if os.path.isdir(version_path):
+                        shutil.rmtree(version_path, ignore_errors=True)
+                        removed_count += 1
+                        print(f"   Удалено: {version_dir}")
+            except Exception as e:
+                print(f"⚠️ Ошибка очистки {lib_path}: {e}")
+
+    print(f"✅ Удалено конфликтующих библиотек: {removed_count}")
+    return removed_count
+
+
 def start_game_launch():
     """Основной процесс запуска игры (вынесен из runn)"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
