@@ -1,4 +1,5 @@
 from tkinter import ttk, messagebox
+import tkinter as tk
 import minecraft_launcher_lib
 from minecraft_launcher_lib.mod_loader import get_mod_loader
 import subprocess
@@ -59,13 +60,10 @@ fix_python314_dll_issue()
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+    if hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
-    except Exception:
-        # В режиме разработки используем домашнюю директорию
+    else:
         base_path = Path.home() / "YamalPixelRes"
-
     return os.path.join(base_path, relative_path)
 
 
@@ -652,6 +650,7 @@ class TurboDownloader:
 
 def download_single_mod_turbo(mod_info):
     """Турбо-загрузка одного мода с правильным закрытием ресурсов"""
+    downloader = None
     try:
         print(f"🔍 Начинаем загрузку мода: {mod_info['file']}")
 
@@ -1154,7 +1153,7 @@ def speed_test():
                 if not cancel_flag.is_set():
                     win.after(0, lambda: show_speed_error(str(e), progress_window))
 
-        def test_single_server(url, expected_size, window, cancel_flag):
+        def test_single_server(url, expected_size, cancel_flag):
             """Тестирует скорость для одного сервера"""
             start_time = time.time()
             downloaded = 0
@@ -1163,9 +1162,9 @@ def speed_test():
                 response = requests.get(url, stream=True, timeout=15)
                 response.raise_for_status()
 
-                total_size = int(response.headers.get("content-length", 0))
-                chunk_size = 8192
+                total_size = int(response.headers.get("content-length", 0))  # Для логирования
 
+                chunk_size = 8192
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if cancel_flag.is_set():
                         raise Exception("Тест отменен")
@@ -1173,12 +1172,9 @@ def speed_test():
                     if chunk:
                         downloaded += len(chunk)
 
-                        # Обновляем прогресс в реальном времени
                         elapsed = time.time() - start_time
                         if elapsed > 0:
-                            current_speed_mbps = (
-                                downloaded / elapsed
-                            ) / 125000  # Mbit/s
+                            current_speed_mbps = (downloaded / elapsed) / 125000
 
                             win.after(
                                 0,
@@ -1193,16 +1189,18 @@ def speed_test():
                                 ),
                             )
 
-                            # Если тест длится больше 10 секунд - прерываем
+                            # Используем expected_size для прогресса (если известен)
+                            if expected_size > 0:
+                                progress_percent = min(100, (downloaded / (expected_size * 1024 * 1024)) * 100)
+                                win.after(0, lambda p=progress_percent: progress.config(value=p))
+
                             if elapsed > 10:
                                 break
 
-                end_time = time.time()
-                total_time = end_time - start_time
-
+                total_time = time.time() - start_time
                 if total_time > 0 and downloaded > 0:
-                    speed_mbps = (downloaded / total_time) / 125000  # Mbit/s
-                    speed_mb_sec = (downloaded / total_time) / (1024 * 1024)  # MB/s
+                    speed_mbps = (downloaded / total_time) / 125000
+                    speed_mb_sec = (downloaded / total_time) / (1024 * 1024)
                     return speed_mbps, speed_mb_sec
                 else:
                     return 0, 0
@@ -1449,7 +1447,7 @@ def download_shaders():
     # Переменная для хранения выбранных шейдеров
     selected_shaders = []
 
-    def toggle_selection(event):
+    def toggle_selection(_):
         item = tree.selection()
         if item:
             item = item[0]
@@ -1821,61 +1819,7 @@ def check_fabric_installed():
         fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
         fabric_version_dir = os.path.join(versions_dir, fabric_version)
         return os.path.exists(fabric_version_dir)
-    except:
-        return False
-
-
-def install_fabric_silent():
-    """Тихая установка Fabric"""
-    try:
-        print("🔧 Устанавливаем Fabric...")
-        minecraft_launcher_lib.fabric.install_fabric(
-            minecraft_version=CONFIG["version"],
-            loader_version=CONFIG["fabric_loader"],
-            minecraft_directory=CONFIG["minecraft_dir"],
-        )
-        print("✅ Fabric установлен")
-        return True
-    except Exception as e:
-        print(f"❌ Ошибка установки Fabric: {e}")
-        return False
-
-
-def download_missing_mods_silent():
-    """Тихая загрузка отсутствующих модов без UI"""
-    try:
-        minecraft_dir = CONFIG["minecraft_dir"]
-        mods_dir = os.path.join(minecraft_dir, "mods")
-        os.makedirs(mods_dir, exist_ok=True)
-
-        # Проверяем какие моды отсутствуют
-        missing_mods = []
-        for mod in CONFIG["mods"]:
-            mod_path = os.path.join(mods_dir, mod["file"])
-            if not os.path.exists(mod_path):
-                missing_mods.append(mod)
-
-        if missing_mods:
-            print(f"🔧 Скачиваем {len(missing_mods)} отсутствующих модов...")
-            # Используем существующую функцию загрузки
-            for mod in missing_mods:
-                download_single_mod_turbo(mod)
-
-        return True
-    except Exception as e:
-        print(f"❌ Ошибка загрузки модов: {e}")
-        return False
-
-
-def check_fabric_installed():
-    """Проверяет установлен ли Fabric"""
-    try:
-        minecraft_dir = CONFIG["minecraft_dir"]
-        versions_dir = os.path.join(minecraft_dir, "versions")
-        fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
-        fabric_version_dir = os.path.join(versions_dir, fabric_version)
-        return os.path.exists(fabric_version_dir)
-    except:
+    except (KeyError, TypeError, OSError):
         return False
 
 
@@ -1942,8 +1886,8 @@ def check_for_updates():
         changelog = release_data.get("body", "Нет описания изменений")
 
         # Убираем Markdown-разметку и форматируем
-        changelog = re.sub(r"\#{2,}", "", changelog)
-        changelog = re.sub(r"\- ", "• ", changelog)
+        changelog = re.sub(r"#{2,}", "", changelog)
+        changelog = re.sub(r"- ", "• ", changelog)
         changelog = re.sub(r"\*\*(.*?)\*\*", r"\1", changelog)
         changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
         changelog = changelog.strip()
@@ -2117,16 +2061,16 @@ def check_for_updates():
             text_widget.see("1.0")
 
             # Добавляем ховер-эффекты для кнопок
-            def on_enter_install(e):
+            def on_enter_install(_e):
                 btn_install.configure(bg="#219653")
 
-            def on_leave_install(e):
+            def on_leave_install(_e):
                 btn_install.configure(bg="#27ae60")
 
-            def on_enter_skip(e):
+            def on_enter_skip(_e):
                 btn_skip.configure(bg="#7f8c8d")
 
-            def on_leave_skip(e):
+            def on_leave_skip(_e):
                 btn_skip.configure(bg="#95a5a6")
 
             btn_install.bind("<Enter>", on_enter_install)
@@ -2618,11 +2562,7 @@ def get_java_installer_url():
 
     return None
 
-
 def install_java_with_progress():
-    """
-    Улучшенная установка Java 17 с детектированием ОС и архитектуры
-    """
     java_window = tk.Toplevel(win)
     java_window.title("Установка Java 17")
     java_window.geometry("450x200")
@@ -2653,7 +2593,6 @@ def install_java_with_progress():
     )
     details_label.pack(pady=5)
 
-
     def verify_java_installation(window):
         if check_java_version():
             window.destroy()
@@ -2666,6 +2605,27 @@ def install_java_with_progress():
                 "Java может быть установлена, но не обнаружена.\n"
                 "Попробуйте перезапустить лаунчер или перезагрузить компьютер.",
             )
+
+    def install_thread():
+        try:
+            status_label.config(text="Определение системы...")
+            details_label.config(text="")
+
+            system = platform.system()
+            if system == "Windows":
+                install_java_windows(status_label, details_label)
+            elif system == "Linux":
+                install_java_linux(status_label, details_label)
+            elif system == "Darwin":  # macOS
+                install_java_macos(status_label, details_label)
+            else:
+                raise Exception(f"Неподдерживаемая ОС: {system}")
+
+            # Проверяем установку
+            verify_java_installation(java_window)
+
+        except Exception as e:
+            show_java_install_error(str(e))
 
     threading.Thread(target=install_thread, daemon=True).start()
 
@@ -2872,82 +2832,7 @@ debug_java_installation()
 
 
 # Функция установки Java с прогрессом
-def install_java_with_progress():
-    java_window = tk.Toplevel(win)
-    java_window.title("Установка Java 17")
-    java_window.geometry("400x150")
 
-    progress_label = ttk.Label(java_window, text="Прогресс установки Java 17:")
-    progress_label.pack(pady=10)
-
-    progress = ttk.Progressbar(
-        java_window, orient="horizontal", length=300, mode="determinate"
-    )
-    progress.pack(pady=10)
-
-    status_label = ttk.Label(java_window, text="")
-    status_label.pack()
-
-    def download_progress_hook(count, block_size, total_size):
-        if total_size > 0:
-            percent = int(count * block_size * 100 / total_size)
-            progress["value"] = percent
-            status_label.config(text=f"Скачано {percent}%")
-            java_window.update_idletasks()
-
-    def install_thread():
-        try:
-            system = platform.system()
-            if system == "Windows":
-                url = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_windows_hotspot_17.0.11_9.msi"
-                msi_path = os.path.join(os.environ["TEMP"], "OpenJDK17.msi")
-                urllib.request.urlretrieve(
-                    url,
-                    msi_path,
-                    reporthook=lambda c, b, t: download_progress_hook(c, b, t),
-                )
-                subprocess.run(
-                    f'msiexec /i "{msi_path}" /quiet', shell=True, check=True
-                )
-                os.remove(msi_path)
-            elif system == "Linux":
-                subprocess.run(
-                    "sudo apt-get install -y wget apt-transport-https",
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run(
-                    "wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo apt-key add -",
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run(
-                    "echo \"deb https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main\" | sudo tee /etc/apt/sources.list.d/adoptium.list",
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run("sudo apt-get update -y", shell=True, check=True)
-                subprocess.run(
-                    "sudo apt-get install -y temurin-17-jdk", shell=True, check=True
-                )
-            elif system == "Darwin":
-                subprocess.run(
-                    '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run("brew tap adoptium/temurin", shell=True, check=True)
-                subprocess.run("brew install --cask temurin17", shell=True, check=True)
-            java_window.destroy()
-            messagebox.showinfo("Успех :D", "Java 17 успешно установлена! ЗАПУСКАЙ!!!")
-        except Exception as e:
-            messagebox.showerror("АШЫПКА :D", f"Java 17 установлена. ЗАПУСКАЙ!!!!")
-            sys.exit(1)
-
-    if not check_java_version():
-        threading.Thread(target=install_thread, daemon=True).start()
-    else:
-        java_window.destroy()
 
 
 # Инициализация проверки Java при запуске
@@ -3106,9 +2991,13 @@ def on_closing():
 
     # Останавливаем музыку
     try:
-        mixer.music.stop()
-    except:
-        pass
+        if mixer.get_init():  # Проверяем, инициализирован ли mixer
+            mixer.music.stop()
+            mixer.quit()
+    except (RuntimeError) as e:
+        print(f"⚠️ Ошибка остановки музыки: {e}")
+    except Exception as e:
+        print(f"❌ Неожиданная ошибка при остановке музыки: {e}")
 
     win.destroy()
     sys.exit(0)
@@ -3216,6 +3105,8 @@ def load_default_background():
             bag = tk.PhotoImage(file=str(default_bg))
             img.configure(image=bag)
             print("🔧 Используем стандартный фон logo.png")
+        else:
+            print("💥 Стандартный фон также недоступен!")
     except Exception as e:
         print(f"💥 Критическая ошибка загрузки фона: {e}")
 
@@ -3289,14 +3180,6 @@ def open_game_folder():
             )
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
-
-
-import os
-import zipfile
-import shutil
-import datetime
-import tkinter as tk
-from tkinter import ttk, messagebox
 
 
 def create_backup(folder_path, backup_type):
@@ -3880,60 +3763,6 @@ def setup_backup_buttons(parent_frame):
         button_row2, text="🗑️ Удалить все бэкапы", command=delete_all_backups, width=18
     ).pack(side="left", padx=5)
 
-
-def fig1():
-    """Очистка игры с созданием бэкапов"""
-    minecraft_dir = CONFIG["minecraft_dir"]
-    mods_dir = os.path.join(minecraft_dir, "mods")
-    versions_dir = os.path.join(minecraft_dir, "versions")
-    world_dir = os.path.join(minecraft_dir, "world")
-
-    # Создаем бэкапы перед удалением
-    backups_created = []
-
-    # Бэкап модов (только если папка существует и не пустая)
-    if os.path.exists(mods_dir) and os.listdir(mods_dir):
-        backup_path_mods = create_backup(mods_dir, "mods")
-        if backup_path_mods:
-            backups_created.append(backup_path_mods)
-
-    # Бэкап версий (только если папка существует и не пустая)
-    if os.path.exists(versions_dir) and os.listdir(versions_dir):
-        backup_path_versions = create_backup(versions_dir, "versions")
-        if backup_path_versions:
-            backups_created.append(backup_path_versions)
-
-    # Бэкап мира (только если папка существует и не пустая)
-    if os.path.exists(world_dir) and os.listdir(world_dir):
-        backup_path_world = create_backup(world_dir, "world")
-        if backup_path_world:
-            backups_created.append(backup_path_world)
-
-    # Удаляем папки если они существуют (кроме мира)
-    items_to_remove = [mods_dir, versions_dir]  # Мир не удаляем при очистке!
-    for item in items_to_remove:
-        if os.path.exists(item):
-            try:
-                if os.path.isdir(item):
-                    shutil.rmtree(item)
-                    print(f"Удалено: {item}")
-                else:
-                    os.remove(item)
-                    print(f"Удалено: {item}")
-            except Exception as e:
-                print(f"Ошибка удаления {item}: {str(e)}")
-
-    # Показываем информацию о созданных бэкапах
-    if backups_created:
-        backup_info = "Созданы бэкапы:\n" + "\n".join(
-            [f"• {os.path.basename(b)}" for b in backups_created]
-        )
-        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
-    else:
-        messagebox.showinfo(
-            "Очистка",
-            "Папки mods и versions очищены (бэкапы не создавались - папки были пустые)",
-        )
 
 
 def repair_game_with_options():
@@ -4779,190 +4608,6 @@ def show_version_info():
     )
 
 
-def create_diagnostic_panel():
-    """Создает панель диагностики с цветными сообщениями"""
-    diag_window = tk.Toplevel(win)
-    diag_window.title("Диагностика проблем")
-    diag_window.geometry("700x550")
-
-    # ВСЕ ОСТАЛЬНОЕ ОБЫЧНОЕ, БЕЗ ТЕМНЫХ ФОНОВ
-
-    # Заголовок
-    header_frame = ttk.Frame(diag_window)
-    header_frame.pack(fill="x", padx=20, pady=15)
-
-    ttk.Label(
-        header_frame, text="Диагностика проблем", font=("Comfortaa", 16, "bold")
-    ).pack()
-
-    ttk.Label(
-        header_frame,
-        text="Автоматическая проверка и решение проблем",
-        font=("Comfortaa", 10),
-        foreground="gray",
-    ).pack(pady=(5, 0))
-
-    # Прогресс-бар
-    progress_frame = ttk.Frame(diag_window)
-    progress_frame.pack(fill="x", padx=20, pady=10)
-
-    progress_label = ttk.Label(progress_frame, text="Проводим диагностику...")
-    progress_label.pack()
-
-    progress_bar = ttk.Progressbar(
-        progress_frame, orient="horizontal", length=650, mode="indeterminate"
-    )
-    progress_bar.pack(pady=5)
-    progress_bar.start()
-
-    # Окно результатов - ОБЫЧНОЕ, белый фон, черный текст
-    results_frame = ttk.LabelFrame(
-        diag_window, text="Результаты диагностики", padding=10
-    )
-    results_frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-    results_text = tk.Text(
-        results_frame, height=12, wrap="word", font=("Consolas", 9)
-    )  # Обычный белый фон
-
-    scrollbar = ttk.Scrollbar(
-        results_frame, orient="vertical", command=results_text.yview
-    )
-    results_text.configure(yscrollcommand=scrollbar.set)
-
-    results_text.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    # Статус
-    status_frame = ttk.Frame(diag_window)
-    status_frame.pack(fill="x", padx=20, pady=5)
-
-    status_label = ttk.Label(status_frame, text="Начинаем проверку...")
-    status_label.pack()
-
-    # Кнопки
-    button_frame = ttk.Frame(diag_window)
-    button_frame.pack(fill="x", padx=20, pady=15)
-
-    # Первый ряд
-    row1 = ttk.Frame(button_frame)
-    row1.pack(fill="x", pady=5)
-
-    ttk.Button(
-        row1, text="Быстрая починка", command=lambda: auto_repair_game_files(), width=18
-    ).pack(side="left", padx=5)
-
-    ttk.Button(
-        row1, text="Запуск без модов", command=launch_without_mods, width=18
-    ).pack(side="left", padx=5)
-
-    # Второй ряд
-    row2 = ttk.Frame(button_frame)
-    row2.pack(fill="x", pady=5)
-
-    ttk.Button(
-        row2, text="Полная переустановка", command=complete_reinstall, width=18
-    ).pack(side="left", padx=5)
-
-    ttk.Button(
-        row2,
-        text="Создать отчет",
-        command=lambda: create_debug_report(results_text),
-        width=15,
-    ).pack(side="left", padx=5)
-
-    ttk.Button(row2, text="Закрыть", command=diag_window.destroy, width=12).pack(
-        side="right", padx=5
-    )
-
-    # Функции диагностики - ТОЛЬКО ЗДЕСЬ ЦВЕТНЫЙ ТЕКСТ
-    def add_result(text, color="black"):  # По умолчанию черный
-        results_text.insert("end", f"{text}\n", color)
-        results_text.see("end")
-        diag_window.update()
-
-    def run_diagnostic():
-        try:
-            problems_found = []
-            minecraft_dir = CONFIG["minecraft_dir"]
-
-            # Проверка структуры - зеленый
-            for folder in ["mods", "versions", "config"]:
-                path = os.path.join(minecraft_dir, folder)
-                if os.path.exists(path):
-                    add_result(f"✅ Папка {folder} найдена", "green")
-                else:
-                    problems_found.append(f"Отсутствует папка {folder}")
-                    add_result(f"❌ Папка {folder} не найдена", "red")
-
-            # Проверка модов - синий
-            mods_dir = os.path.join(minecraft_dir, "mods")
-            if os.path.exists(mods_dir):
-                mod_files = [f for f in os.listdir(mods_dir) if f.endswith(".jar")]
-                add_result(f"📦 Найдено модов: {len(mod_files)}", "blue")
-
-                if len(mod_files) == 0:
-                    problems_found.append("Папка модов пустая")
-                    add_result("⚠️ Папка модов пуста", "orange")
-
-            # Проверка ресурсов
-            memory = psutil.virtual_memory()
-            if memory.available < 3 * 1024 * 1024 * 1024:
-                problems_found.append("Мало оперативной памяти")
-                add_result(
-                    f"⚠️ Мало ОЗУ: {memory.available // 1024 // 1024}MB свободно",
-                    "orange",
-                )
-            else:
-                add_result(
-                    f"✅ ОЗУ: {memory.available // 1024 // 1024}MB свободно", "green"
-                )
-
-            disk = psutil.disk_usage(minecraft_dir)
-            if disk.free < 2 * 1024 * 1024 * 1024:
-                problems_found.append("Мало места на диске")
-                add_result(
-                    f"⚠️ Мало места: {disk.free // 1024 // 1024}MB свободно", "orange"
-                )
-            else:
-                add_result(f"✅ Диск: {disk.free // 1024 // 1024}MB свободно", "green")
-
-            # Java
-            java_ok = check_java_version()
-            if java_ok:
-                add_result("✅ Java установлена и работает", "green")
-            else:
-                problems_found.append("Проблемы с Java")
-                add_result("❌ Java не найдена", "red")
-
-            # Финальный отчет
-            progress_bar.stop()
-
-            if problems_found:
-                add_result(f"\n🚨 Найдено проблем: {len(problems_found)}", "red")
-                for problem in problems_found:
-                    add_result(f"• {problem}", "orange")
-                status_label.config(text=f"Обнаружено {len(problems_found)} проблем")
-            else:
-                add_result("\n🎉 Все системы в норме!", "green")
-                add_result("Игра должна запускаться без проблем", "blue")
-                status_label.config(text="Проблем не обнаружено")
-
-        except Exception as e:
-            add_result(f"❌ Ошибка диагностики: {str(e)}", "red")
-            status_label.config(text="Ошибка при диагностике")
-
-    # Настройка цветов для текста
-    results_text.tag_configure("green", foreground="green")
-    results_text.tag_configure("red", foreground="red")
-    results_text.tag_configure("orange", foreground="orange")
-    results_text.tag_configure("blue", foreground="blue")
-
-    # Запускаем диагностику
-    diag_window.after(500, run_diagnostic)
-    diag_window.focus_force()
-
-
 def format_changelog(changelog):
     """Форматирует changelog для красивого отображения"""
     if not changelog:
@@ -4970,7 +4615,7 @@ def format_changelog(changelog):
 
     # Убираем Markdown-разметку
     changelog = re.sub(r"#{2,}", "", changelog)
-    changelog = re.sub(r"\- ", "• ", changelog)
+    changelog = re.sub(r"- ", "• ", changelog)
     changelog = re.sub(r"\*\*(.*?)\*\*", r"▸ \1", changelog)
     changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
     changelog = re.sub(r"`(.*?)`", r"\1", changelog)
@@ -5330,132 +4975,20 @@ help_menu.add_command(label="Проверить обновления", command=c
 menu_bar.add_cascade(label="Справка", menu=help_menu)
 
 
-def setup_adaptive_background():
-    """Автоматический подбор фона под разрешение экрана"""
-
-    RESOLUTION_MAP = {
-        (1920, 1080): "logo1.png",  # Full HD
-        (1920, 1200): "logo2.png",  # WUXGA
-        (2048, 1080): "logo3.png",  # 2K DCI
-        (2048, 1536): "logo4.png",  # QXGA
-        (2560, 1440): "logo5.png",  # 2K QHD
-        (2560, 1600): "logo6.png",  # WQXGA
-        (3440, 1440): "logo7.png",  # UltraWide
-        (3840, 2160): "logo8.png",  # 4K UHD
-        (3840, 2400): "logo9.png",  # WQUXGA
-    }
-
-    screen_width = win.winfo_screenwidth()
-    screen_height = win.winfo_screenheight()
-
-    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
-
-    # Прямое соответствие
-    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
-
-    if bg_file:
-        print(f"✅ Найдено точное соответствие: {bg_file}")
-        load_custom_background(bg_file)
-    else:
-        # Ищем ближайшее по соотношению сторон
-        bg_file = find_closest_resolution(screen_width, screen_height)
-        print(f"🔄 Используем ближайшее: {bg_file}")
-        load_custom_background(bg_file)
 
 
-def find_closest_resolution(width, height):
-    """Находит ближайшее разрешение по соотношению сторон"""
-    aspect_ratio = width / height
-
-    # Ближайшие соотношения сторон
-    ratios = {
-        (1920, 1080): 1.78,  # 16:9
-        (1920, 1200): 1.60,  # 16:10
-        (2048, 1080): 1.90,  # ~17:9
-        (2048, 1536): 1.33,  # 4:3
-        (2560, 1440): 1.78,  # 16:9
-        (2560, 1600): 1.60,  # 16:10
-        (3440, 1440): 2.39,  # 21:9
-        (3840, 2160): 1.78,  # 16:9
-        (3840, 2400): 1.60,  # 16:10
-    }
-
-    # Ищем с наименьшей разницей в соотношении
-    best_match = "logo1.png"  # дефолт
-    min_diff = float("inf")
-
-    for res, target_ratio in ratios.items():
-        diff = abs(aspect_ratio - target_ratio)
-        if diff < min_diff:
-            min_diff = diff
-            best_match = RESOLUTION_MAP[res]
-
-    return best_match
-
-
-def load_custom_background(filename):
-    """Загружает кастомный фон"""
-    try:
-        bg_path = RESOURCE_DIR / filename
-        if bg_path.exists():
-            global bag, img
-            bag = tk.PhotoImage(file=str(bg_path))
-            img.configure(image=bag)
-            print(f"🎨 Загружен фон: {filename}")
-        else:
-            print(f"⚠️ Фон {filename} не найден")
-            # Грузим стандартный как запасной вариант
-            load_default_background()
-    except Exception as e:
-        print(f"❌ Ошибка загрузки фона {filename}: {e}")
-        load_default_background()
-
-
-def load_default_background():
-    """Загружает стандартный фон"""
-    try:
-        global bag, img
-        default_bg = RESOURCE_DIR / "logo.png"
-        if default_bg.exists():
-            bag = tk.PhotoImage(file=str(default_bg))
-            img.configure(image=bag)
-            print("🔧 Используем стандартный фон")
-    except Exception as e:
-        print(f"💥 Критическая ошибка загрузки фона: {e}")
-
-
-def setup_adaptive_background():
-    """Автоматический подбор фона под разрешение экрана"""
-
-    RESOLUTION_MAP = {
-        (1920, 1080): "logo1.png",  # Full HD
-        (1920, 1200): "logo2.png",  # WUXGA
-        (2048, 1080): "logo3.png",  # 2K DCI
-        (2048, 1536): "logo4.png",  # QXGA
-        (2560, 1440): "logo5.png",  # 2K QHD
-        (2560, 1600): "logo6.png",  # WQXGA
-        (3440, 1440): "logo7.png",  # UltraWide
-        (3840, 2160): "logo8.png",  # 4K UHD
-        (3840, 2400): "logo2.png",  # WQUXGA (временно используем logo2)
-    }
-
-    screen_width = win.winfo_screenwidth()
-    screen_height = win.winfo_screenheight()
-
-    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
-
-    # Прямое соответствие
-    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
-
-    if bg_file:
-        print(f"✅ Найдено точное соответствие: {bg_file}")
-        load_custom_background(bg_file)
-    else:
-        # Ищем ближайшее по соотношению сторон
-        bg_file = find_closest_resolution(screen_width, screen_height)
-        print(f"🔄 Используем ближайшее: {bg_file}")
-        load_custom_background(bg_file)
-
+# Глобальная карта соответствия разрешений и логотипов
+RESOLUTION_MAP = {
+    (1920, 1080): "logo1.png",
+    (1920, 1200): "logo2.png",
+    (2048, 1080): "logo3.png",
+    (2048, 1536): "logo4.png",
+    (2560, 1440): "logo5.png",
+    (2560, 1600): "logo6.png",
+    (3440, 1440): "logo7.png",
+    (3840, 2160): "logo8.png",
+    (3840, 2400): "logo9.png",
+}
 
 def find_closest_resolution(width, height):
     """Находит ближайшее разрешение по соотношению сторон"""
@@ -5490,27 +5023,6 @@ def find_closest_resolution(width, height):
     return best_match
 
 
-def load_custom_background(filename):
-    """Загружает кастомный фон"""
-    try:
-        bg_path = RESOURCE_DIR / filename
-        if bg_path.exists():
-            global bag, img
-            bag = tk.PhotoImage(file=str(bg_path))
-            img.configure(image=bag)
-            print(f"🎨 Успешно загружен фон: {filename}")
-
-            # Сохраняем выбор в настройках
-            save_background_preference(filename)
-        else:
-            print(f"⚠️ Фон {filename} не найден, пробуем скачать...")
-            download_and_set_background(filename)
-
-    except Exception as e:
-        print(f"❌ Ошибка загрузки фона {filename}: {e}")
-        load_default_background()
-
-
 def download_and_set_background(filename):
     """Скачивает и устанавливает фон если его нет"""
     try:
@@ -5529,19 +5041,7 @@ def download_and_set_background(filename):
         load_default_background()
 
 
-def load_default_background():
-    """Загружает стандартный фон"""
-    try:
-        global bag, img
-        default_bg = RESOURCE_DIR / "logo.png"
-        if default_bg.exists():
-            bag = tk.PhotoImage(file=str(default_bg))
-            img.configure(image=bag)
-            print("🔧 Используем стандартный фон logo.png")
-        else:
-            print("💥 Стандартный фон также недоступен!")
-    except Exception as e:
-        print(f"💥 Критическая ошибка загрузки фона: {e}")
+
 
 
 def save_background_preference(filename):
@@ -5558,27 +5058,6 @@ def save_background_preference(filename):
     except Exception as e:
         print(f"⚠️ Не удалось сохранить настройки фона: {e}")
 
-
-def show_background_menu():
-    """Показывает меню выбора фона"""
-    menu = tk.Menu(win, tearoff=0, bg="#2b2b2b", fg="white", font=("Comfortaa", 9))
-
-    backgrounds = [
-        ("🖥️  1920×1080 (Full HD)", "logo1.png"),
-        ("💻  1920×1200 (WUXGA)", "logo2.png"),
-        ("🎬  2048×1080 (2K DCI)", "logo3.png"),
-        ("📊  2048×1536 (QXGA)", "logo4.png"),
-        ("🔥  2560×1440 (2K QHD)", "logo5.png"),
-        ("🚀  2560×1600 (WQXGA)", "logo6.png"),
-        ("🎮  3440×1440 (UltraWide)", "logo7.png"),
-        ("4K  3840×2160 (4K UHD)", "logo8.png"),
-    ]
-
-    for name, file in backgrounds:
-        menu.add_command(label=name, command=lambda f=file: load_custom_background(f))
-
-    # Показываем меню под курсором
-    menu.tk_popup(win.winfo_pointerx(), win.winfo_pointery())
 
 
 def show_simple_background_selector():
@@ -5683,13 +5162,6 @@ def show_simple_background_selector():
     except Exception as e:
         print(f"❌ Ошибка открытия селектора фонов: {e}")
         messagebox.showerror("Ошибка", "Не удалось открыть выбор фона")
-
-
-def apply_background_and_close(filename, window):
-    """Применяет фон и закрывает окно"""
-    load_custom_background(filename)
-    window.destroy()
-    messagebox.showinfo("Успех", f"Фон {filename} применен!")
 
 
 # Функция для открытия настроек
@@ -6608,7 +6080,6 @@ def start_game_launch():
                         return False
 
                     # Пытаемся прочитать JAR как архив
-                    import zipfile
                     with zipfile.ZipFile(jar_path, 'r') as jar:
                         file_list = jar.namelist()
 
@@ -6621,6 +6092,10 @@ def start_game_launch():
                         # Проверяем наличие основных необходимых файлов
                         has_manifest = any('META-INF/MANIFEST.MF' in f for f in file_list)
                         has_bootstrap = any('cpw/mods/bootstraplauncher/' in f for f in file_list)
+
+                        if not has_manifest:
+                            print("⚠️ Отсутствует MANIFEST.MF")
+                            return False
 
                         if not has_bootstrap:
                             print("⚠️ Отсутствуют файлы bootstraplauncher")
@@ -6870,7 +6345,20 @@ def start_game_launch():
             update_ui_log("🚀 Запускаем Minecraft...")
 
             # Запускаем процесс
-            process = launch_minecraft_process_with_logging(command)
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=CONFIG["minecraft_dir"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace"
+                )
+                update_ui_log("✅ Процесс Minecraft запущен")
+            except Exception as e:
+                update_ui_log(f"❌ Ошибка запуска процесса: {e}")
+                raise
 
             if process:
                 update_ui_status("Игра запущена", "Minecraft загружается...")
@@ -7021,7 +6509,7 @@ def auto_fix_version_files():
                     with open(json_path, 'r', encoding='utf-8') as f:
                         json.load(f)
                 except Exception as e:
-                    print(f"❌ Обнаружен поврежденный файл: {version_folder}")
+                    print(f"❌ Обнаружен поврежденный файл: {version_folder} — {e}")
                     problematic_versions.append(version_folder)
 
         # Исправляем проблемные версии
@@ -7046,7 +6534,6 @@ def auto_fix_version_files():
         messagebox.showerror("Ошибка", f"Не удалось проверить версии: {e}")
         return False
 
-
 def repair_single_version(version_name):
     """Исправляет одну конкретную версию"""
     try:
@@ -7068,10 +6555,9 @@ def repair_single_version(version_name):
         return False
 
 def install_required_components_sync(version_name):
-
     """Синхронная установка компонентов (без отдельного окна)"""
     version_configs = {
-        "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
+        "YamalPixel": ("1.20.1", "0.17.2"),
         "Minecraft 1.7.10": ("1.7.10", None),
         "Minecraft 1.8.9": ("1.8.9", None),
         "Minecraft 1.12.2": ("1.12.2", None),
@@ -7087,7 +6573,7 @@ def install_required_components_sync(version_name):
         "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
         "Minecraft 1.19.2": ("1.19.2", None),
         "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
-        "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
+        "Minecraft 1.20.1": ("1.20.1", None),
         "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.2": ("1.20.2", None),
         "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
@@ -7110,53 +6596,45 @@ def install_required_components_sync(version_name):
         "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", "latest"),
         "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", "latest"),
     }
-    try:
-        if version_name in version_configs:
-            config = version_configs[version_name]
 
-            # ЗАЩИТА: проверяем количество значений
-            if len(config) == 2:
-                # Если 2 значения, добавляем третье (None)
-                minecraft_version, loader_type = config
-                loader_version = None
-            elif len(config) == 3:
-                # Если 3 значения, распаковываем нормально
-                minecraft_version, loader_type, loader_version = config
-            else:
-                raise ValueError(f"Неверная конфигурация для {version_name}")
-    except Exception as e:
-        print(f"❌ Ошибка в install_required_components_sync: {e}")
-    if version_name in version_configs:
-        config = version_configs[version_name]
-        # Безопасная распаковка
-        if len(config) == 3:
-            minecraft_version, loader_type, loader_version = config
-        else:
-            minecraft_version, loader_type = config
-            loader_version = None
+    # Проверяем, есть ли версия в конфиге
+    if version_name not in version_configs:
+        print(f"❌ Неизвестная версия: {version_name}")
+        return
 
-        # Устанавливаем Minecraft версию БЕЗОПАСНО
-        print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
+    config = version_configs[version_name]
 
-        success = safe_install_minecraft_version(
-            version=minecraft_version,
+    # Безопасная распаковка
+    if len(config) == 3:
+        minecraft_version, loader_type, loader_version = config
+    elif len(config) == 2:
+        minecraft_version, loader_type = config
+        loader_version = None
+    else:
+        print(f"❌ Неверная длина конфигурации для {version_name}")
+        return
+
+    # Устанавливаем Minecraft
+    print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
+    success = safe_install_minecraft_version(
+        version=minecraft_version,
+        minecraft_directory=CONFIG["minecraft_dir"]
+    )
+
+    if not success:
+        raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
+
+    # Устанавливаем модлоадер, если нужно
+    if loader_type == "fabric" and loader_version:
+        print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
+        minecraft_launcher_lib.fabric.install_fabric(
+            minecraft_version=minecraft_version,
+            loader_version=loader_version,
             minecraft_directory=CONFIG["minecraft_dir"]
         )
-
-        if not success:
-            raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
-
-        # Устанавливаем модлоадер если нужно
-        if loader_type == "fabric" and loader_version:
-            print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
-            minecraft_launcher_lib.fabric.install_fabric(
-                minecraft_version=minecraft_version,
-                loader_version=loader_version,
-                minecraft_directory=CONFIG["minecraft_dir"]
-            )
-        elif loader_type == "neoforge":
-            print(f"Устанавливаем NeoForge для {minecraft_version}")
-            install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+    elif loader_type == "neoforge":
+        print(f"Устанавливаем NeoForge для {minecraft_version}")
+        install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
 
 
 def install_neoforge_sync(minecraft_version, minecraft_directory):
@@ -7326,6 +6804,7 @@ def safe_install_minecraft_version(version, minecraft_directory, progress_callba
 
 
 def install_with_ssl_bypass(version, minecraft_directory):
+    _ = minecraft_directory  # Не используется
     """Установка с обходом SSL проверок (только для проблемных версий)"""
     try:
         print(f"🔄 Пробуем альтернативный метод установки {version}...")
@@ -7400,62 +6879,6 @@ def launch_minecraft_process_with_logging(command):
     except Exception as e:
         log_launch_step(logger, "КРИТИЧЕСКАЯ ОШИБКА", f"Не удалось создать процесс: {e}")
         return None, logger
-
-
-def format_minecraft_output(line):
-    """Форматирует вывод Minecraft для отображения в лаунчере"""
-    if not line:
-        return None
-
-    # Фильтруем только важные сообщения
-    important_patterns = [
-        "Loading Minecraft",
-        "Loading mods",
-        "WARN",
-        "ERROR",
-        "INFO",
-        "Shaders",
-        "OpenGL",
-        "Sound engine",
-        "Setting user",
-        "Failed to",
-    ]
-
-    # Пропускаем менее важные сообщения
-    skip_patterns = [
-        "FabricLoader",
-        "SpongePowered",
-        "Backend library",
-        "Reloading ResourceManager",
-        "Created:",
-        "Successfully reloaded",
-    ]
-
-    # Проверяем, содержит ли строка важные паттерны
-    if any(pattern in line for pattern in important_patterns):
-        # Укорачиваем слишком длинные строки
-        if len(line) > 100:
-            line = line[:100] + "..."
-
-        # Добавляем эмодзи для разных типов сообщений
-        if "ERROR" in line or "Failed to" in line:
-            return f"❌ {line}"
-        elif "WARN" in line:
-            return f"⚠️ {line}"
-        elif "Loading Minecraft" in line:
-            return f"🎮 {line}"
-        elif "Loading mods" in line:
-            return f"📦 {line}"
-        elif "Setting user" in line:
-            return f"👤 {line}"
-        else:
-            return f"ℹ️ {line}"
-
-    # Пропускаем строки с неважными паттернами
-    elif any(pattern in line for pattern in skip_patterns):
-        return None
-
-    return None
 
 
 def is_minecraft_process_running(process):
@@ -7565,33 +6988,6 @@ def format_minecraft_output(line):
         return None
 
     return None
-
-
-def is_minecraft_process_running(process):
-    """Проверяет, запущен ли процесс Minecraft"""
-    try:
-        # Проверяем наш процесс
-        if process.poll() is None:
-            return True
-
-        # Дополнительная проверка через tasklist
-        if os.name == "nt":
-            result = subprocess.run(
-                ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
-                capture_output=True,
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            return "javaw.exe" in result.stdout
-        else:
-            result = subprocess.run(
-                ["pgrep", "-f", "minecraft"], capture_output=True, text=True
-            )
-            return result.returncode == 0
-
-    except:
-        return False
-
 
 
 
@@ -7753,21 +7149,21 @@ class ModernButton(tk.Canvas):
         self.draw_button()
         self.after(80, self.animate_glow)
 
-    def on_hover(self, event):
+    def on_hover(self, _event):
         """При наведении курсора"""
         self.draw_button()
 
-    def on_leave(self, event):
+    def on_leave(self, _event):
         """При уходе курсора"""
         self.draw_button()
 
-    def on_press(self, event):
+    def on_press(self, _event):
         """При нажатии"""
         self.is_pressed = True
         self.pulse_phase += 0.5
         self.draw_button()
 
-    def on_release(self, event):
+    def on_release(self, _event):
         """При отпускании"""
         self.is_pressed = False
         self.draw_button()
@@ -7994,14 +7390,14 @@ class ModernQuickLaunchButton(tk.Canvas):
         ]
         return self.create_polygon(points, smooth=True, **kwargs)
 
-    def on_press(self, event):
+    def on_press(self, _event):
         """При нажатии"""
         self.is_pressed = True
         # Временно затемняем кнопку при нажатии
         self.itemconfig("bg", fill=self.darken_color(self.gradient[0]))
         self.itemconfig("gradient", fill=self.darken_color(self.gradient[1]))
 
-    def on_release(self, event):
+    def on_release(self, __event):
         """При отпускании"""
         self.is_pressed = False
         # Возвращаем нормальные цвета
@@ -8217,23 +7613,23 @@ class ModernCheckbutton(tk.Canvas):
                 0, 0, self._width, self._height, outline="#667eea", width=1
             )
 
-    def toggle(self, event):
+    def toggle(self, _event):
         self.variable.set(not self.variable.get())
         self.draw_checkbutton()
         if self.command:
             self.command()
 
-    def on_hover(self, event):
+    def on_hover(self, _event):
         self.is_hovered = True
         self.draw_checkbutton()
 
-    def on_leave(self, event):
+    def on_leave(self, _event):
         self.is_hovered = False
         self.draw_checkbutton()
 
 
 # Использование для музыки
-enabled1 = tk.IntVar()
+
 music_checkbox = ModernCheckbutton(
     win,
     text="🎵 Включить музыку",
@@ -8417,22 +7813,22 @@ class ModernCloseButton(tk.Canvas):
         self.draw_button()
         self.after(80, self.animate_glow)
 
-    def on_hover(self, event):
+    def on_hover(self, _event):
         """При наведении курсора"""
         self.animation_running = True
         self.draw_button()
 
-    def on_leave(self, event):
+    def on_leave(self, _event):
         """При уходе курсора"""
         self.animation_running = False
         self.draw_button()
 
-    def on_press(self, event):
+    def on_press(self, _event):
         """При нажатии"""
         self.is_pressed = True
         self.draw_button()
 
-    def on_release(self, event):
+    def on_release(self, _event):
         """При отпускании"""
         self.is_pressed = False
         self.draw_button()
@@ -8579,7 +7975,7 @@ class ModernEntry(tk.Canvas):
             tags="border",
         )
 
-    def on_focus_in(self, event):
+    def on_focus_in(self, _event):
         """При фокусе"""
         self.is_focused = True
         self.draw_background()
@@ -8587,7 +7983,7 @@ class ModernEntry(tk.Canvas):
             self.entry.configure(fg="#2b2b2b")
             self.text_value.set("")
 
-    def on_focus_out(self, event):
+    def on_focus_out(self, _event):
         """При потере фокуса"""
         self.is_focused = False
         self.draw_background()
@@ -8767,12 +8163,12 @@ class ModernOnlineButton(tk.Canvas):
         # ИСПРАВЛЕНИЕ: передаем ссылку на функцию, а не вызываем её
         self.after(80, self.animate_glow)
 
-    def on_press(self, event):
+    def on_press(self, _event):
         """При нажатии"""
         self.is_pressed = True
         self.draw_button()
 
-    def on_release(self, event):
+    def on_release(self, _event):
         """При отпускании"""
         self.is_pressed = False
         self.draw_button()
@@ -8884,7 +8280,7 @@ def show_online_players():
 
         # Пинг
         ping_label = ttk.Label(
-            main_frame,  # ИСПРАВЛЕНО: main_frame вместо main_server
+            main_frame,
             text=f"📡 Пинг: {status.latency:.1f} мс",
             font=("Comfortaa", 10),
             foreground="#888888",
@@ -8909,6 +8305,8 @@ def show_online_players():
         close_btn.pack(pady=15)
 
     except Exception as e:
+        print(f"❌ Ошибка подключения к серверу: {e}")  # ← используем 'e' здесь
+
         # Красивое окно ошибки
         error_window = tk.Toplevel(win)
         error_window.title("❌ Ошибка")
@@ -9125,7 +8523,7 @@ class ModernVersionSelector(tk.Canvas):
             tags="icon",
         )
 
-    def toggle_dropdown(self, event):
+    def toggle_dropdown(self, _event):
         """Открывает/закрывает выпадающий список"""
         if not self.is_open:
             self.combobox.place(
@@ -9182,7 +8580,7 @@ version_selector.place(relx=0.5, rely=0.4, anchor="c")
 
 
 # Функция выбора версии
-def select_version(event):
+def select_version(_event):
     selected_version = version_selector.get()
 
     # Обновляем конфигурацию в зависимости от выбранной версии
@@ -9327,11 +8725,11 @@ class ModrinthAPI:
                 available_loaders.append(loader)
         return available_loaders
 
-    def search_mods(self, query, limit=20):
+    def search_mods(self, query, limit=30):
         """Поиск модов на Modrinth"""
         try:
             url = f"{self.base_url}/search"
-            params = {"query": query, "limit": limit}
+            params = {"query": query, "limit": limit, "index": "relevance"}
             response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
             return response.json()
@@ -9340,9 +8738,9 @@ class ModrinthAPI:
             return None
 
     def get_mod_versions(self, mod_id, minecraft_version, loader):
-        """Получение версий мода с улучшенной обработкой файлов"""
         try:
             url = f"{self.base_url}/project/{mod_id}/version"
+            # Передаём как JSON-строки
             params = {
                 "game_versions": f'["{minecraft_version}"]',
                 "loaders": f'["{loader}"]',
@@ -9351,34 +8749,26 @@ class ModrinthAPI:
             response.raise_for_status()
             versions = response.json()
 
-            # Фильтруем версии, у которых есть файлы
-            versions_with_files = []
-            for version in versions:
-                if "files" in version and version["files"]:
-                    # Проверяем, что есть primary файл или любой JAR файл
-                    primary_file = None
-                    for file_info in version["files"]:
-                        if file_info.get("primary", False) or file_info[
-                            "filename"
-                        ].endswith(".jar"):
-                            primary_file = file_info
-                            break
-
-                    if primary_file:
-                        versions_with_files.append(version)
-
-            return versions_with_files if versions_with_files else versions
+            # Фильтруем версии, у которых есть JAR-файл
+            return [
+                v for v in versions
+                if v.get("files") and any(f["filename"].endswith(".jar") for f in v["files"])
+            ]
 
         except Exception as e:
             print(f"Ошибка получения версий мода {mod_id}: {e}")
             return None
 
+    import urllib.parse
+
     def download_mod(self, project_slug, version_id, filename, mods_dir):
-        """Скачивание мода с правильным URL"""
+        """Скачивание мода с правильным экранированием имени файла"""
         try:
-            # ПРАВИЛЬНЫЙ URL для скачивания файлов Modrinth
-            # Формат: https://cdn.modrinth.com/data/PROJECT_SLUG/versions/VERSION_ID/FILENAME
-            file_url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{filename}"
+            # Экранируем имя файла — особенно важно для +, пробелов, % и т.д.
+            encoded_filename = urllib.parse.quote(filename)
+
+            # Правильный URL
+            file_url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{encoded_filename}"
 
             print(f"📥 Скачиваем: {file_url}")
 
@@ -9396,13 +8786,9 @@ class ModrinthAPI:
 
         except Exception as e:
             print(f"❌ Ошибка скачивания мода {filename}: {e}")
+            return self.download_mod_alternative(project_slug, version_id, filename, mods_dir)
 
-            # Альтернативный метод через API
-            return self.download_mod_alternative(
-                project_slug, version_id, filename, mods_dir
-            )
-
-    def download_mod_alternative(self, project_slug, version_id, filename, mods_dir):
+    def download_mod_alternative(self, _project_slug, version_id, filename, mods_dir):
         """Альтернативный метод скачивания через получение информации о версии"""
         try:
             # Получаем информацию о версии
@@ -9446,10 +8832,14 @@ class ModrinthAPI:
 
 
 # Функция создания новой сборки с выбором модов
+# === Глобальные переменные для сортировки ===
+current_sort_col = "downloads"
+current_sort_reverse = False
+
+
 def create_new_collection():
+    """Создаёт окно для создания новой сборки модов"""
     global current_sort_col, current_sort_reverse
-    current_sort_col = "downloads"
-    current_sort_reverse = False
     collection_window = tk.Toplevel(win)
     collection_window.title("Создать сборку")
     collection_window.geometry("900x1080")
@@ -9463,7 +8853,7 @@ def create_new_collection():
         main_frame, text="📦 Новая сборка модов", font=("Comfortaa", 16, "bold")
     ).pack(pady=(0, 20))
 
-    # Основные настройки
+    # === Основные настройки ===
     settings_frame = ttk.Frame(main_frame)
     settings_frame.pack(fill="x", pady=(0, 20))
 
@@ -9473,15 +8863,12 @@ def create_new_collection():
         fill="x", pady=(0, 10)
     )
 
-    # Версия и загрузчик
     meta_frame = ttk.Frame(settings_frame)
     meta_frame.pack(fill="x")
 
-    # Версия Minecraft
     ttk.Label(meta_frame, text="Версия:").pack(side="left")
     version_var = tk.StringVar(value="1.20.1")
 
-    # Все доступные версии
     all_versions = [
         "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
         "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
@@ -9497,27 +8884,21 @@ def create_new_collection():
     )
     version_combo.pack(side="left", padx=(5, 20))
 
-    # Загрузчик
     ttk.Label(meta_frame, text="Загрузчик:").pack(side="left")
     loader_var = tk.StringVar(value="fabric")
 
-    # Создаем API для получения доступных загрузчиков
     api = ModrinthAPI()
 
     def update_loaders(*args):
-        """Обновляет список доступных загрузчиков для выбранной версии"""
+        """Обновляет список загрузчиков при смене версии"""
         selected_version = version_var.get()
         available_loaders = api.get_supported_loaders(selected_version)
 
-        # Обновляем значения комбобокса
         loader_combo['values'] = available_loaders
-
-        # Если текущий загрузчик не доступен, выбираем первый доступный
         if loader_var.get() not in available_loaders and available_loaders:
             loader_var.set(available_loaders[0])
 
-    # Привязываем обновление загрузчиков к изменению версии
-    version_var.trace('w', update_loaders)
+    version_var.trace_add('write', update_loaders)
 
     loader_combo = ttk.Combobox(
         meta_frame,
@@ -9528,18 +8909,16 @@ def create_new_collection():
     )
     loader_combo.pack(side="left", padx=5)
 
-    # Инициализируем загрузчики для начальной версии
     update_loaders()
 
-    # Вкладки выбора модов
+    # === Вкладки модов ===
     notebook = ttk.Notebook(main_frame)
     notebook.pack(fill="both", expand=True, pady=(0, 20))
 
-    # Вкладка 1: Локальные моды
+    # --- Локальные моды ---
     local_frame = ttk.Frame(notebook, padding=10)
     notebook.add(local_frame, text="📁 Мои моды")
 
-    # Поиск в локальных модах
     local_search_frame = ttk.Frame(local_frame)
     local_search_frame.pack(fill="x", pady=(0, 10))
 
@@ -9561,7 +8940,6 @@ def create_new_collection():
         local_search_frame, text="🔄 Обновить", command=lambda: load_local_mods()
     ).pack(side="left")
 
-    # Список локальных модов
     local_tree_frame = ttk.Frame(local_frame)
     local_tree_frame.pack(fill="both", expand=True)
 
@@ -9576,7 +8954,6 @@ def create_new_collection():
     local_mods_tree.column("file", width=200)
     local_mods_tree.column("size", width=80)
 
-    # Загрузка локальных модов
     def load_local_mods(search_query=None):
         local_mods_tree.delete(*local_mods_tree.get_children())
         mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
@@ -9596,17 +8973,16 @@ def create_new_collection():
                         [
                             word.capitalize()
                             for word in file.replace(".jar", "")
-                        .replace("_", " ")
-                        .replace("-", " ")
-                        .split()
+                            .replace("_", " ")
+                            .replace("-", " ")
+                            .split()
                         ]
                     )
-
                     local_mods_tree.insert(
                         "", "end", values=(name, file, f"{size:.1f} MB"), tags=(file,)
                     )
-                except:
-                    pass
+                except (OSError, FileNotFoundError) as e:
+                    print(f"⚠️ Не удалось прочитать файл {file}: {e}")
 
     local_scrollbar = ttk.Scrollbar(
         local_tree_frame, orient="vertical", command=local_mods_tree.yview
@@ -9618,11 +8994,10 @@ def create_new_collection():
 
     load_local_mods()
 
-    # Вкладка 2: Поиск на Modrinth
+    # --- Modrinth ---
     modrinth_frame = ttk.Frame(notebook, padding=10)
     notebook.add(modrinth_frame, text="🌐 Modrinth")
 
-    # Поиск
     search_frame = ttk.Frame(modrinth_frame)
     search_frame.pack(fill="x", pady=(0, 10))
 
@@ -9632,12 +9007,16 @@ def create_new_collection():
     search_entry.pack(side="left", padx=(5, 10))
 
     def search_modrinth():
+        """Поиск модов: сначала ищем, потом помечаем совместимость"""
         query = search_var.get().strip()
         if not query:
             messagebox.showwarning("Поиск", "Введите название мода")
             return
 
-        # Показываем прогресс
+        # Текущие настройки
+        minecraft_version = version_var.get()
+        loader_type = loader_var.get().lower()
+
         progress_window = tk.Toplevel(collection_window)
         set_window_icon(progress_window)
         progress_window.title("Поиск")
@@ -9645,134 +9024,153 @@ def create_new_collection():
         progress_window.transient(collection_window)
         progress_window.grab_set()
 
-        ttk.Label(progress_window, text="Ищем моды на Modrinth...").pack(pady=10)
-        progress = ttk.Progressbar(
-            progress_window, orient="horizontal", mode="indeterminate"
-        )
+        ttk.Label(progress_window, text="🔍 Ищем моды...").pack(pady=10)
+        progress = ttk.Progressbar(progress_window, mode="indeterminate")
         progress.pack(pady=10)
         progress.start()
 
         def do_search():
-            api = ModrinthAPI()
-            results = api.search_mods(query)
+            try:
+                # 1. Ищем до 30 модов
+                results = api.search_mods(query, limit=30)
+                collection_window.after(0, progress_window.destroy)
 
-            collection_window.after(0, progress_window.destroy)
+                if not results or "hits" not in results:
+                    collection_window.after(0, lambda: messagebox.showinfo("Результат", "Ничего не найдено"))
+                    return
 
-            if results and "hits" in results:
-                collection_window.after(
-                    0, lambda: display_modrinth_results(results["hits"])
+                mods = results["hits"]
+
+                # 2. Прогресс-бар: анализ совместимости
+                compatibility_window = tk.Toplevel(collection_window)
+                set_window_icon(compatibility_window)
+                compatibility_window.title("Анализ совместимости")
+                compatibility_window.geometry("400x120")
+                compatibility_window.transient(collection_window)
+                compatibility_window.grab_set()
+
+                ttk.Label(compatibility_window, text="🔍 Анализ совместимости...").pack(pady=10)
+                compat_progress = ttk.Progressbar(
+                    compatibility_window, orient="horizontal", mode="determinate", length=300
                 )
-            else:
-                collection_window.after(
-                    0, lambda: messagebox.showinfo("Результат", "Моды не найдены")
-                )
+                compat_progress.pack(pady=5)
+                compat_progress.config(maximum=len(mods))
+
+                compat_status = tk.StringVar(value="Анализ 1 из ...")
+                ttk.Label(compatibility_window, textvariable=compat_status).pack(pady=5)
+
+                # 3. Помечаем каждый мод: совместим или нет
+                for idx, mod in enumerate(mods):
+                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))
+                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))
+
+                    # Проверяем совместимость
+                    versions = api.get_mod_versions(
+                        mod_id=mod["project_id"],
+                        minecraft_version=minecraft_version,
+                        loader=loader_type
+                    )
+
+                    if versions:
+                        mod["compatible"] = True
+                        mod["compatible_version"] = versions[0]["version_number"]
+                        mod["filename"] = versions[0]["files"][0]["filename"]
+                    else:
+                        mod["compatible"] = False
+                        mod["compatible_version"] = "❌ Нет версии"
+                        mod["filename"] = "N/A"
+
+                collection_window.after(0, compatibility_window.destroy)
+
+                # 4. Сортируем: совместимые — вверх
+                mods.sort(key=lambda m: (not m["compatible"], -m.get("downloads", 0)))
+
+                collection_window.after(0, lambda: display_modrinth_results(mods))
+
+            except Exception as e:
+                collection_window.after(0, progress_window.destroy)
+                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}"))
 
         threading.Thread(target=do_search, daemon=True).start()
 
     def display_modrinth_results(mods):
+        """Отображает моды с корректными tags"""
         modrinth_tree.delete(*modrinth_tree.get_children())
 
-        # Сортируем моды по количеству загрузок (по убыванию)
-        sorted_mods = sorted(mods, key=lambda x: x.get("downloads", 0), reverse=True)
-
-        for mod in sorted_mods:
-            # Форматируем число загрузок с разделителями тысяч
+        for mod in mods:
             downloads = f"{mod.get('downloads', 0):,}"
+            version = mod.get("compatible_version", "❌")
+            status = "✅" if mod.get("compatible") else "❌"
+            description = mod.get("description", "")[:80] + "..." if len(mod.get("description", "")) > 80 else mod.get(
+                "description", "")
 
-            modrinth_tree.insert(
+            # Вставляем строку
+            item_id = modrinth_tree.insert(
                 "",
                 "end",
-                values=(mod["title"], mod["author"], downloads, mod["description"]),
-                tags=(mod["project_id"],),
+                values=(f"{mod['title']} ({version})", mod["author"], downloads, description, status),
+                tags=(mod["project_id"], mod["filename"])  # ✅ Только ID и имя файла
             )
 
-    # Добавляем возможность сортировки по клику на заголовок
+            # Назначаем цвет отдельно
+            if mod.get("compatible"):
+                modrinth_tree.item(item_id, tags=(mod["project_id"], mod["filename"], "compatible"))
+            else:
+                modrinth_tree.item(item_id, tags=(mod["project_id"], mod["filename"], "incompatible"))
+
+        # Конфигурируем цвета
+        modrinth_tree.tag_configure("compatible", background="#0a3020", foreground="white")
+        modrinth_tree.tag_configure("incompatible", background="#3a1010", foreground="#ffaaaa")
+
     def on_treeview_sort(col):
-        """Функция для сортировки Treeview по столбцу"""
         global current_sort_col, current_sort_reverse
-
-        # Получаем все элементы
-        items = [
-            (modrinth_tree.set(item, col), item)
-            for item in modrinth_tree.get_children("")
-        ]
-
-        # Определяем тип данных для сортировки
+        items = [(modrinth_tree.set(item, col), item) for item in modrinth_tree.get_children("")]
         if col == "downloads":
-            # Для загрузок преобразуем в числа (убираем разделители)
             items = [(int(item[0].replace(",", "")), item[1]) for item in items]
         else:
-            # Для текстовых колонок оставляем как есть
             items = [(item[0].lower(), item[1]) for item in items]
 
-        # Сортируем
         items.sort(reverse=current_sort_reverse)
-
-        # Переставляем элементы в Treeview
         for index, (_, item) in enumerate(items):
             modrinth_tree.move(item, "", index)
 
-        # Меняем направление сортировки для следующего клика
         current_sort_reverse = not current_sort_reverse
-
-        # Обновляем заголовки для показа направления сортировки
         update_sort_indicators(col)
 
     def update_sort_indicators(sorted_col):
-        """Обновляет заголовки для показа направления сортировки"""
         for col in modrinth_tree["columns"]:
-            current_text = modrinth_tree.heading(col)["text"]
-            # Убираем предыдущие индикаторы сортировки
-            clean_text = current_text.replace(" ▲", "").replace(" ▼", "")
-
+            clean_text = modrinth_tree.heading(col)["text"].replace(" ▲", "").replace(" ▼", "")
             if col == sorted_col:
-                # Добавляем индикатор направления сортировки
                 indicator = " ▼" if current_sort_reverse else " ▲"
                 modrinth_tree.heading(col, text=clean_text + indicator)
             else:
                 modrinth_tree.heading(col, text=clean_text)
 
-    # Переменные для отслеживания сортировки
-    current_sort_col = "downloads"  # По умолчанию сортируем по загрузкам
-    current_sort_reverse = False  # По убыванию (самые популярные сначала)
-
     ttk.Button(search_frame, text="🔍 Поиск", command=search_modrinth).pack(
         side="left", padx=(0, 10)
     )
 
-    # Список модов Modrinth
     modrinth_tree_frame = ttk.Frame(modrinth_frame)
     modrinth_tree_frame.pack(fill="both", expand=True)
 
     modrinth_tree = ttk.Treeview(
         modrinth_tree_frame,
-        columns=("name", "author", "downloads", "description"),
+        columns=("name", "author", "downloads", "description", "status"),
         show="headings",
-        height=10,
-    )
-    modrinth_tree.heading("name", text="Название")
-    modrinth_tree.heading("author", text="Автор")
-    modrinth_tree.heading("downloads", text="Загрузки")
-    modrinth_tree.heading("description", text="Описание")
-
-    # Привязываем клик по заголовкам к функции сортировки
-    modrinth_tree.heading(
-        "name", text="Название", command=lambda: on_treeview_sort("name")
-    )
-    modrinth_tree.heading(
-        "author", text="Автор", command=lambda: on_treeview_sort("author")
-    )
-    modrinth_tree.heading(
-        "downloads", text="Загрузки", command=lambda: on_treeview_sort("downloads")
-    )
-    modrinth_tree.heading(
-        "description", text="Описание", command=lambda: on_treeview_sort("description")
+        height=15,
     )
 
-    modrinth_tree.column("name", width=200)
+    modrinth_tree.heading("name", text="Название", command=lambda: on_treeview_sort("name"))
+    modrinth_tree.heading("author", text="Автор", command=lambda: on_treeview_sort("author"))
+    modrinth_tree.heading("downloads", text="Загрузки", command=lambda: on_treeview_sort("downloads"))
+    modrinth_tree.heading("description", text="Описание", command=lambda: on_treeview_sort("description"))
+    modrinth_tree.heading("status", text="Совместимость")
+
+    modrinth_tree.column("name", width=220)
     modrinth_tree.column("author", width=120)
-    modrinth_tree.column("downloads", width=100)  # Увеличим ширину для чисел
-    modrinth_tree.column("description", width=280)
+    modrinth_tree.column("downloads", width=100)
+    modrinth_tree.column("description", width=200)
+    modrinth_tree.column("status", width=80)
 
     modrinth_scrollbar = ttk.Scrollbar(
         modrinth_tree_frame, orient="vertical", command=modrinth_tree.yview
@@ -9782,7 +9180,7 @@ def create_new_collection():
     modrinth_tree.pack(side="left", fill="both", expand=True)
     modrinth_scrollbar.pack(side="right", fill="y")
 
-    # Список выбранных модов
+    # === Выбранные моды ===
     selected_frame = ttk.LabelFrame(main_frame, text="✅ Выбранные моды", padding=10)
     selected_frame.pack(fill="x", pady=(0, 20))
 
@@ -9805,91 +9203,123 @@ def create_new_collection():
     selected_tree.pack(side="left", fill="both", expand=True)
     selected_scrollbar.pack(side="right", fill="y")
 
-    # Кнопки управления выбранными модами
+    # === Управление модами ===
+    def on_mod_select(event):
+        selection = modrinth_tree.selection()
+        if not selection:
+            return
+
+        item = modrinth_tree.item(selection[0])
+        tags = item["tags"]
+        if not tags:
+            return
+
+        mod_id = tags[0]  # ✅ project_id
+        mod_title = item["values"][0].split(" (")[0]
+
+        if not hasattr(collection_window, "last_search_results"):
+            return
+
+        matching_mod = next((m for m in collection_window.last_search_results if m["title"] == mod_title), None)
+        if not matching_mod:
+            return
+
+        if matching_mod.get("compatible"):
+            return  # ✅ Не показываем, если совместим
+
+        # Теперь можно безопасно использовать mod_id
+        try:
+            # Получаем ВСЕ версии мода, чтобы показать пользователю
+            all_versions_response = api.session.get(
+                f"https://api.modrinth.com/v2/project/{mod_id}/version",
+                timeout=10
+            )
+            if not all_versions_response.ok:
+                messagebox.showwarning("Ошибка", "Не удалось загрузить данные о моде", parent=collection_window)
+                return
+
+            all_versions = all_versions_response.json()
+
+            # Собираем данные
+            game_versions = set()
+            loaders = set()
+            latest_version = None
+
+            for v in all_versions:
+                if v.get("game_versions"):
+                    game_versions.update(v["game_versions"])
+                if v.get("loaders"):
+                    loaders.update([l.lower() for l in v["loaders"]])
+                if not latest_version and v.get("version_number"):
+                    latest_version = v["version_number"]
+
+            game_versions = sorted(game_versions, key=lambda x: [int(p) if p.isdigit() else p for p in x.split(".")],
+                                   reverse=True)
+            loaders = sorted(loaders)
+
+            message = f"❌ Мод '{mod_title}' не совместим:\n\n"
+            message += f"• Версия: {version_var.get()}\n"
+            message += f"• Загрузчик: {loader_var.get()}\n\n"
+
+            if latest_version:
+                message += f"📦 Последняя версия: {latest_version}\n"
+            if game_versions:
+                message += f"🟢 Поддерживаемые MC: {', '.join(game_versions[:5])}...\n"
+            if loaders:
+                message += f"🔧 Поддерживаемые: {', '.join(loaders)}\n"
+
+            messagebox.showinfo("Совместимость", message, parent=collection_window)
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось загрузить данные:\n{e}", parent=collection_window)
     selected_buttons = ttk.Frame(selected_frame)
     selected_buttons.pack(fill="x", pady=(10, 0))
+    modrinth_tree.bind("<<TreeviewSelect>>", on_mod_select)
 
     def add_selected_mods():
+
         current_tab = notebook.index(notebook.select())
-
-        if current_tab == 0:  # Локальные моды
-            for item in local_mods_tree.selection():
-                values = local_mods_tree.item(item)["values"]
-                # Проверяем, нет ли уже такого мода
-                existing = False
-                for sel_item in selected_tree.get_children():
-                    sel_values = selected_tree.item(sel_item)["values"]
-                    if sel_values[2] == values[1]:  # Сравниваем по имени файла
-                        existing = True
-                        break
-
-                if not existing:
-                    selected_tree.insert(
-                        "",
-                        "end",
-                        values=("Локальный", values[0], values[1]),
-                        tags=("local", values[1]),
-                    )
-
-        elif current_tab == 1:  # Modrinth
+        if current_tab == 1:  # Modrinth
             for item in modrinth_tree.selection():
                 values = modrinth_tree.item(item)["values"]
-                mod_id = modrinth_tree.item(item)["tags"][0]
-                filename = f"{values[0]}.jar"
+                tags = modrinth_tree.item(item)["tags"]  # → (project_id, filename)
 
-                # Проверяем, нет ли уже такого мода
-                existing = False
-                for sel_item in selected_tree.get_children():
-                    sel_values = selected_tree.item(sel_item)["values"]
-                    if sel_values[1] == values[0]:  # Сравниваем по названию
-                        existing = True
-                        break
+                if len(tags) < 2:
+                    continue
 
-                if not existing:
+                mod_id = tags[0]  # ✅ строка: project_id
+                filename = tags[1]  # ✅ строка: filename
+
+                mod_title = values[0].split(" (")[0]
+
+                if not any(selected_tree.item(i)["values"][1] == mod_title for i in selected_tree.get_children()):
                     selected_tree.insert(
-                        "",
-                        "end",
-                        values=("Modrinth", values[0], filename),
-                        tags=("modrinth", mod_id, filename),
+                        "", "end",
+                        values=("Modrinth", mod_title, filename),
+                        tags=("modrinth", mod_id, filename)
                     )
-
     def remove_selected_mods():
         for item in selected_tree.selection():
             selected_tree.delete(item)
 
     def clear_all_mods():
-        if selected_tree.get_children():
-            if messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
-                selected_tree.delete(*selected_tree.get_children())
+        if selected_tree.get_children() and messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
+            selected_tree.delete(*selected_tree.get_children())
 
-    ttk.Button(
-        selected_buttons,
-        text="➕ Добавить выбранные",
-        command=add_selected_mods,
-        width=18,
-    ).pack(side="left", padx=5)
-    ttk.Button(
-        selected_buttons,
-        text="🗑️ Удалить выбранные",
-        command=remove_selected_mods,
-        width=18,
-    ).pack(side="left", padx=5)
-    ttk.Button(
-        selected_buttons, text="🗑️ Очистить все", command=clear_all_mods, width=15
-    ).pack(side="left", padx=5)
+    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods, width=18).pack(side="left", padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Удалить выбранные", command=remove_selected_mods, width=18).pack(side="left", padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Очистить все", command=clear_all_mods, width=15).pack(side="left", padx=5)
 
-    # Создание сборки
+    # === Создание сборки ===
     def create_collection():
         name = name_var.get().strip()
         if not name:
             messagebox.showerror("Ошибка", "Введите название сборки!")
             return
 
-        # Собираем информацию о модах
         mods = []
         failed_mods = []
 
-        # Окно прогресса для обработки модов
         progress_window = tk.Toplevel(collection_window)
         set_window_icon(progress_window)
         progress_window.title("Обработка модов")
@@ -9897,15 +9327,8 @@ def create_new_collection():
         progress_window.transient(collection_window)
         progress_window.grab_set()
 
-        ttk.Label(
-            progress_window,
-            text="Получение информации о модах...",
-            font=("Comfortaa", 12),
-        ).pack(pady=10)
-
-        progress = ttk.Progressbar(
-            progress_window, orient="horizontal", mode="determinate"
-        )
+        ttk.Label(progress_window, text="Получение информации о модах...", font=("Comfortaa", 12)).pack(pady=10)
+        progress = ttk.Progressbar(progress_window, orient="horizontal", mode="determinate")
         progress.pack(fill="x", padx=20, pady=10)
 
         status_var = tk.StringVar(value="Подготовка...")
@@ -9916,97 +9339,53 @@ def create_new_collection():
         log_text.pack(fill="both", expand=True, padx=20, pady=10)
 
         def process_mods_thread():
-            nonlocal mods, failed_mods
-
-            api = ModrinthAPI()
             total_mods = len(selected_tree.get_children())
-
             for i, item in enumerate(selected_tree.get_children()):
                 values = selected_tree.item(item)["values"]
                 tags = selected_tree.item(item)["tags"]
 
-                progress_window.after(
-                    0, lambda idx=i: progress.config(value=(idx * 100) // total_mods)
-                )
-                progress_window.after(
-                    0, lambda v=values: status_var.set(f"Обработка: {v[1]}")
-                )
+                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))
+                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))
 
                 mod_info = {"source": tags[0], "name": values[1], "filename": values[2]}
 
                 if tags[0] == "local":
-                    # Для локальных модов ищем на Modrinth
-                    progress_window.after(
-                        0,
-                        lambda: log_text.insert(
-                            "end", f"🔍 Ищем на Modrinth: {values[1]}...\n"
-                        ),
-                    )
-                    progress_window.after(0, lambda: log_text.see("end"))
-
-                    modrinth_info = find_mod_on_modrinth(
-                        api, values[1], version_var.get(), loader_var.get()
-                    )
+                    log_text.insert("end", f"🔍 Ищем на Modrinth: {values[1]}...\n")
+                    log_text.see("end")
+                    modrinth_info = find_mod_on_modrinth(api, values[1], version_var.get(), loader_var.get())
                     if modrinth_info:
-                        mod_info.update(
-                            {
-                                "source": "modrinth",
-                                "modrinth_id": modrinth_info["id"],
-                                "modrinth_slug": modrinth_info["slug"],
-                                "correct_filename": modrinth_info["filename"],
-                            }
-                        )
+                        mod_info.update({
+                            "source": "modrinth",
+                            "modrinth_id": modrinth_info["id"],
+                            "modrinth_slug": modrinth_info["slug"],
+                            "correct_filename": modrinth_info["filename"],
+                        })
                         mods.append(mod_info)
-                        progress_window.after(
-                            0,
-                            lambda: log_text.insert(
-                                "end", f"✅ Найден: {modrinth_info['title']}\n"
-                            ),
-                        )
+                        log_text.insert("end", f"✅ Найден: {modrinth_info['title']}\n")
                     else:
                         failed_mods.append(values[1])
-                        progress_window.after(
-                            0,
-                            lambda: log_text.insert(
-                                "end", f"❌ Не найден на Modrinth: {values[1]}\n"
-                            ),
-                        )
-
+                        log_text.insert("end", f"❌ Не найден на Modrinth: {values[1]}\n")
                 elif tags[0] == "modrinth":
-                    # Для модов с Modrinth просто сохраняем информацию
                     mod_info["modrinth_id"] = tags[1]
                     mods.append(mod_info)
-                    progress_window.after(
-                        0,
-                        lambda: log_text.insert(
-                            "end", f"✅ Modrinth мод: {values[1]}\n"
-                        ),
-                    )
+                    log_text.insert("end", f"✅ Modrinth мод: {values[1]}\n")
 
-                progress_window.after(0, lambda: log_text.see("end"))
+                log_text.see("end")
 
-            # Завершаем обработку
             progress_window.after(0, progress_window.destroy)
-            progress_window.after(
-                0, lambda: finalize_collection_creation(name, mods, failed_mods)
-            )
+            progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
 
         def finalize_collection_creation(name, mods, failed_mods):
             if not mods:
-                messagebox.showerror(
-                    "Ошибка", "Не удалось найти ни одного мода на Modrinth!"
-                )
+                messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
                 return
 
-            # Показываем предупреждение о ненайденных модах
             if failed_mods:
                 messagebox.showwarning(
                     "Внимание",
-                    f"Следующие моды не найдены на Modrinth и будут пропущены:\n"
-                    + "\n".join(failed_mods),
+                    f"Следующие моды не найдены на Modrinth и будут пропущены:\n" + "\n".join(failed_mods),
                 )
 
-            # Создаем данные сборки
             collection_data = {
                 "name": name,
                 "minecraft_version": version_var.get(),
@@ -10016,7 +9395,6 @@ def create_new_collection():
                 "mod_count": len(mods),
             }
 
-            # Сохраняем файл
             safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
             filename = f"{safe_name}.json"
             filepath = os.path.join(COLLECTIONS_CONFIG["collections_dir"], filename)
@@ -10024,37 +9402,21 @@ def create_new_collection():
             try:
                 with open(filepath, "w", encoding="utf-8") as f:
                     json.dump(collection_data, f, indent=2, ensure_ascii=False)
-
-                message = (
-                    f"Сборка '{name}' создана!\n\n"
-                    f"• Модов: {len(mods)}\n"
-                    f"• Версия: {version_var.get()}\n"
-                    f"• Загрузчик: {loader_var.get()}"
-                )
-
+                message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
                 if failed_mods:
                     message += f"\n• Пропущено: {len(failed_mods)}"
-
                 messagebox.showinfo("Успех", message)
                 collection_window.destroy()
                 show_collection_manager()
-
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось создать сборку: {e}")
 
         threading.Thread(target=process_mods_thread, daemon=True).start()
 
-    # Кнопки создания/отмены
     button_frame = ttk.Frame(main_frame)
     button_frame.pack(fill="x")
-
-    ttk.Button(button_frame, text="✅ Создать сборку", command=create_collection).pack(
-        side="left", padx=5
-    )
-    ttk.Button(button_frame, text="❌ Отмена", command=collection_window.destroy).pack(
-        side="right", padx=5
-    )
-
+    ttk.Button(button_frame, text="✅ Создать сборку", command=create_collection).pack(side="left", padx=5)
+    ttk.Button(button_frame, text="❌ Отмена", command=collection_window.destroy).pack(side="right", padx=5)
 
 def find_mod_on_modrinth(api, mod_name, minecraft_version, loader):
     """Улучшенный поиск модов на Modrinth"""
@@ -10076,7 +9438,7 @@ def find_mod_on_modrinth(api, mod_name, minecraft_version, loader):
 
         # Поиск по всем запросам
         for query in search_queries:
-            if not query or len(query) < 2:
+            if not query or len(query) < 10:
                 continue
 
             print(f"🔎 Ищем: '{query}'")
@@ -10161,7 +9523,7 @@ def extract_core_name(mod_name):
     # Удаляем все, что выглядит как версия
     import re
 
-    core = re.sub(r"[\d\.\-_]+.*$", "", mod_name)
+    core = re.sub(r"[\d.\-_]+.*$", "", mod_name)
     return core.strip()
 
 
@@ -10170,7 +9532,7 @@ def remove_version_info(mod_name):
     import re
 
     # Удаляем паттерны версий типа 1.2.3, 1.2.3+1.20.1 и т.д.
-    cleaned = re.sub(r"[\d\.\-_]+\+?[\d\.\-_]*", "", mod_name)
+    cleaned = re.sub(r"[\d.\-_]+\+?[\d.\-_]*", "", mod_name)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
@@ -10190,7 +9552,7 @@ def try_find_by_filename(api, filename, minecraft_version, loader):
         base_name = filename.replace(".jar", "")
 
         # Удаляем информацию о версии и загрузчике
-        clean_file_name = re.sub(r"[\d\.\-_]+(?:fabric|forge|quilt|neoforge).*$", "", base_name)
+        clean_file_name = re.sub(r"[\d.\-_]+(?:fabric|forge|quilt|neoforge).*$", "", base_name)
         clean_file_name = re.sub(r"\s+", " ", clean_file_name).strip()
 
         if len(clean_file_name) > 3:
@@ -10381,7 +9743,7 @@ def clean_mod_name(mod_name):
     import re
 
     cleaned = re.sub(
-        r"[\d\.\-_]+(?:fabric|forge|quilt|neoforge)?", " ", mod_name, flags=re.IGNORECASE
+        r"[\d.\-_]+(?:fabric|forge|quilt|neoforge)?", " ", mod_name, flags=re.IGNORECASE
     )
     cleaned = re.sub(
         r"\b(?:fabric|forge|quilt|neoforge|mc|minecraft|mod)\b",
@@ -10400,7 +9762,7 @@ def extract_main_words(mod_name):
     words = mod_name.split()
     # Оставляем только слова длиной > 3 символов и не являющиеся версиями
     main_words = [
-        word for word in words if len(word) > 3 and not re.match(r"^[\d\.\-_]+$", word)
+        word for word in words if len(word) > 3 and not re.match(r"^[\d.\-_]+$", word)
     ]
     return " ".join(main_words[:3])  # Берем до 3 слов
 
@@ -10665,6 +10027,7 @@ def load_collection_to_game(filename):
         win.after(0, lambda: log_text.see("end"))
 
     def download_thread():
+        import concurrent.futures
         mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
         os.makedirs(mods_dir, exist_ok=True)
 
@@ -10679,109 +10042,79 @@ def load_collection_to_game(filename):
         cleared_count = clear_mods_directory(mods_dir)
         log_message(f"🗑️ Очищено модов: {cleared_count}")
 
-        # Скачиваем моды
-        success_count = 0
-        total_mods = len(collection["mods"])
+        # Подготовка
         api = ModrinthAPI()
+        total_mods = len(collection["mods"])
+        success_count = 0
 
-        for i, mod in enumerate(collection["mods"]):
-            # Обновляем UI
-            win.after(
-                0,
-                lambda idx=i, total=total_mods: progress.config(
-                    value=(idx * 100) // total
-                ),
-            )
-            win.after(0, lambda m=mod: status_var.set(f"Загрузка: {m['name']}"))
-            win.after(
-                0, lambda s=success_count, t=total_mods: counter_var.set(f"{s}/{t}")
-            )
+        # Прогресс
+        progress["maximum"] = total_mods
 
-            log_message(f"\n🔍 Мод {i + 1}/{total_mods}: {mod['name']}")
+        # Функция загрузки одного мода
+        def download_single_mod(mod):
+            nonlocal success_count
+            try:
+                log_message(f"\n🔍 Мод: {mod['name']}")
 
-            if mod["source"] == "modrinth":
-                log_message(
-                    f"   📡 Источник: Modrinth (ID: {mod.get('modrinth_id', 'N/A')})"
-                )
+                if mod["source"] != "modrinth":
+                    log_message(f"   ⚠️  Источник не поддерживается: {mod['source']}")
+                    return False
 
-                # Получаем версии мода
                 versions = api.get_mod_versions(
-                    mod["modrinth_id"],
-                    collection["minecraft_version"],
-                    collection["loader"].lower(),
+                    mod_id=mod["modrinth_id"],
+                    minecraft_version=collection["minecraft_version"],
+                    loader=collection["loader"].lower(),
                 )
 
                 if not versions:
-                    log_message("   ❌ Не найдены версии мода")
-                    continue
+                    log_message("   ❌ Не найдены совместимые версии")
+                    return False
 
-                log_message(f"   📦 Найдено версий: {len(versions)}")
-
-                # Берем последнюю версию
                 latest_version = versions[0]
-
-                # Находим primary файл или первый JAR файл
-                target_file = None
-                for file_info in latest_version["files"]:
-                    if file_info.get("primary", False) or file_info[
-                        "filename"
-                    ].endswith(".jar"):
-                        target_file = file_info
-                        break
-
-                if not target_file and latest_version["files"]:
-                    target_file = latest_version["files"][
-                        0
-                    ]  # Берем первый файл, если нет primary
-
-                if not target_file:
-                    log_message("   ❌ Не найден файл для скачивания")
-                    continue
-
-                filename = target_file["filename"]
                 version_id = latest_version["id"]
                 project_slug = mod.get("modrinth_slug", mod["modrinth_id"])
 
-                log_message(f"   ⬇️  Скачиваем: {filename}")
-                log_message(f"   🔗 Project: {project_slug}")
-                log_message(f"   🆔 Version: {version_id}")
+                # Ищем JAR-файл
+                target_file = next(
+                    (f for f in latest_version["files"] if f["filename"].endswith(".jar")),
+                    latest_version["files"][0] if latest_version["files"] else None
+                )
 
-                # Скачиваем мод
+                if not target_file:
+                    log_message("   ❌ Нет файла для скачивания")
+                    return False
+
+                filename = target_file["filename"]
+                filepath = os.path.join(mods_dir, filename)
+
+                log_message(f"   ⬇️  {filename}")
+
+                # Пробуем скачать
                 if api.download_mod(project_slug, version_id, filename, mods_dir):
-                    success_count += 1
-                    log_message("   ✅ Успешно скачан")
+                    log_message(f"   ✅ Успешно: {filename}")
+                    return True
                 else:
-                    log_message("   ❌ Ошибка скачивания")
-            else:
-                log_message(f"   ⚠️  Неподдерживаемый источник: {mod['source']}")
+                    log_message(f"   ❌ Ошибка: {filename}")
+                    return False
+
+            except Exception as e:
+                log_message(f"   💥 Ошибка: {e}")
+                return False
+
+        # Параллельная загрузка
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(download_single_mod, mod) for mod in collection["mods"]]
+            for future in concurrent.futures.as_completed(futures):
+                if future.result():
+                    success_count += 1
+                win.after(0, lambda: progress.step(1))
+                win.after(0, lambda s=success_count: counter_var.set(f"{s}/{total_mods}"))
 
         # Завершение
         log_message(f"\n🎉 ЗАВЕРШЕНО! Успешно: {success_count}/{total_mods}")
-        win.after(
-            0,
-            lambda: finish_loading(
-                progress_window, collection, success_count, total_mods, backup_path
-            ),
-        )
-
-    def show_download_result(collection, success_count, total_mods, backup_path):
-        message = (
-            f"Загрузка сборки '{collection['name']}' завершена!\n\n"
-            f"✅ Успешно загружено: {success_count}/{total_mods} модов"
-        )
-
-        if backup_path:
-            message += f"\n\n📂 Создан бэкап предыдущих модов"
-
-        if success_count == 0:
-            message += "\n\n❌ Не удалось загрузить ни одного мода!\nПроверьте подключение к интернету и логи."
-        elif success_count < total_mods:
-            message += f"\n\n⚠️  Не загружено {total_mods - success_count} модов\nПроверьте детальный лог для информации."
-
-        messagebox.showinfo("Результат загрузки", message)
+        win.after(0, lambda: finish_loading(progress_window, collection, success_count, total_mods, backup_path))
 
     threading.Thread(target=download_thread, daemon=True).start()
-
 
 # Добавляем в меню
 settings_menu.add_separator()
@@ -10845,15 +10178,15 @@ def handle_local_mod(mod, mods_dir):
     return False
 
 
-def handle_modrinth_mod(mod, collection, api, mods_dir, log_callback):
+def handle_modrinth_mod(mod, collection, api, mods_dir, minecraft_version, loader_type, log_callback):
     """Обработка мода с Modrinth с правильным скачиванием"""
     try:
         log_callback(f"🔍 Получаем информацию о {mod['name']}...")
 
         versions = api.get_mod_versions(
-            mod["modrinth_id"],
-            collection["minecraft_version"],
-            collection["loader"].lower(),
+            mod_id=mod["project_id"],
+            minecraft_version=minecraft_version,
+            loader=loader_type
         )
 
         if not versions:
@@ -10999,13 +10332,6 @@ def safe_mainloop():
 
 # Запуск главного цикла
 win.after(100, lambda: setup_adaptive_background())
-
-
-def apply_background_and_close(filename, window):
-    """Применяет фон и закрывает окно"""
-    load_custom_background(filename)
-    window.destroy()
-    messagebox.showinfo("Успех", f"Фон {filename} применен!")
 
 
 if __name__ == "__main__":
