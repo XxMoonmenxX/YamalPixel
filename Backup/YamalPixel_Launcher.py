@@ -24,7 +24,7 @@ import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
-from datetime import datetime
+from datetime import datetime as dt
 from pathlib import Path
 import psutil
 import math
@@ -5804,7 +5804,7 @@ def clear_auth_cache():
     """Очищает кэш аутентификации Minecraft"""
     minecraft_dir = CONFIG["minecraft_dir"]
     cache_files = [
-        os.path.join(minecraft_dir, "usercache.json"),
+        #os.path.join(minecraft_dir, "usercache.json"),
         os.path.join(minecraft_dir, "launcher_profiles.json"),
         os.path.join(minecraft_dir, "launcher_accounts.json"),
     ]
@@ -6518,6 +6518,7 @@ def start_game_launch():
                     return False
 
             # Шаг 3: Проверка и установка модлоадеров (Fabric/NeoForge)
+            neoforge_loader = get_mod_loader("neoforge")
             loader_type = is_modloader_needed(selected_version)
             if loader_type:
                 update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
@@ -6536,6 +6537,7 @@ def start_game_launch():
                             )
                             update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
                         elif loader_type == "neoforge":
+
                             minecraft_version = get_minecraft_version(selected_version)
                             # Получаем доступные версии NeoForge - ПРАВИЛЬНЫЙ МЕТОД
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
@@ -6576,7 +6578,6 @@ def start_game_launch():
 
             options = {
                 "username": username.get(),
-                "uuid": str(hash(username.get())),
                 "token": "",
                 "jvmArguments": jvm_args,
                 "gameLocale": "ru_RU",
@@ -9729,6 +9730,7 @@ def create_new_collection():
             progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
 
         def finalize_collection_creation(name, mods, failed_mods):
+
             if not mods:
                 messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
                 return
@@ -9738,7 +9740,6 @@ def create_new_collection():
                     "Внимание",
                     f"Следующие моды не найдены на Modrinth и будут пропущены:\n" + "\n".join(failed_mods),
                 )
-
             collection_data = {
                 "name": name,
                 "minecraft_version": version_var.get(),
