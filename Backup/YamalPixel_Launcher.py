@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import minecraft_launcher_lib
-from minecraft_launcher_lib.mod_loader import get_mod_loader
+from minecraft_launcher_lib.mod_loader import get_mod_loader #Кастомная сборка minecraft_launcher_lib, пришлось повозиться с _neoforge.py
 import subprocess
 import threading
 import os
