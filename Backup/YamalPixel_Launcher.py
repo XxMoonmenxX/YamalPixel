@@ -278,7 +278,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.6.723"  # обновление
+CURRENT_VERSION = "0.7.1"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
