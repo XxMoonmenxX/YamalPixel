@@ -1,5 +1,5 @@
-from tkinter import ttk, messagebox
 import tkinter as tk
+from tkinter import ttk, messagebox
 import minecraft_launcher_lib
 from minecraft_launcher_lib.mod_loader import get_mod_loader
 import subprocess
@@ -24,7 +24,7 @@ import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import time
-from datetime import datetime as dt
+from datetime import datetime
 from pathlib import Path
 import psutil
 import math
@@ -60,10 +60,13 @@ fix_python314_dll_issue()
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
-    if hasattr(sys, '_MEIPASS'):
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
-    else:
+    except Exception:
+        # В режиме разработки используем домашнюю директорию
         base_path = Path.home() / "YamalPixelRes"
+
     return os.path.join(base_path, relative_path)
 
 
@@ -275,7 +278,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.7.01"  # обновление
+CURRENT_VERSION = "0.6.723"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -650,7 +653,6 @@ class TurboDownloader:
 
 def download_single_mod_turbo(mod_info):
     """Турбо-загрузка одного мода с правильным закрытием ресурсов"""
-    downloader = None
     try:
         print(f"🔍 Начинаем загрузку мода: {mod_info['file']}")
 
@@ -1153,7 +1155,7 @@ def speed_test():
                 if not cancel_flag.is_set():
                     win.after(0, lambda: show_speed_error(str(e), progress_window))
 
-        def test_single_server(url, expected_size, cancel_flag):
+        def test_single_server(url, expected_size, window, cancel_flag):
             """Тестирует скорость для одного сервера"""
             start_time = time.time()
             downloaded = 0
@@ -1162,9 +1164,9 @@ def speed_test():
                 response = requests.get(url, stream=True, timeout=15)
                 response.raise_for_status()
 
-                total_size = int(response.headers.get("content-length", 0))  # Для логирования
-
+                total_size = int(response.headers.get("content-length", 0))
                 chunk_size = 8192
+
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     if cancel_flag.is_set():
                         raise Exception("Тест отменен")
@@ -1172,9 +1174,12 @@ def speed_test():
                     if chunk:
                         downloaded += len(chunk)
 
+                        # Обновляем прогресс в реальном времени
                         elapsed = time.time() - start_time
                         if elapsed > 0:
-                            current_speed_mbps = (downloaded / elapsed) / 125000
+                            current_speed_mbps = (
+                                downloaded / elapsed
+                            ) / 125000  # Mbit/s
 
                             win.after(
                                 0,
@@ -1189,18 +1194,16 @@ def speed_test():
                                 ),
                             )
 
-                            # Используем expected_size для прогресса (если известен)
-                            if expected_size > 0:
-                                progress_percent = min(100, (downloaded / (expected_size * 1024 * 1024)) * 100)
-                                win.after(0, lambda p=progress_percent: progress.config(value=p))
-
+                            # Если тест длится больше 10 секунд - прерываем
                             if elapsed > 10:
                                 break
 
-                total_time = time.time() - start_time
+                end_time = time.time()
+                total_time = end_time - start_time
+
                 if total_time > 0 and downloaded > 0:
-                    speed_mbps = (downloaded / total_time) / 125000
-                    speed_mb_sec = (downloaded / total_time) / (1024 * 1024)
+                    speed_mbps = (downloaded / total_time) / 125000  # Mbit/s
+                    speed_mb_sec = (downloaded / total_time) / (1024 * 1024)  # MB/s
                     return speed_mbps, speed_mb_sec
                 else:
                     return 0, 0
@@ -1447,7 +1450,7 @@ def download_shaders():
     # Переменная для хранения выбранных шейдеров
     selected_shaders = []
 
-    def toggle_selection(_):
+    def toggle_selection(event):
         item = tree.selection()
         if item:
             item = item[0]
@@ -1819,7 +1822,61 @@ def check_fabric_installed():
         fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
         fabric_version_dir = os.path.join(versions_dir, fabric_version)
         return os.path.exists(fabric_version_dir)
-    except (KeyError, TypeError, OSError):
+    except:
+        return False
+
+
+def install_fabric_silent():
+    """Тихая установка Fabric"""
+    try:
+        print("🔧 Устанавливаем Fabric...")
+        minecraft_launcher_lib.fabric.install_fabric(
+            minecraft_version=CONFIG["version"],
+            loader_version=CONFIG["fabric_loader"],
+            minecraft_directory=CONFIG["minecraft_dir"],
+        )
+        print("✅ Fabric установлен")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка установки Fabric: {e}")
+        return False
+
+
+def download_missing_mods_silent():
+    """Тихая загрузка отсутствующих модов без UI"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        mods_dir = os.path.join(minecraft_dir, "mods")
+        os.makedirs(mods_dir, exist_ok=True)
+
+        # Проверяем какие моды отсутствуют
+        missing_mods = []
+        for mod in CONFIG["mods"]:
+            mod_path = os.path.join(mods_dir, mod["file"])
+            if not os.path.exists(mod_path):
+                missing_mods.append(mod)
+
+        if missing_mods:
+            print(f"🔧 Скачиваем {len(missing_mods)} отсутствующих модов...")
+            # Используем существующую функцию загрузки
+            for mod in missing_mods:
+                download_single_mod_turbo(mod)
+
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка загрузки модов: {e}")
+        return False
+
+
+def check_fabric_installed():
+    """Проверяет установлен ли Fabric"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        versions_dir = os.path.join(minecraft_dir, "versions")
+        fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
+        fabric_version_dir = os.path.join(versions_dir, fabric_version)
+        return os.path.exists(fabric_version_dir)
+    except:
         return False
 
 
@@ -1886,8 +1943,8 @@ def check_for_updates():
         changelog = release_data.get("body", "Нет описания изменений")
 
         # Убираем Markdown-разметку и форматируем
-        changelog = re.sub(r"#{2,}", "", changelog)
-        changelog = re.sub(r"- ", "• ", changelog)
+        changelog = re.sub(r"\#{2,}", "", changelog)
+        changelog = re.sub(r"\- ", "• ", changelog)
         changelog = re.sub(r"\*\*(.*?)\*\*", r"\1", changelog)
         changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
         changelog = changelog.strip()
@@ -2061,16 +2118,16 @@ def check_for_updates():
             text_widget.see("1.0")
 
             # Добавляем ховер-эффекты для кнопок
-            def on_enter_install(_e):
+            def on_enter_install(e):
                 btn_install.configure(bg="#219653")
 
-            def on_leave_install(_e):
+            def on_leave_install(e):
                 btn_install.configure(bg="#27ae60")
 
-            def on_enter_skip(_e):
+            def on_enter_skip(e):
                 btn_skip.configure(bg="#7f8c8d")
 
-            def on_leave_skip(_e):
+            def on_leave_skip(e):
                 btn_skip.configure(bg="#95a5a6")
 
             btn_install.bind("<Enter>", on_enter_install)
@@ -2562,7 +2619,11 @@ def get_java_installer_url():
 
     return None
 
+
 def install_java_with_progress():
+    """
+    Улучшенная установка Java 17 с детектированием ОС и архитектуры
+    """
     java_window = tk.Toplevel(win)
     java_window.title("Установка Java 17")
     java_window.geometry("450x200")
@@ -2593,6 +2654,7 @@ def install_java_with_progress():
     )
     details_label.pack(pady=5)
 
+
     def verify_java_installation(window):
         if check_java_version():
             window.destroy()
@@ -2605,27 +2667,6 @@ def install_java_with_progress():
                 "Java может быть установлена, но не обнаружена.\n"
                 "Попробуйте перезапустить лаунчер или перезагрузить компьютер.",
             )
-
-    def install_thread():
-        try:
-            status_label.config(text="Определение системы...")
-            details_label.config(text="")
-
-            system = platform.system()
-            if system == "Windows":
-                install_java_windows(status_label, details_label)
-            elif system == "Linux":
-                install_java_linux(status_label, details_label)
-            elif system == "Darwin":  # macOS
-                install_java_macos(status_label, details_label)
-            else:
-                raise Exception(f"Неподдерживаемая ОС: {system}")
-
-            # Проверяем установку
-            verify_java_installation(java_window)
-
-        except Exception as e:
-            show_java_install_error(str(e))
 
     threading.Thread(target=install_thread, daemon=True).start()
 
@@ -2832,7 +2873,82 @@ debug_java_installation()
 
 
 # Функция установки Java с прогрессом
+def install_java_with_progress():
+    java_window = tk.Toplevel(win)
+    java_window.title("Установка Java 17")
+    java_window.geometry("400x150")
 
+    progress_label = ttk.Label(java_window, text="Прогресс установки Java 17:")
+    progress_label.pack(pady=10)
+
+    progress = ttk.Progressbar(
+        java_window, orient="horizontal", length=300, mode="determinate"
+    )
+    progress.pack(pady=10)
+
+    status_label = ttk.Label(java_window, text="")
+    status_label.pack()
+
+    def download_progress_hook(count, block_size, total_size):
+        if total_size > 0:
+            percent = int(count * block_size * 100 / total_size)
+            progress["value"] = percent
+            status_label.config(text=f"Скачано {percent}%")
+            java_window.update_idletasks()
+
+    def install_thread():
+        try:
+            system = platform.system()
+            if system == "Windows":
+                url = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_windows_hotspot_17.0.11_9.msi"
+                msi_path = os.path.join(os.environ["TEMP"], "OpenJDK17.msi")
+                urllib.request.urlretrieve(
+                    url,
+                    msi_path,
+                    reporthook=lambda c, b, t: download_progress_hook(c, b, t),
+                )
+                subprocess.run(
+                    f'msiexec /i "{msi_path}" /quiet', shell=True, check=True
+                )
+                os.remove(msi_path)
+            elif system == "Linux":
+                subprocess.run(
+                    "sudo apt-get install -y wget apt-transport-https",
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run(
+                    "wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo apt-key add -",
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run(
+                    "echo \"deb https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main\" | sudo tee /etc/apt/sources.list.d/adoptium.list",
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run("sudo apt-get update -y", shell=True, check=True)
+                subprocess.run(
+                    "sudo apt-get install -y temurin-17-jdk", shell=True, check=True
+                )
+            elif system == "Darwin":
+                subprocess.run(
+                    '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run("brew tap adoptium/temurin", shell=True, check=True)
+                subprocess.run("brew install --cask temurin17", shell=True, check=True)
+            java_window.destroy()
+            messagebox.showinfo("Успех :D", "Java 17 успешно установлена! ЗАПУСКАЙ!!!")
+        except Exception as e:
+            messagebox.showerror("АШЫПКА :D", f"Java 17 установлена. ЗАПУСКАЙ!!!!")
+            sys.exit(1)
+
+    if not check_java_version():
+        threading.Thread(target=install_thread, daemon=True).start()
+    else:
+        java_window.destroy()
 
 
 # Инициализация проверки Java при запуске
@@ -2991,13 +3107,9 @@ def on_closing():
 
     # Останавливаем музыку
     try:
-        if mixer.get_init():  # Проверяем, инициализирован ли mixer
-            mixer.music.stop()
-            mixer.quit()
-    except (RuntimeError) as e:
-        print(f"⚠️ Ошибка остановки музыки: {e}")
-    except Exception as e:
-        print(f"❌ Неожиданная ошибка при остановке музыки: {e}")
+        mixer.music.stop()
+    except:
+        pass
 
     win.destroy()
     sys.exit(0)
@@ -3105,8 +3217,6 @@ def load_default_background():
             bag = tk.PhotoImage(file=str(default_bg))
             img.configure(image=bag)
             print("🔧 Используем стандартный фон logo.png")
-        else:
-            print("💥 Стандартный фон также недоступен!")
     except Exception as e:
         print(f"💥 Критическая ошибка загрузки фона: {e}")
 
@@ -3182,6 +3292,14 @@ def open_game_folder():
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
 
 
+import os
+import zipfile
+import shutil
+import datetime
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+
 def create_backup(folder_path, backup_type):
     """Создает zip-бэкап указанной папки"""
     try:
@@ -3202,7 +3320,7 @@ def create_backup(folder_path, backup_type):
         if files_in_folder:
             print(f"📄 Примеры файлов: {files_in_folder[:5]}")
 
-        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_dir = os.path.join(CONFIG["minecraft_dir"], "backups")
         os.makedirs(backup_dir, exist_ok=True)
 
@@ -3763,6 +3881,60 @@ def setup_backup_buttons(parent_frame):
         button_row2, text="🗑️ Удалить все бэкапы", command=delete_all_backups, width=18
     ).pack(side="left", padx=5)
 
+
+def fig1():
+    """Очистка игры с созданием бэкапов"""
+    minecraft_dir = CONFIG["minecraft_dir"]
+    mods_dir = os.path.join(minecraft_dir, "mods")
+    versions_dir = os.path.join(minecraft_dir, "versions")
+    world_dir = os.path.join(minecraft_dir, "world")
+
+    # Создаем бэкапы перед удалением
+    backups_created = []
+
+    # Бэкап модов (только если папка существует и не пустая)
+    if os.path.exists(mods_dir) and os.listdir(mods_dir):
+        backup_path_mods = create_backup(mods_dir, "mods")
+        if backup_path_mods:
+            backups_created.append(backup_path_mods)
+
+    # Бэкап версий (только если папка существует и не пустая)
+    if os.path.exists(versions_dir) and os.listdir(versions_dir):
+        backup_path_versions = create_backup(versions_dir, "versions")
+        if backup_path_versions:
+            backups_created.append(backup_path_versions)
+
+    # Бэкап мира (только если папка существует и не пустая)
+    if os.path.exists(world_dir) and os.listdir(world_dir):
+        backup_path_world = create_backup(world_dir, "world")
+        if backup_path_world:
+            backups_created.append(backup_path_world)
+
+    # Удаляем папки если они существуют (кроме мира)
+    items_to_remove = [mods_dir, versions_dir]  # Мир не удаляем при очистке!
+    for item in items_to_remove:
+        if os.path.exists(item):
+            try:
+                if os.path.isdir(item):
+                    shutil.rmtree(item)
+                    print(f"Удалено: {item}")
+                else:
+                    os.remove(item)
+                    print(f"Удалено: {item}")
+            except Exception as e:
+                print(f"Ошибка удаления {item}: {str(e)}")
+
+    # Показываем информацию о созданных бэкапах
+    if backups_created:
+        backup_info = "Созданы бэкапы:\n" + "\n".join(
+            [f"• {os.path.basename(b)}" for b in backups_created]
+        )
+        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
+    else:
+        messagebox.showinfo(
+            "Очистка",
+            "Папки mods и versions очищены (бэкапы не создавались - папки были пустые)",
+        )
 
 
 def repair_game_with_options():
@@ -4608,6 +4780,190 @@ def show_version_info():
     )
 
 
+def create_diagnostic_panel():
+    """Создает панель диагностики с цветными сообщениями"""
+    diag_window = tk.Toplevel(win)
+    diag_window.title("Диагностика проблем")
+    diag_window.geometry("700x550")
+
+    # ВСЕ ОСТАЛЬНОЕ ОБЫЧНОЕ, БЕЗ ТЕМНЫХ ФОНОВ
+
+    # Заголовок
+    header_frame = ttk.Frame(diag_window)
+    header_frame.pack(fill="x", padx=20, pady=15)
+
+    ttk.Label(
+        header_frame, text="Диагностика проблем", font=("Comfortaa", 16, "bold")
+    ).pack()
+
+    ttk.Label(
+        header_frame,
+        text="Автоматическая проверка и решение проблем",
+        font=("Comfortaa", 10),
+        foreground="gray",
+    ).pack(pady=(5, 0))
+
+    # Прогресс-бар
+    progress_frame = ttk.Frame(diag_window)
+    progress_frame.pack(fill="x", padx=20, pady=10)
+
+    progress_label = ttk.Label(progress_frame, text="Проводим диагностику...")
+    progress_label.pack()
+
+    progress_bar = ttk.Progressbar(
+        progress_frame, orient="horizontal", length=650, mode="indeterminate"
+    )
+    progress_bar.pack(pady=5)
+    progress_bar.start()
+
+    # Окно результатов - ОБЫЧНОЕ, белый фон, черный текст
+    results_frame = ttk.LabelFrame(
+        diag_window, text="Результаты диагностики", padding=10
+    )
+    results_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+    results_text = tk.Text(
+        results_frame, height=12, wrap="word", font=("Consolas", 9)
+    )  # Обычный белый фон
+
+    scrollbar = ttk.Scrollbar(
+        results_frame, orient="vertical", command=results_text.yview
+    )
+    results_text.configure(yscrollcommand=scrollbar.set)
+
+    results_text.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Статус
+    status_frame = ttk.Frame(diag_window)
+    status_frame.pack(fill="x", padx=20, pady=5)
+
+    status_label = ttk.Label(status_frame, text="Начинаем проверку...")
+    status_label.pack()
+
+    # Кнопки
+    button_frame = ttk.Frame(diag_window)
+    button_frame.pack(fill="x", padx=20, pady=15)
+
+    # Первый ряд
+    row1 = ttk.Frame(button_frame)
+    row1.pack(fill="x", pady=5)
+
+    ttk.Button(
+        row1, text="Быстрая починка", command=lambda: auto_repair_game_files(), width=18
+    ).pack(side="left", padx=5)
+
+    ttk.Button(
+        row1, text="Запуск без модов", command=launch_without_mods, width=18
+    ).pack(side="left", padx=5)
+
+    # Второй ряд
+    row2 = ttk.Frame(button_frame)
+    row2.pack(fill="x", pady=5)
+
+    ttk.Button(
+        row2, text="Полная переустановка", command=complete_reinstall, width=18
+    ).pack(side="left", padx=5)
+
+    ttk.Button(
+        row2,
+        text="Создать отчет",
+        command=lambda: create_debug_report(results_text),
+        width=15,
+    ).pack(side="left", padx=5)
+
+    ttk.Button(row2, text="Закрыть", command=diag_window.destroy, width=12).pack(
+        side="right", padx=5
+    )
+
+    # Функции диагностики - ТОЛЬКО ЗДЕСЬ ЦВЕТНЫЙ ТЕКСТ
+    def add_result(text, color="black"):  # По умолчанию черный
+        results_text.insert("end", f"{text}\n", color)
+        results_text.see("end")
+        diag_window.update()
+
+    def run_diagnostic():
+        try:
+            problems_found = []
+            minecraft_dir = CONFIG["minecraft_dir"]
+
+            # Проверка структуры - зеленый
+            for folder in ["mods", "versions", "config"]:
+                path = os.path.join(minecraft_dir, folder)
+                if os.path.exists(path):
+                    add_result(f"✅ Папка {folder} найдена", "green")
+                else:
+                    problems_found.append(f"Отсутствует папка {folder}")
+                    add_result(f"❌ Папка {folder} не найдена", "red")
+
+            # Проверка модов - синий
+            mods_dir = os.path.join(minecraft_dir, "mods")
+            if os.path.exists(mods_dir):
+                mod_files = [f for f in os.listdir(mods_dir) if f.endswith(".jar")]
+                add_result(f"📦 Найдено модов: {len(mod_files)}", "blue")
+
+                if len(mod_files) == 0:
+                    problems_found.append("Папка модов пустая")
+                    add_result("⚠️ Папка модов пуста", "orange")
+
+            # Проверка ресурсов
+            memory = psutil.virtual_memory()
+            if memory.available < 3 * 1024 * 1024 * 1024:
+                problems_found.append("Мало оперативной памяти")
+                add_result(
+                    f"⚠️ Мало ОЗУ: {memory.available // 1024 // 1024}MB свободно",
+                    "orange",
+                )
+            else:
+                add_result(
+                    f"✅ ОЗУ: {memory.available // 1024 // 1024}MB свободно", "green"
+                )
+
+            disk = psutil.disk_usage(minecraft_dir)
+            if disk.free < 2 * 1024 * 1024 * 1024:
+                problems_found.append("Мало места на диске")
+                add_result(
+                    f"⚠️ Мало места: {disk.free // 1024 // 1024}MB свободно", "orange"
+                )
+            else:
+                add_result(f"✅ Диск: {disk.free // 1024 // 1024}MB свободно", "green")
+
+            # Java
+            java_ok = check_java_version()
+            if java_ok:
+                add_result("✅ Java установлена и работает", "green")
+            else:
+                problems_found.append("Проблемы с Java")
+                add_result("❌ Java не найдена", "red")
+
+            # Финальный отчет
+            progress_bar.stop()
+
+            if problems_found:
+                add_result(f"\n🚨 Найдено проблем: {len(problems_found)}", "red")
+                for problem in problems_found:
+                    add_result(f"• {problem}", "orange")
+                status_label.config(text=f"Обнаружено {len(problems_found)} проблем")
+            else:
+                add_result("\n🎉 Все системы в норме!", "green")
+                add_result("Игра должна запускаться без проблем", "blue")
+                status_label.config(text="Проблем не обнаружено")
+
+        except Exception as e:
+            add_result(f"❌ Ошибка диагностики: {str(e)}", "red")
+            status_label.config(text="Ошибка при диагностике")
+
+    # Настройка цветов для текста
+    results_text.tag_configure("green", foreground="green")
+    results_text.tag_configure("red", foreground="red")
+    results_text.tag_configure("orange", foreground="orange")
+    results_text.tag_configure("blue", foreground="blue")
+
+    # Запускаем диагностику
+    diag_window.after(500, run_diagnostic)
+    diag_window.focus_force()
+
+
 def format_changelog(changelog):
     """Форматирует changelog для красивого отображения"""
     if not changelog:
@@ -4615,7 +4971,7 @@ def format_changelog(changelog):
 
     # Убираем Markdown-разметку
     changelog = re.sub(r"#{2,}", "", changelog)
-    changelog = re.sub(r"- ", "• ", changelog)
+    changelog = re.sub(r"\- ", "• ", changelog)
     changelog = re.sub(r"\*\*(.*?)\*\*", r"▸ \1", changelog)
     changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
     changelog = re.sub(r"`(.*?)`", r"\1", changelog)
@@ -4786,28 +5142,13 @@ def create_progress_window():
 
 
 def monitor_game_process(process):
-    """Мониторит процесс игры в фоне"""
-    try:
-        # Ждем завершения процесса
-        process.wait()
-
-        # Читаем вывод если есть
-        try:
-            stdout, stderr = process.communicate(timeout=1)
-            if stdout:
-                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
-            if stderr:
-                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
-        except:
-            pass
-
-        print("[LAUNCHER] Процесс Minecraft завершен")
-
-    except Exception as e:
-        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
+    """Мониторит процесс игры и разблокирует интерфейс при завершении"""
+    process.wait()
+    # Если процесс завершился, разблокируем интерфейс
+    win.after(0, lambda: set_launch_state(False))
 
 
-
+# ДОБАВЬ ЭТО ПРЯМО ПЕРЕД СОЗДАНИЕМ menu_bar:
 
 
 def show_simple_background_selector():
@@ -4943,41 +5284,11 @@ settings_menu.configure(
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
-def force_neoforge_repair():
-    """Принудительное восстановление NeoForge"""
-    selected_version = version_selector.get()
-    if "NeoForge" not in selected_version:
-        messagebox.showwarning("Ошибка", "Выберите версию с NeoForge")
-        return
-
-    result = messagebox.askyesno(
-        "Восстановление NeoForge",
-        "Это удалит ВСЕ библиотеки NeoForge и установит заново.\n\nПродолжить?"
-    )
-
-    if result:
-        minecraft_version = get_minecraft_version(selected_version)
-        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-
-        if neoforge_versions:
-            latest_neoforge = neoforge_versions[0]
-
-            # Очищаем ВСЕ конфликтующие библиотеки
-            cleanup_conflicting_neoforge_libraries(CONFIG["minecraft_dir"])
-
-            # Удаляем версию NeoForge чтобы установить заново
-            version_name = f"neoforge-{latest_neoforge}"
-            version_dir = os.path.join(CONFIG["minecraft_dir"], "versions", version_name)
-            if os.path.exists(version_dir):
-                import shutil
-                shutil.rmtree(version_dir, ignore_errors=True)
-                print(f"🗑️ Удалена версия: {version_name}")
-
-            messagebox.showinfo("Успех",
-                                "Библиотеки очищены! Теперь запустите игру - NeoForge установится заново с правильными библиотеками.")
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
-settings_menu.add_command(label="🎨 Скачать шейдеры", command=download_shaders)
+settings_menu.add_command(
+    label="🎨 Скачать шейдеры", command=download_shaders
+)  # НОВАЯ КНОПКА
 settings_menu.add_separator()
 settings_menu.add_command(label="🔧 Починка файлов", command=auto_repair_game_files)
 settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
@@ -4989,12 +5300,13 @@ settings_menu.add_command(label="🗑️ Удалить ВСЕ бэкапы", co
 settings_menu.add_separator()
 settings_menu.add_command(label="🔄 Полная переустановка", command=complete_reinstall)
 settings_menu.add_separator()
-settings_menu.add_command(label="🔧 Диагностика проблем", command=create_diagnostic_panel)
+settings_menu.add_command(
+    label="🔧 Диагностика проблем", command=create_diagnostic_panel
+)
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
-settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
-
-settings_menu.add_command(label="🔄 Принудительно восстановить NeoForge", command=force_neoforge_repair)
-settings_menu.add_separator()
+settings_menu.add_command(
+    label="🎨 Выбрать фон вручную", command=show_simple_background_selector
+)
 
 # Или если хотите в выпадающем меню "Справка":
 help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -5004,20 +5316,132 @@ help_menu.add_command(label="Проверить обновления", command=c
 menu_bar.add_cascade(label="Справка", menu=help_menu)
 
 
+def setup_adaptive_background():
+    """Автоматический подбор фона под разрешение экрана"""
+
+    RESOLUTION_MAP = {
+        (1920, 1080): "logo1.png",  # Full HD
+        (1920, 1200): "logo2.png",  # WUXGA
+        (2048, 1080): "logo3.png",  # 2K DCI
+        (2048, 1536): "logo4.png",  # QXGA
+        (2560, 1440): "logo5.png",  # 2K QHD
+        (2560, 1600): "logo6.png",  # WQXGA
+        (3440, 1440): "logo7.png",  # UltraWide
+        (3840, 2160): "logo8.png",  # 4K UHD
+        (3840, 2400): "logo9.png",  # WQUXGA
+    }
+
+    screen_width = win.winfo_screenwidth()
+    screen_height = win.winfo_screenheight()
+
+    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
+
+    # Прямое соответствие
+    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
+
+    if bg_file:
+        print(f"✅ Найдено точное соответствие: {bg_file}")
+        load_custom_background(bg_file)
+    else:
+        # Ищем ближайшее по соотношению сторон
+        bg_file = find_closest_resolution(screen_width, screen_height)
+        print(f"🔄 Используем ближайшее: {bg_file}")
+        load_custom_background(bg_file)
 
 
-# Глобальная карта соответствия разрешений и логотипов
-RESOLUTION_MAP = {
-    (1920, 1080): "logo1.png",
-    (1920, 1200): "logo2.png",
-    (2048, 1080): "logo3.png",
-    (2048, 1536): "logo4.png",
-    (2560, 1440): "logo5.png",
-    (2560, 1600): "logo6.png",
-    (3440, 1440): "logo7.png",
-    (3840, 2160): "logo8.png",
-    (3840, 2400): "logo9.png",
-}
+def find_closest_resolution(width, height):
+    """Находит ближайшее разрешение по соотношению сторон"""
+    aspect_ratio = width / height
+
+    # Ближайшие соотношения сторон
+    ratios = {
+        (1920, 1080): 1.78,  # 16:9
+        (1920, 1200): 1.60,  # 16:10
+        (2048, 1080): 1.90,  # ~17:9
+        (2048, 1536): 1.33,  # 4:3
+        (2560, 1440): 1.78,  # 16:9
+        (2560, 1600): 1.60,  # 16:10
+        (3440, 1440): 2.39,  # 21:9
+        (3840, 2160): 1.78,  # 16:9
+        (3840, 2400): 1.60,  # 16:10
+    }
+
+    # Ищем с наименьшей разницей в соотношении
+    best_match = "logo1.png"  # дефолт
+    min_diff = float("inf")
+
+    for res, target_ratio in ratios.items():
+        diff = abs(aspect_ratio - target_ratio)
+        if diff < min_diff:
+            min_diff = diff
+            best_match = RESOLUTION_MAP[res]
+
+    return best_match
+
+
+def load_custom_background(filename):
+    """Загружает кастомный фон"""
+    try:
+        bg_path = RESOURCE_DIR / filename
+        if bg_path.exists():
+            global bag, img
+            bag = tk.PhotoImage(file=str(bg_path))
+            img.configure(image=bag)
+            print(f"🎨 Загружен фон: {filename}")
+        else:
+            print(f"⚠️ Фон {filename} не найден")
+            # Грузим стандартный как запасной вариант
+            load_default_background()
+    except Exception as e:
+        print(f"❌ Ошибка загрузки фона {filename}: {e}")
+        load_default_background()
+
+
+def load_default_background():
+    """Загружает стандартный фон"""
+    try:
+        global bag, img
+        default_bg = RESOURCE_DIR / "logo.png"
+        if default_bg.exists():
+            bag = tk.PhotoImage(file=str(default_bg))
+            img.configure(image=bag)
+            print("🔧 Используем стандартный фон")
+    except Exception as e:
+        print(f"💥 Критическая ошибка загрузки фона: {e}")
+
+
+def setup_adaptive_background():
+    """Автоматический подбор фона под разрешение экрана"""
+
+    RESOLUTION_MAP = {
+        (1920, 1080): "logo1.png",  # Full HD
+        (1920, 1200): "logo2.png",  # WUXGA
+        (2048, 1080): "logo3.png",  # 2K DCI
+        (2048, 1536): "logo4.png",  # QXGA
+        (2560, 1440): "logo5.png",  # 2K QHD
+        (2560, 1600): "logo6.png",  # WQXGA
+        (3440, 1440): "logo7.png",  # UltraWide
+        (3840, 2160): "logo8.png",  # 4K UHD
+        (3840, 2400): "logo2.png",  # WQUXGA (временно используем logo2)
+    }
+
+    screen_width = win.winfo_screenwidth()
+    screen_height = win.winfo_screenheight()
+
+    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
+
+    # Прямое соответствие
+    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
+
+    if bg_file:
+        print(f"✅ Найдено точное соответствие: {bg_file}")
+        load_custom_background(bg_file)
+    else:
+        # Ищем ближайшее по соотношению сторон
+        bg_file = find_closest_resolution(screen_width, screen_height)
+        print(f"🔄 Используем ближайшее: {bg_file}")
+        load_custom_background(bg_file)
+
 
 def find_closest_resolution(width, height):
     """Находит ближайшее разрешение по соотношению сторон"""
@@ -5052,6 +5476,27 @@ def find_closest_resolution(width, height):
     return best_match
 
 
+def load_custom_background(filename):
+    """Загружает кастомный фон"""
+    try:
+        bg_path = RESOURCE_DIR / filename
+        if bg_path.exists():
+            global bag, img
+            bag = tk.PhotoImage(file=str(bg_path))
+            img.configure(image=bag)
+            print(f"🎨 Успешно загружен фон: {filename}")
+
+            # Сохраняем выбор в настройках
+            save_background_preference(filename)
+        else:
+            print(f"⚠️ Фон {filename} не найден, пробуем скачать...")
+            download_and_set_background(filename)
+
+    except Exception as e:
+        print(f"❌ Ошибка загрузки фона {filename}: {e}")
+        load_default_background()
+
+
 def download_and_set_background(filename):
     """Скачивает и устанавливает фон если его нет"""
     try:
@@ -5070,7 +5515,19 @@ def download_and_set_background(filename):
         load_default_background()
 
 
-
+def load_default_background():
+    """Загружает стандартный фон"""
+    try:
+        global bag, img
+        default_bg = RESOURCE_DIR / "logo.png"
+        if default_bg.exists():
+            bag = tk.PhotoImage(file=str(default_bg))
+            img.configure(image=bag)
+            print("🔧 Используем стандартный фон logo.png")
+        else:
+            print("💥 Стандартный фон также недоступен!")
+    except Exception as e:
+        print(f"💥 Критическая ошибка загрузки фона: {e}")
 
 
 def save_background_preference(filename):
@@ -5087,6 +5544,27 @@ def save_background_preference(filename):
     except Exception as e:
         print(f"⚠️ Не удалось сохранить настройки фона: {e}")
 
+
+def show_background_menu():
+    """Показывает меню выбора фона"""
+    menu = tk.Menu(win, tearoff=0, bg="#2b2b2b", fg="white", font=("Comfortaa", 9))
+
+    backgrounds = [
+        ("🖥️  1920×1080 (Full HD)", "logo1.png"),
+        ("💻  1920×1200 (WUXGA)", "logo2.png"),
+        ("🎬  2048×1080 (2K DCI)", "logo3.png"),
+        ("📊  2048×1536 (QXGA)", "logo4.png"),
+        ("🔥  2560×1440 (2K QHD)", "logo5.png"),
+        ("🚀  2560×1600 (WQXGA)", "logo6.png"),
+        ("🎮  3440×1440 (UltraWide)", "logo7.png"),
+        ("4K  3840×2160 (4K UHD)", "logo8.png"),
+    ]
+
+    for name, file in backgrounds:
+        menu.add_command(label=name, command=lambda f=file: load_custom_background(f))
+
+    # Показываем меню под курсором
+    menu.tk_popup(win.winfo_pointerx(), win.winfo_pointery())
 
 
 def show_simple_background_selector():
@@ -5191,6 +5669,13 @@ def show_simple_background_selector():
     except Exception as e:
         print(f"❌ Ошибка открытия селектора фонов: {e}")
         messagebox.showerror("Ошибка", "Не удалось открыть выбор фона")
+
+
+def apply_background_and_close(filename, window):
+    """Применяет фон и закрывает окно"""
+    load_custom_background(filename)
+    window.destroy()
+    messagebox.showinfo("Успех", f"Фон {filename} применен!")
 
 
 # Функция для открытия настроек
@@ -5851,86 +6336,6 @@ def checker1_with_callback(completion_callback=None):
     threading.Thread(target=download_thread, daemon=True).start()
 
 
-def setup_launch_logging():
-    """Настройка детального логирования запуска"""
-    log_dir = os.path.join(CONFIG["minecraft_dir"], "logs")
-    os.makedirs(log_dir, exist_ok=True)
-
-    # Логгер для запуска
-    launch_logger = logging.getLogger('minecraft_launch')
-    launch_logger.setLevel(logging.DEBUG)
-
-    # Файловый обработчик
-    log_file = os.path.join(log_dir, f"launch_{dt.now().strftime('%Y%m%d_%H%M%S')}.log")
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
-
-    # Форматтер
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-
-    launch_logger.addHandler(file_handler)
-    return launch_logger
-
-
-def log_launch_step(logger, step, details=""):
-    """Логирование шага запуска"""
-    message = f"🚀 {step}"
-    if details:
-        message += f" | {details}"
-    logger.info(message)
-    print(f"[LAUNCH] {message}")
-
-
-def monitor_process_output(process, logger):
-    """Мониторинг вывода процесса Minecraft в реальном времени"""
-
-    def read_output(stream, stream_name):
-        try:
-            for line in iter(stream.readline, ''):
-                if line.strip():
-                    logger.info(f"[MINECRAFT {stream_name}] {line.strip()}")
-                    # Фильтруем важные сообщения для отладки
-                    if any(keyword in line.lower() for keyword in
-                           ['error', 'exception', 'crash', 'failed', 'could not', 'cannot']):
-                        logger.error(f"❌ ПРОБЛЕМА: {line.strip()}")
-        except Exception as e:
-            logger.error(f"Ошибка чтения {stream_name}: {e}")
-
-    # Запускаем мониторинг stdout и stderr
-    threading.Thread(target=read_output, args=(process.stdout, "STDOUT"), daemon=True).start()
-    threading.Thread(target=read_output, args=(process.stderr, "STDERR"), daemon=True).start()
-
-
-def cleanup_conflicting_neoforge_libraries(minecraft_dir):
-    """Удаляет конфликтующие версии библиотек NeoForge"""
-    libraries_dir = os.path.join(minecraft_dir, "libraries")
-
-    # Библиотеки которые могут конфликтовать
-    conflicting_paths = [
-        "cpw/mods/bootstraplauncher",
-        "cpw/mods/securejarhandler",
-    ]
-
-    removed_count = 0
-    for lib_path in conflicting_paths:
-        full_path = os.path.join(libraries_dir, lib_path)
-        if os.path.exists(full_path):
-            print(f"🗑️ Очищаем библиотеки: {lib_path}")
-            try:
-                for version_dir in os.listdir(full_path):
-                    version_path = os.path.join(full_path, version_dir)
-                    if os.path.isdir(version_path):
-                        shutil.rmtree(version_path, ignore_errors=True)
-                        removed_count += 1
-                        print(f"   Удалено: {version_dir}")
-            except Exception as e:
-                print(f"⚠️ Ошибка очистки {lib_path}: {e}")
-
-    print(f"✅ Удалено конфликтующих библиотек: {removed_count}")
-    return removed_count
-
-
 def start_game_launch():
     """Основной процесс запуска игры (вынесен из runn)"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
@@ -6057,7 +6462,6 @@ def start_game_launch():
         """Основной процесс запуска игры"""
         try:
             selected_version = version_selector.get()
-            update_ui_log(f"🎯 Выбрана версия: {selected_version}")
 
             # Шаг 0: Устанавливаем необходимые компоненты для ВСЕХ версий кроме YamalPixel
             if selected_version != "YamalPixel":
@@ -6067,15 +6471,11 @@ def start_game_launch():
                 # Используем существующую функцию установки компонентов
                 install_required_components_sync(selected_version)
                 update_ui_log("✅ Компоненты установлены")
-            else:
-                update_ui_log("⏭️ Пропускаем установку компонентов для YamalPixel")
 
             # Шаг 1: Проверка модов (только для YamalPixel)
             if selected_version == "YamalPixel":
                 update_ui_status("Проверка завершена", "Моды готовы...")
                 update_ui_log("✅ Все моды проверены и загружены")
-            else:
-                update_ui_log("⏭️ Пропускаем проверку модов")
 
             # Шаг 2: Подготовка игры
             update_ui_status("Подготовка игры", "Очистка и проверка...")
@@ -6084,7 +6484,7 @@ def start_game_launch():
             update_ui_log("✅ Файлы подготовлены")
 
             def check_modloader_installed(selected_version):
-                """Проверяет установлен ли модлоадер (Fabric/NeoForge) - ОБНОВЛЕННАЯ ВЕРСИЯ"""
+                """Проверяет установлен ли модлоадер (Fabric/NeoForge) - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
                 try:
                     minecraft_dir = CONFIG["minecraft_dir"]
                     versions_dir = os.path.join(minecraft_dir, "versions")
@@ -6100,122 +6500,25 @@ def start_game_launch():
 
                     elif loader_type == "neoforge":
                         minecraft_version = get_minecraft_version(selected_version)
-
-                        # Получаем доступные версии NeoForge
+                        # Для NeoForge проверяем наличие версии в правильном формате
+                        # NeoForge создает версии в формате "neoforge-<версия_неофоржа>"
+                        # Например: "neoforge-21.1.215"
                         neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                        if not neoforge_versions:
-                            return False
-
-                        # Выбираем стабильную версию
-                        stable_versions = [v for v in neoforge_versions if not any(
-                            x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
-                        latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
-
-                        # Формируем правильное имя версии
-                        neoforge_version_name = f"neoforge-{latest_neoforge}"
-                        neoforge_jar_path = os.path.join(versions_dir, neoforge_version_name,
-                                                         f"{neoforge_version_name}.jar")
-
-                        # Проверяем существование и целостность
-                        return os.path.exists(neoforge_jar_path) and is_valid_neoforge_jar(neoforge_jar_path)
-
-                    else:
-                        return True  # Для vanilla версий
-
-                except Exception as e:
-                    print(f"❌ Ошибка проверки модлоадера: {e}")
-                    return False
-
-                except Exception as e:
-                    print(f"❌ Ошибка проверки модлоадера: {e}")
-                    return False
-
-            def is_valid_neoforge_jar(jar_path):
-                """Проверяет валидность NeoForge JAR файла"""
-                try:
-                    # Проверяем размер файла (должен быть достаточно большим)
-                    file_size = os.path.getsize(jar_path)
-                    if file_size < 500 * 1024:  # Меньше 500KB - подозрительно
-                        print(f"⚠️ Подозрительно маленький JAR: {file_size} bytes")
+                        if neoforge_versions:
+                            latest_version = neoforge_versions[0]
+                            neoforge_version_name = f"neoforge-{latest_version}"
+                            neoforge_version_dir = os.path.join(versions_dir, neoforge_version_name)
+                            return os.path.exists(neoforge_version_dir)
                         return False
-
-                    # Пытаемся прочитать JAR как архив
-                    with zipfile.ZipFile(jar_path, 'r') as jar:
-                        file_list = jar.namelist()
-
-                        # КРИТИЧЕСКАЯ ПРОВЕРКА: нет ли классов в корне (что вызывает ошибку модулей)
-                        root_classes = [f for f in file_list if f.endswith('.class') and '/' not in f]
-                        if root_classes:
-                            print(f"❌ Найдены классы в корне JAR: {root_classes}")
-                            return False
-
-                        # Проверяем наличие основных необходимых файлов
-                        has_manifest = any('META-INF/MANIFEST.MF' in f for f in file_list)
-                        has_bootstrap = any('cpw/mods/bootstraplauncher/' in f for f in file_list)
-
-                        if not has_manifest:
-                            print("⚠️ Отсутствует MANIFEST.MF")
-                            return False
-
-                        if not has_bootstrap:
-                            print("⚠️ Отсутствуют файлы bootstraplauncher")
-                            return False
-
-                        print(f"✅ JAR проверен: {len(file_list)} файлов, размер: {file_size} bytes")
-                        return True
-
-                except zipfile.BadZipFile:
-                    print(f"❌ JAR поврежден (BadZipFile): {jar_path}")
-                    return False
-                except Exception as e:
-                    print(f"❌ Ошибка проверки JAR: {e}")
-                    return False
-
-            def repair_neoforge_installation(selected_version):
-                """Переустанавливает NeoForge если он поврежден"""
-                try:
-                    minecraft_version = get_minecraft_version(selected_version)
-                    minecraft_dir = CONFIG["minecraft_dir"]
-
-                    update_ui_log("🔧 Восстановление NeoForge...")
-
-                    # Получаем доступные версии
-                    neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                    if not neoforge_versions:
-                        raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-
-                    # Выбираем стабильную версию
-                    stable_versions = [v for v in neoforge_versions if not any(
-                        x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
-                    latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
-
-                    # Удаляем старую версию если она существует
-                    neoforge_version_name = f"neoforge-{latest_neoforge}"
-                    neoforge_version_dir = os.path.join(minecraft_dir, "versions", neoforge_version_name)
-
-                    if os.path.exists(neoforge_version_dir):
-                        import shutil
-                        shutil.rmtree(neoforge_version_dir)
-                        update_ui_log("🗑️ Удалена поврежденная версия NeoForge")
-
-                    # Устанавливаем заново
-                    update_ui_log(f"🔄 Установка NeoForge {latest_neoforge}...")
-                    minecraft_launcher_lib.neoforge.install(
-                        minecraft_version=minecraft_version,
-                        minecraft_directory=minecraft_dir,
-                        loader_version=latest_neoforge
-                    )
-
-                    update_ui_log(f"✅ NeoForge {latest_neoforge} восстановлен")
-                    return True
+                    else:
+                        return True  # Для vanilla версий всегда возвращаем True
 
                 except Exception as e:
-                    update_ui_log(f"❌ Ошибка восстановления NeoForge: {e}")
+                    print(f"Ошибка проверки модлоадера: {e}")
                     return False
+
             # Шаг 3: Проверка и установка модлоадеров (Fabric/NeoForge)
             loader_type = is_modloader_needed(selected_version)
-            update_ui_log(f"🔍 Определен модлоадер: {loader_type}")
-
             if loader_type:
                 update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
 
@@ -6223,12 +6526,9 @@ def start_game_launch():
                     update_ui_log(f"🔧 Устанавливаем {loader_type.capitalize()}...")
                     try:
                         minecraft_version = get_minecraft_version(selected_version)
-                        update_ui_log(f"📋 Версия Minecraft: {minecraft_version}")
 
                         if loader_type == "fabric":
-                            # ... существующий код Fabric
                             fabric_loader = "0.17.2"
-                            update_ui_log(f"🔄 Устанавливаем Fabric {fabric_loader}...")
                             minecraft_launcher_lib.fabric.install_fabric(
                                 minecraft_version=minecraft_version,
                                 loader_version=fabric_loader,
@@ -6236,19 +6536,14 @@ def start_game_launch():
                             )
                             update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
                         elif loader_type == "neoforge":
-                            update_ui_log("🔄 Получаем версии NeoForge...")
+                            minecraft_version = get_minecraft_version(selected_version)
+                            # Получаем доступные версии NeoForge - ПРАВИЛЬНЫЙ МЕТОД
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                            update_ui_log(f"📋 Доступные версии NeoForge: {neoforge_versions}")
-
                             if not neoforge_versions:
                                 raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-
-                            # Фильтруем стабильные версии
-                            stable_versions = [v for v in neoforge_versions if not any(
-                                x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
-                            latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
-
-                            update_ui_log(f"🔄 Устанавливаем NeoForge {latest_neoforge}...")
+                            # Берем последнюю стабильную версию
+                            latest_neoforge = neoforge_versions[0]
+                            # Устанавливаем NeoForge - ПРАВИЛЬНЫЙ МЕТОД
                             minecraft_launcher_lib.neoforge.install(
                                 minecraft_version=minecraft_version,
                                 minecraft_directory=CONFIG["minecraft_dir"],
@@ -6261,8 +6556,6 @@ def start_game_launch():
                         raise
                 else:
                     update_ui_log(f"✅ {loader_type.capitalize()} готов")
-            else:
-                update_ui_log("⏭️ Модлоадер не требуется")
 
             # Шаг 4: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
@@ -6271,7 +6564,6 @@ def start_game_launch():
             selected_memory = CONFIG.get("jvm_memory", "4G")
             if selected_memory.startswith("-Xmx"):
                 selected_memory = selected_memory[4:]
-            update_ui_log(f"💾 Память: {selected_memory}")
 
             # JVM аргументы
             jvm_args = [
@@ -6281,55 +6573,23 @@ def start_game_launch():
                 "-Duser.language=ru",
                 "-Duser.country=RU",
             ]
-            import uuid
-
-            def generate_valid_uuid(username):
-                """Генерирует валидный UUID из имени пользователя"""
-                # Создаем хэш от имени пользователя
-                hash_object = hashlib.md5(username.encode('utf-8'))
-                hash_hex = hash_object.hexdigest()
-
-                # Форматируем в правильный UUID формат
-                uuid_str = f"{hash_hex[:8]}-{hash_hex[8:12]}-{hash_hex[12:16]}-{hash_hex[16:20]}-{hash_hex[20:32]}"
-                print(uuid_str, 'UUID - игрока')
-                # Проверяем что UUID валидный
-                try:
-                    uuid_obj = uuid.UUID(uuid_str)
-                    return str(uuid_obj)
-                except ValueError:
-                    # Fallback: генерируем случайный UUID
-                    return str(uuid.uuid4())
 
             options = {
                 "username": username.get(),
-                "uuid": generate_valid_uuid(username.get()),
+                "uuid": str(hash(username.get())),
                 "token": "",
-                #"jvmArguments": jvm_args(),  # ИСПРАВЛЕННАЯ ФУНКЦИЯ
+                "jvmArguments": jvm_args,
                 "gameLocale": "ru_RU",
-                "launcherVersion": "2.10.1",
-                "launcherName": "YamalPixel Launcher",
-                "demo": False,
-                "customResolution": True
             }
-
-            update_ui_log(f"👤 Игрок: {username.get()}")
 
             # Формируем команду в зависимости от версии
             loader_type = is_modloader_needed(selected_version)
-            minecraft_version = get_minecraft_version(selected_version)
 
             if loader_type == "fabric":
+                minecraft_version = get_minecraft_version_for_fabric(selected_version)
                 fabric_loader = "0.17.2"
                 fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
-                update_ui_log(f"🔄 Устанавливаем Fabric {fabric_loader}...")
-                minecraft_launcher_lib.fabric.install_fabric(
-                    minecraft_version=minecraft_version,
-                    loader_version=fabric_loader,
-                    minecraft_directory=CONFIG["minecraft_dir"],
-                )
-                update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
 
-                # Определяем command для Fabric
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=fabric_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
@@ -6338,61 +6598,24 @@ def start_game_launch():
                 update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
 
 
-
             elif loader_type == "neoforge":
-                update_ui_log("🔄 Получаем версии NeoForge...")
+                minecraft_version = get_minecraft_version(selected_version)
+                # Получаем актуальную версию NeoForge
                 neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                update_ui_log(f"📋 Доступные версии NeoForge: {neoforge_versions}")
                 if not neoforge_versions:
                     raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-                # Фильтруем стабильные версии
-                stable_versions = [v for v in neoforge_versions if not any(
-                    x in v.lower() for x in ['beta', 'alpha', 'test', 'rc', 'snapshot'])]
-                latest_neoforge = stable_versions[0] if stable_versions else neoforge_versions[0]
-                # ПРОВЕРЯЕМ ЦЕЛОСТНОСТЬ ПЕРЕД УСТАНОВКОЙ
-                neoforge_version_name = f"neoforge-{latest_neoforge}"
-                neoforge_jar_path = os.path.join(CONFIG["minecraft_dir"], "versions", neoforge_version_name,
-                                                 f"{neoforge_version_name}.jar")
-                # Если версия уже установлена, проверяем её целостность
-                if os.path.exists(neoforge_jar_path):
-                    update_ui_log(f"🔍 Проверяем целостность {neoforge_version_name}...")
-                    if is_valid_neoforge_jar(neoforge_jar_path):
-                        update_ui_log(f"✅ NeoForge {latest_neoforge} уже установлен и проверен")
-                    else:
-                        update_ui_log(f"🔄 Восстанавливаем поврежденный NeoForge...")
-                        # Удаляем поврежденную версию и устанавливаем заново
-                        import shutil
-                        neoforge_version_dir = os.path.dirname(neoforge_jar_path)
-                        if os.path.exists(neoforge_version_dir):
-                            shutil.rmtree(neoforge_version_dir)
-                        update_ui_log("🗑️ Удалена поврежденная версия NeoForge")
-                        # Устанавливаем заново
-                        update_ui_log(f"🔄 Устанавливаем NeoForge {latest_neoforge}...")
-                        minecraft_launcher_lib.neoforge.install(
-                            minecraft_version=minecraft_version,
-                            minecraft_directory=CONFIG["minecraft_dir"],
-                            loader_version=latest_neoforge
-                        )
-                        update_ui_log(f"✅ NeoForge {latest_neoforge} восстановлен")
-                else:
-                    # Устанавливаем если не установлен
-                    update_ui_log(f"🔄 Устанавливаем NeoForge {latest_neoforge}...")
-                    minecraft_launcher_lib.neoforge.install(
-                        minecraft_version=minecraft_version,
-                        minecraft_directory=CONFIG["minecraft_dir"],
-                        loader_version=latest_neoforge
-                    )
-                    update_ui_log(f"✅ NeoForge {latest_neoforge} установлен для {minecraft_version}")
-                # ВАЖНО: Определяем command для NeoForge
+                latest_neoforge = neoforge_versions[0]
+                neoforge_version = f"neoforge-{latest_neoforge}"
                 command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=neoforge_version_name,
+                    version=neoforge_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
                     options=options,
                 )
-                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version_name}")
+                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version}")
 
             else:
                 # Для vanilla версий используем чистый Minecraft
+                minecraft_version = get_minecraft_version(selected_version)
                 command = minecraft_launcher_lib.command.get_minecraft_command(
                     version=minecraft_version,
                     minecraft_directory=CONFIG["minecraft_dir"],
@@ -6400,37 +6623,20 @@ def start_game_launch():
                 )
                 update_ui_log(f"⚡ Используем Vanilla: {minecraft_version}")
 
-            update_ui_log(f"🖥️ Команда запуска: {' '.join(command[:3])}...")  # Логируем только начало команды
-
             update_ui_log("🚀 Запускаем Minecraft...")
 
             # Запускаем процесс
-            try:
-                process = subprocess.Popen(
-                    command,
-                    cwd=CONFIG["minecraft_dir"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace"
-                )
-                update_ui_log("✅ Процесс Minecraft запущен")
-            except Exception as e:
-                update_ui_log(f"❌ Ошибка запуска процесса: {e}")
-                raise
+            process = launch_minecraft_process(command)
 
             if process:
                 update_ui_status("Игра запущена", "Minecraft загружается...")
                 update_ui_log("✅ Процесс запущен")
-                #update_ui_log(f"📊 PID процесса: {process.pid}")
 
                 # Ждем немного и проверяем
                 time.sleep(3)
 
                 if is_minecraft_process_running(process):
                     # Успешный запуск
-                    update_ui_log("🎉 Minecraft успешно запущен!")
                     win.after(2000, progress_window.destroy)
                     win.after(0, lambda: set_launch_state(False))
 
@@ -6447,30 +6653,22 @@ def start_game_launch():
                         target=monitor_game_process, args=(process,), daemon=True
                     ).start()
                 else:
-                    update_ui_log("❌ Процесс Minecraft завершился слишком быстро")
-                    #raise Exception("Minecraft не запустился (процесс завершился)")
+                    raise Exception("Minecraft не запустился")
             else:
-                update_ui_log("❌ Не удалось создать процесс")
                 raise Exception("Не удалось создать процесс")
 
         except Exception as e:
             error_msg = f"Ошибка запуска: {str(e)}"
             print(f"[LAUNCH ERROR] {error_msg}")
-            import traceback
-            print(f"[LAUNCH TRACEBACK] {traceback.format_exc()}")
 
-            # Безопасное уничтожение окна
-            try:
-                if 'progress_window' in locals() and progress_window.winfo_exists():
-                    progress_window.destroy()
-            except Exception as destroy_error:
-                print(f"[WINDOW DESTROY ERROR] {destroy_error}")
+            if progress_window.winfo_exists():
+                progress_window.destroy()
 
             set_launch_state(False)
 
             messagebox.showerror(
                 "Ошибка запуска",
-                f"❌ Не удалось запустить игру:\n\n{error_msg}\n\nПроверьте логи для подробностей."
+                f"❌ Не удалось запустить игру:\n\n{error_msg}"
             )
 
     # Запускаем основной процесс в отдельном потоке
@@ -6569,7 +6767,7 @@ def auto_fix_version_files():
                     with open(json_path, 'r', encoding='utf-8') as f:
                         json.load(f)
                 except Exception as e:
-                    print(f"❌ Обнаружен поврежденный файл: {version_folder} — {e}")
+                    print(f"❌ Обнаружен поврежденный файл: {version_folder}")
                     problematic_versions.append(version_folder)
 
         # Исправляем проблемные версии
@@ -6594,6 +6792,7 @@ def auto_fix_version_files():
         messagebox.showerror("Ошибка", f"Не удалось проверить версии: {e}")
         return False
 
+
 def repair_single_version(version_name):
     """Исправляет одну конкретную версию"""
     try:
@@ -6615,9 +6814,10 @@ def repair_single_version(version_name):
         return False
 
 def install_required_components_sync(version_name):
+
     """Синхронная установка компонентов (без отдельного окна)"""
     version_configs = {
-        "YamalPixel": ("1.20.1", "0.17.2"),
+        "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
         "Minecraft 1.7.10": ("1.7.10", None),
         "Minecraft 1.8.9": ("1.8.9", None),
         "Minecraft 1.12.2": ("1.12.2", None),
@@ -6633,7 +6833,7 @@ def install_required_components_sync(version_name):
         "Minecraft 1.18.2 + Fabric": ("1.18.2", "0.17.2"),
         "Minecraft 1.19.2": ("1.19.2", None),
         "Minecraft 1.19.2 + Fabric": ("1.19.2", "0.17.2"),
-        "Minecraft 1.20.1": ("1.20.1", None),
+        "Minecraft 1.20.1": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.1 + Fabric": ("1.20.1", "0.17.2"),
         "Minecraft 1.20.2": ("1.20.2", None),
         "Minecraft 1.20.2 + Fabric": ("1.20.2", "0.17.2"),
@@ -6656,45 +6856,54 @@ def install_required_components_sync(version_name):
         "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", "latest"),
         "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", "latest"),
     }
+    try:
+        if version_name in version_configs:
+            config = version_configs[version_name]
 
-    # Проверяем, есть ли версия в конфиге
-    if version_name not in version_configs:
-        print(f"❌ Неизвестная версия: {version_name}")
-        return
+            # ЗАЩИТА: проверяем количество значений
+            if len(config) == 2:
+                # Если 2 значения, добавляем третье (None)
+                minecraft_version, loader_type = config
+                loader_version = None
+            elif len(config) == 3:
+                # Если 3 значения, распаковываем нормально
+                minecraft_version, loader_type, loader_version = config
+            else:
+                raise ValueError(f"Неверная конфигурация для {version_name}")
+    except Exception as e:
+        print(f"❌ Ошибка в install_required_components_sync: {e}")
+    if version_name in version_configs:
+        config = version_configs[version_name]
+        # Безопасная распаковка
+        if len(config) == 3:
+            minecraft_version, loader_type, loader_version = config
+        else:
+            minecraft_version, loader_type = config
+            loader_version = None
 
-    config = version_configs[version_name]
+        # Устанавливаем Minecraft версию БЕЗОПАСНО
+        print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
 
-    # Безопасная распаковка
-    if len(config) == 3:
-        minecraft_version, loader_type, loader_version = config
-    elif len(config) == 2:
-        minecraft_version, loader_type = config
-        loader_version = None
-    else:
-        print(f"❌ Неверная длина конфигурации для {version_name}")
-        return
-
-    # Устанавливаем Minecraft
-    print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
-    success = safe_install_minecraft_version(
-        version=minecraft_version,
-        minecraft_directory=CONFIG["minecraft_dir"]
-    )
-
-    if not success:
-        raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
-
-    # Устанавливаем модлоадер, если нужно
-    if loader_type == "fabric" and loader_version:
-        print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
-        minecraft_launcher_lib.fabric.install_fabric(
-            minecraft_version=minecraft_version,
-            loader_version=loader_version,
+        success = safe_install_minecraft_version(
+            version=minecraft_version,
             minecraft_directory=CONFIG["minecraft_dir"]
         )
-    elif loader_type == "neoforge":
-        print(f"Устанавливаем NeoForge для {minecraft_version}")
-        install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+
+        if not success:
+            raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
+
+        # Устанавливаем модлоадер если нужно
+        if loader_type == "fabric" and loader_version:
+            print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
+            minecraft_launcher_lib.fabric.install_fabric(
+                minecraft_version=minecraft_version,
+                loader_version=loader_version,
+                minecraft_directory=CONFIG["minecraft_dir"]
+            )
+        elif loader_type == "neoforge":
+            print(f"Устанавливаем NeoForge для {minecraft_version}")
+            install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+
 
 
 def install_neoforge_sync(minecraft_version, minecraft_directory):
@@ -6702,37 +6911,30 @@ def install_neoforge_sync(minecraft_version, minecraft_directory):
     try:
         print(f"🔧 Устанавливаем NeoForge для {minecraft_version}...")
 
-        # Получаем доступные версии NeoForge через правильный API
-        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+        # Получаем NeoForge лоадер через правильный API
+        neoforge_loader = get_mod_loader("neoforge")
+
+        # Получаем доступные версии NeoForge
+        neoforge_versions = neoforge_loader.get_loader_versions(
+            minecraft_version,
+            stable_only=True
+        )
 
         if not neoforge_versions:
             raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
 
-        print(f"📋 Доступные версии NeoForge: {neoforge_versions}")
-
-        # Фильтруем стабильные версии (исключаем beta, alpha, snapshot)
-        stable_versions = []
-        for version in neoforge_versions:
-            version_lower = version.lower()
-            if not any(x in version_lower for x in ['beta', 'alpha', 'test', 'rc', 'snapshot']):
-                stable_versions.append(version)
-
-        # Используем стабильную версию если есть, иначе первую доступную
-        if stable_versions:
-            latest_neoforge = stable_versions[0]
-        else:
-            latest_neoforge = neoforge_versions[0]
-
-        print(f"🎯 Выбрана версия NeoForge: {latest_neoforge}")
+        # Берем последнюю стабильную версию
+        latest_neoforge = neoforge_versions[0]
+        print(f"📦 Используем NeoForge {latest_neoforge}")
 
         # Устанавливаем NeoForge
-        minecraft_launcher_lib.neoforge.install(
+        neoforge_loader.install(
             minecraft_version=minecraft_version,
             minecraft_directory=minecraft_directory,
             loader_version=latest_neoforge
         )
 
-        print(f"✅ NeoForge {latest_neoforge} успешно установлен для {minecraft_version}!")
+        print(f"✅ NeoForge успешно установлен!")
         return True
 
     except Exception as e:
@@ -6864,7 +7066,6 @@ def safe_install_minecraft_version(version, minecraft_directory, progress_callba
 
 
 def install_with_ssl_bypass(version, minecraft_directory):
-    _ = minecraft_directory  # Не используется
     """Установка с обходом SSL проверок (только для проблемных версий)"""
     try:
         print(f"🔄 Пробуем альтернативный метод установки {version}...")
@@ -6895,83 +7096,132 @@ def safe_destroy_window(window):
         print(f"Ошибка при закрытии окна: {e}")
 
 
-def launch_minecraft_process_with_logging(command):
-    """Запускает процесс Minecraft с детальным логированием"""
-    logger = setup_launch_logging()
-
+def launch_minecraft_process(command, log_callback=None):
+    """Запускает процесс Minecraft БЕЗ перехвата вывода"""
     try:
-        log_launch_step(logger, "Начинаем запуск Minecraft")
-        log_launch_step(logger, "Команда запуска", ' '.join(command))
+        if log_callback:
+            log_callback("Запускаем Minecraft...")
 
-        minecraft_dir = CONFIG["minecraft_dir"]
-        log_launch_step(logger, "Рабочая директория", minecraft_dir)
-
-        # Логируем переменные окружения
-        log_launch_step(logger, "JAVA_HOME", os.environ.get('JAVA_HOME', 'Не установлен'))
-        log_launch_step(logger, "PATH", os.environ.get('PATH', 'Не установлен'))
-
-        # Проверяем существование Java
-        java_check = subprocess.run(['java', '-version'], capture_output=True, text=True)
-        if java_check.returncode == 0:
-            log_launch_step(logger, "Java проверена", "Версия найдена")
-        else:
-            log_launch_step(logger, "Java проверка", "ОШИБКА - Java не найдена")
-
+        # ЗАПУСКАЕМ БЕЗ ПЕРЕХВАТА ВЫВОДА - это убирает белое окно
         process = subprocess.Popen(
             command,
-            cwd=minecraft_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding='utf-8',
-            errors='ignore',
-            bufsize=1,
-            universal_newlines=True
+            stdout=subprocess.DEVNULL,  # Игнорируем stdout
+            stderr=subprocess.DEVNULL,  # Игнорируем stderr
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
 
-        log_launch_step(logger, "Процесс создан", f"PID: {process.pid}")
-
-        # Запускаем мониторинг вывода
-        monitor_process_output(process, logger)
-
-        return process, logger
+        if log_callback:
+            log_callback("✅ Minecraft запущен в фоновом режиме")
+        return process
 
     except Exception as e:
-        log_launch_step(logger, "КРИТИЧЕСКАЯ ОШИБКА", f"Не удалось создать процесс: {e}")
-        return None, logger
+        if log_callback:
+            log_callback(f"❌ Ошибка запуска: {str(e)}")
+        return None
+
+
+def format_minecraft_output(line):
+    """Форматирует вывод Minecraft для отображения в лаунчере"""
+    if not line:
+        return None
+
+    # Фильтруем только важные сообщения
+    important_patterns = [
+        "Loading Minecraft",
+        "Loading mods",
+        "WARN",
+        "ERROR",
+        "INFO",
+        "Shaders",
+        "OpenGL",
+        "Sound engine",
+        "Setting user",
+        "Failed to",
+    ]
+
+    # Пропускаем менее важные сообщения
+    skip_patterns = [
+        "FabricLoader",
+        "SpongePowered",
+        "Backend library",
+        "Reloading ResourceManager",
+        "Created:",
+        "Successfully reloaded",
+    ]
+
+    # Проверяем, содержит ли строка важные паттерны
+    if any(pattern in line for pattern in important_patterns):
+        # Укорачиваем слишком длинные строки
+        if len(line) > 100:
+            line = line[:100] + "..."
+
+        # Добавляем эмодзи для разных типов сообщений
+        if "ERROR" in line or "Failed to" in line:
+            return f"❌ {line}"
+        elif "WARN" in line:
+            return f"⚠️ {line}"
+        elif "Loading Minecraft" in line:
+            return f"🎮 {line}"
+        elif "Loading mods" in line:
+            return f"📦 {line}"
+        elif "Setting user" in line:
+            return f"👤 {line}"
+        else:
+            return f"ℹ️ {line}"
+
+    # Пропускаем строки с неважными паттернами
+    elif any(pattern in line for pattern in skip_patterns):
+        return None
+
+    return None
 
 
 def is_minecraft_process_running(process):
-    """Проверяет, работает ли процесс Minecraft"""
+    """Проверяет, запущен ли процесс Minecraft"""
     try:
-        if process is None:
-            return False
-
-        return_code = process.poll()
-        if return_code is None:
-            # Процесс все еще работает
+        # Проверяем наш процесс
+        if process and process.poll() is None:
             return True
+
+        # Дополнительная проверка через tasklist для Windows
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return "javaw.exe" in result.stdout
         else:
-            print(f"[PROCESS] Процесс завершился с кодом: {return_code}")
+            result = subprocess.run(
+                ["pgrep", "-f", "minecraft"], capture_output=True, text=True
+            )
+            return result.returncode == 0
 
-            # Логируем вывод если процесс завершился
-            try:
-                stdout, stderr = process.communicate(timeout=1)
-                if stdout:
-                    print(f"[PROCESS STDOUT] {stdout[:500]}...")  # Первые 500 символов
-                if stderr:
-                    print(f"[PROCESS STDERR] {stderr[:500]}...")
-            except:
-                pass
-
-            return False
-
-    except Exception as e:
-        print(f"[PROCESS CHECK ERROR] {e}")
+    except:
         return False
 
 
+def monitor_game_process(process):
+    """Мониторит процесс игры в фоне"""
+    try:
+        # Ждем завершения процесса
+        process.wait()
 
+        # Читаем вывод если есть
+        try:
+            stdout, stderr = process.communicate(timeout=1)
+            if stdout:
+                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
+            if stderr:
+                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
+        except:
+            pass
+
+        print("[LAUNCHER] Процесс Minecraft завершен")
+
+    except Exception as e:
+        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
 
 def update_log(message):
@@ -7050,6 +7300,52 @@ def format_minecraft_output(line):
     return None
 
 
+def is_minecraft_process_running(process):
+    """Проверяет, запущен ли процесс Minecraft"""
+    try:
+        # Проверяем наш процесс
+        if process.poll() is None:
+            return True
+
+        # Дополнительная проверка через tasklist
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/fi", "imagename eq javaw.exe", "/fo", "csv"],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return "javaw.exe" in result.stdout
+        else:
+            result = subprocess.run(
+                ["pgrep", "-f", "minecraft"], capture_output=True, text=True
+            )
+            return result.returncode == 0
+
+    except:
+        return False
+
+
+def monitor_game_process(process):
+    """Мониторит процесс игры в фоне"""
+    try:
+        # Ждем завершения процесса
+        process.wait()
+
+        # Читаем вывод если есть
+        try:
+            stdout, stderr = process.communicate(timeout=1)
+            if stdout:
+                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
+            if stderr:
+                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
+        except:
+            pass
+
+        print("[LAUNCHER] Процесс Minecraft завершен")
+
+    except Exception as e:
+        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
 
 class ModernButton(tk.Canvas):
@@ -7209,21 +7505,21 @@ class ModernButton(tk.Canvas):
         self.draw_button()
         self.after(80, self.animate_glow)
 
-    def on_hover(self, _event):
+    def on_hover(self, event):
         """При наведении курсора"""
         self.draw_button()
 
-    def on_leave(self, _event):
+    def on_leave(self, event):
         """При уходе курсора"""
         self.draw_button()
 
-    def on_press(self, _event):
+    def on_press(self, event):
         """При нажатии"""
         self.is_pressed = True
         self.pulse_phase += 0.5
         self.draw_button()
 
-    def on_release(self, _event):
+    def on_release(self, event):
         """При отпускании"""
         self.is_pressed = False
         self.draw_button()
@@ -7450,14 +7746,14 @@ class ModernQuickLaunchButton(tk.Canvas):
         ]
         return self.create_polygon(points, smooth=True, **kwargs)
 
-    def on_press(self, _event):
+    def on_press(self, event):
         """При нажатии"""
         self.is_pressed = True
         # Временно затемняем кнопку при нажатии
         self.itemconfig("bg", fill=self.darken_color(self.gradient[0]))
         self.itemconfig("gradient", fill=self.darken_color(self.gradient[1]))
 
-    def on_release(self, __event):
+    def on_release(self, event):
         """При отпускании"""
         self.is_pressed = False
         # Возвращаем нормальные цвета
@@ -7673,23 +7969,23 @@ class ModernCheckbutton(tk.Canvas):
                 0, 0, self._width, self._height, outline="#667eea", width=1
             )
 
-    def toggle(self, _event):
+    def toggle(self, event):
         self.variable.set(not self.variable.get())
         self.draw_checkbutton()
         if self.command:
             self.command()
 
-    def on_hover(self, _event):
+    def on_hover(self, event):
         self.is_hovered = True
         self.draw_checkbutton()
 
-    def on_leave(self, _event):
+    def on_leave(self, event):
         self.is_hovered = False
         self.draw_checkbutton()
 
 
 # Использование для музыки
-
+enabled1 = tk.IntVar()
 music_checkbox = ModernCheckbutton(
     win,
     text="🎵 Включить музыку",
@@ -7873,22 +8169,22 @@ class ModernCloseButton(tk.Canvas):
         self.draw_button()
         self.after(80, self.animate_glow)
 
-    def on_hover(self, _event):
+    def on_hover(self, event):
         """При наведении курсора"""
         self.animation_running = True
         self.draw_button()
 
-    def on_leave(self, _event):
+    def on_leave(self, event):
         """При уходе курсора"""
         self.animation_running = False
         self.draw_button()
 
-    def on_press(self, _event):
+    def on_press(self, event):
         """При нажатии"""
         self.is_pressed = True
         self.draw_button()
 
-    def on_release(self, _event):
+    def on_release(self, event):
         """При отпускании"""
         self.is_pressed = False
         self.draw_button()
@@ -8035,7 +8331,7 @@ class ModernEntry(tk.Canvas):
             tags="border",
         )
 
-    def on_focus_in(self, _event):
+    def on_focus_in(self, event):
         """При фокусе"""
         self.is_focused = True
         self.draw_background()
@@ -8043,7 +8339,7 @@ class ModernEntry(tk.Canvas):
             self.entry.configure(fg="#2b2b2b")
             self.text_value.set("")
 
-    def on_focus_out(self, _event):
+    def on_focus_out(self, event):
         """При потере фокуса"""
         self.is_focused = False
         self.draw_background()
@@ -8223,12 +8519,12 @@ class ModernOnlineButton(tk.Canvas):
         # ИСПРАВЛЕНИЕ: передаем ссылку на функцию, а не вызываем её
         self.after(80, self.animate_glow)
 
-    def on_press(self, _event):
+    def on_press(self, event):
         """При нажатии"""
         self.is_pressed = True
         self.draw_button()
 
-    def on_release(self, _event):
+    def on_release(self, event):
         """При отпускании"""
         self.is_pressed = False
         self.draw_button()
@@ -8340,7 +8636,7 @@ def show_online_players():
 
         # Пинг
         ping_label = ttk.Label(
-            main_frame,
+            main_frame,  # ИСПРАВЛЕНО: main_frame вместо main_server
             text=f"📡 Пинг: {status.latency:.1f} мс",
             font=("Comfortaa", 10),
             foreground="#888888",
@@ -8365,8 +8661,6 @@ def show_online_players():
         close_btn.pack(pady=15)
 
     except Exception as e:
-        print(f"❌ Ошибка подключения к серверу: {e}")  # ← используем 'e' здесь
-
         # Красивое окно ошибки
         error_window = tk.Toplevel(win)
         error_window.title("❌ Ошибка")
@@ -8583,7 +8877,7 @@ class ModernVersionSelector(tk.Canvas):
             tags="icon",
         )
 
-    def toggle_dropdown(self, _event):
+    def toggle_dropdown(self, event):
         """Открывает/закрывает выпадающий список"""
         if not self.is_open:
             self.combobox.place(
@@ -8640,7 +8934,7 @@ version_selector.place(relx=0.5, rely=0.4, anchor="c")
 
 
 # Функция выбора версии
-def select_version(_event):
+def select_version(event):
     selected_version = version_selector.get()
 
     # Обновляем конфигурацию в зависимости от выбранной версии
@@ -8676,8 +8970,7 @@ def select_version(_event):
         "Minecraft 1.21.4": ("1.21.4", None, None),
         "Minecraft 1.21.4 + Fabric": ("1.21.4", "fabric", "0.17.2"),
         # NeoForge версии
-        "Minecraft 1.20.1 + NeoForge": ("1.20.1", "neoforge", None),
-        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),
+        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),  # NeoForge сам выберет версию
         "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", None),
         "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", None),
         "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", None),
@@ -10394,6 +10687,13 @@ def safe_mainloop():
 win.after(100, lambda: setup_adaptive_background())
 
 
+def apply_background_and_close(filename, window):
+    """Применяет фон и закрывает окно"""
+    load_custom_background(filename)
+    window.destroy()
+    messagebox.showinfo("Успех", f"Фон {filename} применен!")
+
+
 if __name__ == "__main__":
     safe_mainloop()
 import json
@@ -10424,7 +10724,7 @@ def save_java_state(installed=True):
     try:
         state = {
             "java_installed": installed,
-            "last_check": dt.now().isoformat(),
+            "last_check": datetime.now().isoformat(),
             "version": CURRENT_VERSION,
         }
         with open(JAVA_STATE_FILE, "w", encoding="utf-8") as f:
