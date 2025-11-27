@@ -1,42 +1,42 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import minecraft_launcher_lib
+import tkinter as tk # Графический интерфейс
+from tkinter import ttk, messagebox # Для стилизации и сообщений
+import minecraft_launcher_lib # Для запуска лаунчера
 from minecraft_launcher_lib.mod_loader import get_mod_loader #Кастомная сборка minecraft_launcher_lib, пришлось повозиться с _neoforge.py
-import subprocess
-import threading
-import os
-import requests
-import re
-from ttkthemes import ThemedTk
-from mcstatus import JavaServer
-from pygame import mixer
-import zipfile
-import platform
-import urllib.request
-import sys
-import shutil
-import logging
-from pypresence import Presence
-from pathlib import Path
-import datetime
-import asyncio
-import aiohttp
-from concurrent.futures import ThreadPoolExecutor
-import hashlib
-import time
-from datetime import datetime as dt
-from pathlib import Path
-import psutil
-import math
-import json
-from PIL import Image, ImageTk
+import subprocess # Для запуска лаунчера
+import threading # Для асинхронного запуска лаунчера
+import os # Для работы с файлами
+import requests # Для запросов
+import re # Для регулярных выражений
+from ttkthemes import ThemedTk # Для темы
+from mcstatus import JavaServer # Для проверки статуса сервера
+from pygame import mixer # Для музыки
+import zipfile # Для работы с ZIP-файлами
+import platform # Для проверки ОС
+import urllib.request # Для загрузки файлов
+import sys # Для работы с системными путями
+import shutil # Для копирования файлов
+import logging # Для логирования
+from pypresence import Presence # Для Discord Rich Presence
+from pathlib import Path # Для работы с путями
+import datetime # Для даты
+import asyncio # Для асинхронных операций
+import aiohttp # Для асинхронных HTTP-запросов
+from concurrent.futures import ThreadPoolExecutor # Для асинхронного выполнения задач
+import hashlib # Для хеширования
+import time # Для таймеров
+from datetime import datetime as dt # Для даты
+from pathlib import Path # Для работы с путями
+import psutil # Для получения информации о процессах
+import math # Для математики
+import json # Для работы с JSON
+from PIL import Image, ImageTk # Для работы с изображениями
 
-import tempfile
+import tempfile # Для временных файлов
 
 
 def fix_python314_dll_issue():
     """Critical fix for Python 3.14 + PyInstaller 6.16.0 DLL loading"""
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, 'frozen', False):  # Проверяем, запущен ли PyInstaller
         # Основной фикс - добавляем MEIPASS в начало PATH
         if hasattr(sys, '_MEIPASS'):
             meipass_path = Path(sys._MEIPASS)
@@ -45,7 +45,7 @@ def fix_python314_dll_issue():
             # Убираем дубликаты и ставим MEIPASS первым
             new_paths = [str(meipass_path)]
             for path in current_paths:
-                if path != str(meipass_path) and Path(path).exists():
+                if path != str(meipass_path) and Path(path).exists():  # Проверяем, что путь существует
                     new_paths.append(path)
 
             os.environ['PATH'] = os.pathsep.join(new_paths)
@@ -177,10 +177,8 @@ def old_repair_with_ui():
                 config_dir = os.path.join(minecraft_dir, "config")
 
                 # Проверка папок
-                win.after(0, lambda: status_label.config(text="Проверка папок..."))
-                win.after(
-                    0, lambda: details_label.config(text="Проверяем структуру папок")
-                )
+                win.after(0, lambda: status_label.config(text="Проверка папок...")) # noqa
+                win.after(0, lambda: details_label.config(text="Проверяем структуру папок"))# noqa
                 progress["value"] = 10
 
                 for folder, path in [
@@ -197,7 +195,7 @@ def old_repair_with_ui():
 
                 # Проверка модов
                 progress["value"] = 50
-                win.after(0, lambda: status_label.config(text="Проверка модов..."))
+                win.after(0, lambda: status_label.config(text="Проверка модов...")) # noqa
 
                 missing_mods = []
                 for mod in CONFIG["mods"]:
@@ -213,10 +211,7 @@ def old_repair_with_ui():
                     for i, mod in enumerate(missing_mods):
                         win.after(
                             0,
-                            lambda: details_label.config(
-                                text=f"Загружаем мод: {mod['file']} ({i + 1}/{len(missing_mods)})"
-                            ),
-                        )
+                            lambda: details_label.config(text=f"Загружаем мод: {mod['file']} ({i + 1}/{len(missing_mods)})"),) # noqa
                         if download_single_mod_turbo(mod):
                             fixes_applied.append(f"Загружен {mod['file']}")
                             add_log(f"✅ Загружен {mod['file']}", "green")
@@ -225,7 +220,7 @@ def old_repair_with_ui():
 
                 # Проверка Fabric
                 progress["value"] = 80
-                win.after(0, lambda: status_label.config(text="Проверка Fabric..."))
+                win.after(0, lambda: status_label.config(text="Проверка Fabric...")) # noqa
 
                 if not check_fabric_installed():
                     issues_found.append("Fabric не установлен")
@@ -235,18 +230,13 @@ def old_repair_with_ui():
                         add_log("✅ Установлен Fabric", "green")
 
                 progress["value"] = 100
-                win.after(0, lambda: status_label.config(text="Проверка завершена!"))
+                win.after(0, lambda: status_label.config(text="Проверка завершена!")) # noqa
 
                 # Показываем результат
-                win.after(
-                    1000,
-                    lambda: show_repair_result(
-                        issues_found, fixes_applied, progress_window
-                    ),
-                )
+                win.after(1000,lambda: show_repair_result(issues_found, fixes_applied, progress_window),) # noqa
 
             except Exception as e:
-                win.after(0, progress_window.destroy)
+                win.after(0, progress_window.destroy) # noqa
                 messagebox.showerror("Ошибка", f"❌ Ошибка автопочинки: {str(e)}")
 
         def show_repair_result(issues, fixes, window):
@@ -695,7 +685,7 @@ def download_single_mod_turbo(mod_info):
         # Пытаемся закрыть загрузчик даже при ошибке
         try:
             asyncio.run(downloader.cleanup())
-        except:
+        except:  # noqa
             pass
         return False
 
@@ -740,20 +730,18 @@ def download_mods_turbo_ui(mods_list):
             # Обновляем прогресс
             for i, (future, mod_name) in enumerate(futures):
                 try:
-                    win.after(0, lambda: update_progress(i, total_mods, mod_name))
+                    win.after(0, lambda: update_progress(i, total_mods, mod_name)) # noqa
                     success = future.result(timeout=180)  # 3 минуты на мод
                     if success:
                         success_count += 1
 
-                    win.after(0, lambda: update_progress(i + 1, total_mods, mod_name))
+                    win.after(0, lambda: update_progress(i + 1, total_mods, mod_name)) # noqa
 
                 except Exception as e:
                     logging.error(f"Ошибка в потоке загрузки {mod_name}: {e}")
 
         # Финальное сообщение
-        win.after(
-            0, lambda: show_download_result(success_count, total_mods, progress_window)
-        )
+        win.after(0, lambda: show_download_result(success_count, total_mods, progress_window)) # noqa
 
     def show_download_result(success, total, window):
         window.destroy()
@@ -802,12 +790,7 @@ def download_shaders_turbo(selected_shaders, progress_callback=None):
 
                     if progress_callback:
                         progress = (i + 1) * 100 // total
-                        win.after(
-                            0,
-                            lambda: progress_callback(
-                                progress, f"Шейдер {i + 1}/{total}"
-                            ),
-                        )
+                        win.after(0,lambda: progress_callback(progress, f"Шейдер {i + 1}/{total}"),) # noqa
 
                 except Exception as e:
                     logging.error(f"Ошибка загрузки шейдера: {e}")
@@ -1086,21 +1069,9 @@ def speed_test():
                     if cancel_flag.is_set():
                         return
 
-                    win.after(
-                        0,
-                        lambda: status_label.config(
-                            text=f"Тест {i + 1}/{len(test_servers)}: {server['name']}"
-                        ),
-                    )
-                    win.after(
-                        0,
-                        lambda: details_label.config(
-                            text=f"Размер: {server['size']} MB"
-                        ),
-                    )
-                    win.after(
-                        0, lambda: progress.config(value=(i * 100 / len(test_servers)))
-                    )
+                    win.after(0,lambda: status_label.config(text=f"Тест {i + 1}/{len(test_servers)}: {server['name']}"),) # noqa
+                    win.after(0,lambda: details_label.config(text=f"Размер: {server['size']} MB"),) # noqa
+                    win.after(0, lambda: progress.config(value=(i * 100 / len(test_servers)))) # noqa
 
                     try:
                         # Тестируем скорость для этого сервера
@@ -1138,22 +1109,17 @@ def speed_test():
                             best_speed_mb_sec,
                             best_speed_mbps,
                             test_results,
-                            progress_window,
-                        ),
-                    )
+                            progress_window,),) # noqa
                 else:
                     win.after(
                         0,
-                        lambda: show_speed_error(
-                            "Все тесты завершились ошибкой", progress_window
-                        ),
-                    )
+                        lambda: show_speed_error("Все тесты завершились ошибкой", progress_window),) # noqa
 
             except Exception as e:
                 if not cancel_flag.is_set():
-                    win.after(0, lambda: show_speed_error(str(e), progress_window))
+                    win.after(0, lambda: show_speed_error(str(e), progress_window)) # noqa
 
-        def test_single_server(url, expected_size, window, cancel_flag):
+        def test_single_server(url, _expected_size, _window, cancel_flag):
             """Тестирует скорость для одного сервера"""
             start_time = time.time()
             downloaded = 0
@@ -1162,7 +1128,7 @@ def speed_test():
                 response = requests.get(url, stream=True, timeout=15)
                 response.raise_for_status()
 
-                total_size = int(response.headers.get("content-length", 0))
+                total_size = int(response.headers.get("content-length", 0)) # noqa
                 chunk_size = 8192
 
                 for chunk in response.iter_content(chunk_size=chunk_size):
@@ -1182,15 +1148,11 @@ def speed_test():
                             win.after(
                                 0,
                                 lambda: details_label.config(
-                                    text=f"Скорость: {current_speed_mbps:.1f} Mbit/s"
-                                ),
-                            )
+                                    text=f"Скорость: {current_speed_mbps:.1f} Mbit/s"),) # noqa
                             win.after(
                                 0,
                                 lambda: time_label.config(
-                                    text=f"Время: {elapsed:.1f} сек"
-                                ),
-                            )
+                                    text=f"Время: {elapsed:.1f} сек"),) # noqa
 
                             # Если тест длится больше 10 секунд - прерываем
                             if elapsed > 10:
@@ -1448,7 +1410,7 @@ def download_shaders():
     # Переменная для хранения выбранных шейдеров
     selected_shaders = []
 
-    def toggle_selection(event):
+    def toggle_selection(_event):
         item = tree.selection()
         if item:
             item = item[0]
@@ -1641,9 +1603,7 @@ def download_shaders_turbo_ui(selected_shaders):
                     lambda: update_progress(
                         current_percent,
                         f"Обработка {i + 1}/{total}...",
-                        f"Текущий: {shader['name']}",
-                    ),
-                )
+                        f"Текущий: {shader['name']}",),) # noqa
 
                 # ПРОСТОЕ СКАЧИВАНИЕ БЕЗ ТУРБО-РЕЖИМА
                 shader_path = os.path.join(shaders_dir, shader["file"])
@@ -1670,11 +1630,9 @@ def download_shaders_turbo_ui(selected_shaders):
                 lambda: update_progress(
                     ((i + 1) * 100) // total,
                     f"Завершено {i + 1}/{total}...",
-                    f"Текущий: {shader['name']}",
-                ),
-            )
+                    f"Текущий: {shader['name']}",),) # noqa
 
-        win.after(0, lambda: completion_callback(success_count, total, error_messages))
+        win.after(0, lambda: completion_callback(success_count, total, error_messages)) # noqa
 
     threading.Thread(target=download_thread, daemon=True).start()
 
@@ -1810,7 +1768,7 @@ def check_fabric_installed():
         fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
         fabric_version_dir = os.path.join(versions_dir, fabric_version)
         return os.path.exists(fabric_version_dir)
-    except:
+    except: # noqa
         return False
 
 
@@ -1864,7 +1822,7 @@ def check_fabric_installed():
         fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
         fabric_version_dir = os.path.join(versions_dir, fabric_version)
         return os.path.exists(fabric_version_dir)
-    except:
+    except: # noqa
         return False
 
 
@@ -1931,8 +1889,8 @@ def check_for_updates():
         changelog = release_data.get("body", "Нет описания изменений")
 
         # Убираем Markdown-разметку и форматируем
-        changelog = re.sub(r"\#{2,}", "", changelog)
-        changelog = re.sub(r"\- ", "• ", changelog)
+        changelog = re.sub(r"\#{2,}", "", changelog) # noqa
+        changelog = re.sub(r"\- ", "• ", changelog) # noqa
         changelog = re.sub(r"\*\*(.*?)\*\*", r"\1", changelog)
         changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
         changelog = changelog.strip()
@@ -2106,16 +2064,16 @@ def check_for_updates():
             text_widget.see("1.0")
 
             # Добавляем ховер-эффекты для кнопок
-            def on_enter_install(e):
+            def on_enter_install(_e):
                 btn_install.configure(bg="#219653")
 
-            def on_leave_install(e):
+            def on_leave_install(_e):
                 btn_install.configure(bg="#27ae60")
 
-            def on_enter_skip(e):
+            def on_enter_skip(_e):
                 btn_skip.configure(bg="#7f8c8d")
 
-            def on_leave_skip(e):
+            def on_leave_skip(_e):
                 btn_skip.configure(bg="#95a5a6")
 
             btn_install.bind("<Enter>", on_enter_install)
@@ -2140,7 +2098,7 @@ def can_update_launcher():
             f.write("test")
         os.remove(test_file)
         return True
-    except:
+    except: # noqa
         return False
 
 
@@ -2292,7 +2250,7 @@ rm -f "$0" 2>/dev/null
         if progress_window:
             progress_window.destroy()
 
-        win.after(100, lambda: sys.exit(0))
+        win.after(100, lambda: sys.exit(0)) # noqa
 
     except Exception as e:
         logging.error(f"Ошибка обновления: {str(e)}")
@@ -2301,7 +2259,7 @@ rm -f "$0" 2>/dev/null
         try:
             if os.path.exists(temp_exe):
                 os.remove(temp_exe)
-        except:
+        except: # noqa
             pass
 
         if progress_window:
@@ -3594,19 +3552,14 @@ def repair_missing_mods_with_progress():
             success_count = 0
 
             if total_mods == 0:
-                win.after(0, lambda: progress_window.destroy())
+                win.after(0, lambda: progress_window.destroy()) # noqa
                 return
 
-            win.after(0, lambda: update_progress(0, total_mods, "Подготовка..."))
+            win.after(0, lambda: update_progress(0, total_mods, "Подготовка...")) # noqa
 
             for i, mod in enumerate(mods_to_download):
                 try:
-                    win.after(
-                        0,
-                        lambda idx=i, m=mod: update_progress(
-                            idx, total_mods, m["file"], "Получение ссылки..."
-                        ),
-                    )
+                    win.after(0,lambda idx=i, m=mod: update_progress( idx, total_mods, m["file"], "Получение ссылки..."),) # noqa
 
                     # Получаем прямую ссылку
                     params = {"public_key": mod["url"]}
@@ -3641,25 +3594,19 @@ def repair_missing_mods_with_progress():
                                             i,
                                             total_mods,
                                             mod["file"],
-                                            f"Загружено: {downloaded_size / (1024 * 1024):.1f}MB",
-                                        ),
-                                    )
+                                            f"Загружено: {downloaded_size / (1024 * 1024):.1f}MB",),) # noqa
 
                         if os.path.exists(mod_path) and os.path.getsize(mod_path) > 0:
                             success_count += 1
                             win.after(
                                 0,
                                 lambda: update_progress(
-                                    i + 1, total_mods, mod["file"], "✅ Успешно"
-                                ),
-                            )
+                                    i + 1, total_mods, mod["file"], "✅ Успешно"),) # noqa
                         else:
                             win.after(
                                 0,
                                 lambda: update_progress(
-                                    i + 1, total_mods, mod["file"], "❌ Ошибка"
-                                ),
-                            )
+                                    i + 1, total_mods, mod["file"], "❌ Ошибка"),) # noqa
 
                 except Exception as e:
                     win.after(
@@ -3667,13 +3614,13 @@ def repair_missing_mods_with_progress():
                         lambda: update_progress(
                             i + 1, total_mods, mod["file"], f"❌ Ошибка: {str(e)[:30]}"
                         ),
-                    )
+                    ) # noqa
 
             # Закрываем окно
-            win.after(1000, lambda: progress_window.destroy())
+            win.after(1000, lambda: progress_window.destroy()) # noqa
 
         except Exception as e:
-            win.after(0, lambda: progress_window.destroy())
+            win.after(0, lambda: progress_window.destroy()) # noqa
 
     # Запускаем загрузку в отдельном потоке
     threading.Thread(target=download_thread, daemon=True).start()
@@ -4301,8 +4248,8 @@ def format_changelog(changelog):
         return "Нет описания изменений"
 
     # Убираем Markdown-разметку
-    changelog = re.sub(r"#{2,}", "", changelog)
-    changelog = re.sub(r"\- ", "• ", changelog)
+    changelog = re.sub(r"#{2,}", "", changelog)  # Убираем заголовки
+    changelog = re.sub(r"\- ", "• ", changelog) # noqa
     changelog = re.sub(r"\*\*(.*?)\*\*", r"▸ \1", changelog)
     changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
     changelog = re.sub(r"`(.*?)`", r"\1", changelog)
@@ -5469,10 +5416,10 @@ def checker1_with_callback(completion_callback=None):
             if total_mods == 0:
                 win.after(
                     0, lambda: show_completion_result(progress_window, 0, 0, True, completion_callback)
-                )
+                ) # noqa
                 return
 
-            win.after(0, lambda: update_progress(0, total_mods, "Подготовка..."))
+            win.after(0, lambda: update_progress(0, total_mods, "Подготовка...")) # noqa
 
             for i, mod in enumerate(mods_to_download):
                 try:
@@ -5480,10 +5427,7 @@ def checker1_with_callback(completion_callback=None):
 
                     win.after(
                         0,
-                        lambda idx=i, m=mod: update_progress(
-                            idx, total_mods, m["file"], 0, 1
-                        ),
-                    )
+                        lambda idx=i, m=mod: update_progress(idx, total_mods, m["file"], 0, 1),) # noqa
 
                     print(f"⬇️  Загружаем мод ({i + 1}/{total_mods}): {mod['file']}")
 
@@ -5680,7 +5624,7 @@ def start_game_launch():
     )
     status_label.pack()
 
-    # ТАЙМЕР - ДОБАВЬТЕ ЭТОТ БЛОК
+    # Таймер
     timer_frame = ttk.Frame(main_frame)
     timer_frame.pack(fill="x", pady=10)
     timer_label = ttk.Label(
@@ -5707,18 +5651,16 @@ def start_game_launch():
 
     def cancel_launch():
         nonlocal cancelled
-        cancelled = True  # Устанавливаем флаг
+        cancelled = True
         progress_window.destroy()
         set_launch_state(False)
         messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
 
-
+    # Кнопка отмены
     button_frame = ttk.Frame(main_frame)
     button_frame.pack(fill="x", pady=20)
     cancel_btn = ttk.Button(button_frame, text="❌ Отменить запуск", command=cancel_launch)
     cancel_btn.pack()
-
-    return progress_window, status_label, cancelled, cancel_launch
 
     # Локальные функции для обновления UI
     def update_timer():
@@ -5737,7 +5679,6 @@ def start_game_launch():
 
     # Запускаем обновление таймера
     update_timer()
-
 
     def update_ui_status(text="", detail=""):
         """Обновляет статус в UI"""
@@ -5758,16 +5699,14 @@ def start_game_launch():
         except Exception as e:
             print(f"[UI LOG ERROR] {e}")
 
-    # Запускаем обновление таймера
-    update_progress_ui()
-
     # ГЛАВНЫЙ ПРОЦЕСС ЗАПУСКА
     def execute_launch_process():
+        nonlocal cancelled  # Добавляем, чтобы можно было читать флаг
 
-        """Основной процесс запуска игры"""
         try:
-
             selected_version = version_selector.get()
+            update_ui_log(f"🔧 Выбрана версия: {selected_version}")
+
             if selected_version == "Minecraft 1.21.1 + NeoForge":
                 messagebox.showwarning(
                     "Проблемная версия",
@@ -5776,111 +5715,89 @@ def start_game_launch():
                 )
                 return
 
-            # Шаг 0: Устанавливаем необходимые компоненты для ВСЕХ версий кроме YamalPixel
+            # Шаг 0: Установка компонентов (кроме YamalPixel)
             if selected_version != "YamalPixel":
                 update_ui_status("Установка компонентов", "Подготавливаем версию...")
                 update_ui_log(f"🔧 Устанавливаем компоненты для: {selected_version}")
 
-                # Используем существующую функцию установки компонентов
+                if cancelled:
+                    return
+
                 install_required_components_sync(selected_version)
                 update_ui_log("✅ Компоненты установлены")
 
-            # Шаг 1: Проверка модов (только для YamalPixel)
-            if selected_version == "YamalPixel":
-                update_ui_status("Проверка завершена", "Моды готовы...")
-                update_ui_log("✅ Все моды проверены и загружены")
+            if cancelled:
+                return
 
-            # Шаг 2: Подготовка игры
+            # Шаг 1: Подготовка игры
             update_ui_status("Подготовка игры", "Очистка и проверка...")
             cleanup_before_launch()
             clear_auth_cache()
             update_ui_log("✅ Файлы подготовлены")
 
-            def check_modloader_installed(selected_version):
-                """Проверяет установлен ли модлоадер (Fabric/NeoForge) - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
-                try:
-                    minecraft_dir = CONFIG["minecraft_dir"]
-                    versions_dir = os.path.join(minecraft_dir, "versions")
+            if cancelled:
+                return
 
-                    loader_type = is_modloader_needed(selected_version)
-
-                    if loader_type == "fabric":
-                        minecraft_version = get_minecraft_version(selected_version)
-                        fabric_loader = "0.17.2"
-                        fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
-                        fabric_version_dir = os.path.join(versions_dir, fabric_version)
-                        return os.path.exists(fabric_version_dir)
-
-                    elif loader_type == "neoforge":
-                        minecraft_version = get_minecraft_version(selected_version)
-                        # Для NeoForge проверяем наличие версии в правильном формате
-                        # NeoForge создает версии в формате "neoforge-<версия_неофоржа>"
-                        # Например: "neoforge-21.1.215"
-                        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                        if neoforge_versions:
-                            latest_version = neoforge_versions[0]
-                            neoforge_version_name = f"neoforge-{latest_version}"
-                            neoforge_version_dir = os.path.join(versions_dir, neoforge_version_name)
-                            return os.path.exists(neoforge_version_dir)
-                        return False
-                    else:
-                        return True  # Для vanilla версий всегда возвращаем True
-
-                except Exception as e:
-                    print(f"Ошибка проверки модлоадера: {e}")
-                    return False
-
-            # Шаг 3: Проверка и установка модлоадеров (Fabric/NeoForge)
-            neoforge_loader = get_mod_loader("neoforge")
+            # Шаг 2: Проверка и установка модлоадеров
             loader_type = is_modloader_needed(selected_version)
             if loader_type:
+                minecraft_version = get_minecraft_version(selected_version)
                 update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
 
-                if not check_modloader_installed(selected_version):
-                    update_ui_log(f"🔧 Устанавливаем {loader_type.capitalize()}...")
+                if cancelled:
+                    return
+
+                def check_modloader_installed():
                     try:
-                        minecraft_version = get_minecraft_version(selected_version)
+                        versions_dir = os.path.join(CONFIG["minecraft_dir"], "versions")
 
                         if loader_type == "fabric":
                             fabric_loader = "0.17.2"
+                            fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
+                            return os.path.exists(os.path.join(versions_dir, fabric_version))
+
+                        elif loader_type == "neoforge":
+                            neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+                            if neoforge_versions:
+                                latest = neoforge_versions[0]
+                                version_dir = os.path.join(versions_dir, f"neoforge-{latest}")
+                                return os.path.exists(version_dir)
+                            return False
+                    except:
+                        return False
+
+                if not check_modloader_installed():
+                    update_ui_log(f"🔧 Устанавливаем {loader_type.capitalize()}...")
+                    try:
+                        if loader_type == "fabric":
                             minecraft_launcher_lib.fabric.install_fabric(
                                 minecraft_version=minecraft_version,
-                                loader_version=fabric_loader,
+                                loader_version="0.17.2",
                                 minecraft_directory=CONFIG["minecraft_dir"],
                             )
                             update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
                         elif loader_type == "neoforge":
-
-                            minecraft_version = get_minecraft_version(selected_version)
-                            # Получаем доступные версии NeoForge - ПРАВИЛЬНЫЙ МЕТОД
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
                             if not neoforge_versions:
                                 raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-                            # Берем последнюю стабильную версию
-                            latest_neoforge = neoforge_versions[0]
-                            # Устанавливаем NeoForge - ПРАВИЛЬНЫЙ МЕТОД
+                            latest = neoforge_versions[0]
                             minecraft_launcher_lib.neoforge.install(
                                 minecraft_version=minecraft_version,
+                                loader_version=latest,
                                 minecraft_directory=CONFIG["minecraft_dir"],
-                                loader_version=latest_neoforge
                             )
-                            update_ui_log(f"✅ NeoForge {latest_neoforge} установлен для {minecraft_version}")
-
+                            update_ui_log(f"✅ NeoForge {latest} установлен")
                     except Exception as e:
-                        update_ui_log(f"❌ Ошибка {loader_type.capitalize()}: {e}")
+                        update_ui_log(f"❌ Ошибка установки {loader_type.capitalize()}: {e}")
                         raise
-                else:
-                    update_ui_log(f"✅ {loader_type.capitalize()} готов")
 
-            # Шаг 4: Запуск игры
+                if cancelled:
+                    return
+
+            # Шаг 3: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
 
-            # Настройки памяти
-            selected_memory = CONFIG.get("jvm_memory", "4G")
-            if selected_memory.startswith("-Xmx"):
-                selected_memory = selected_memory[4:]
-
-            # JVM аргументы
+            selected_memory = CONFIG.get("jvm_memory", "4G").replace("-Xmx", "")
             jvm_args = [
                 f"-Xmx{selected_memory}",
                 f"-Xms{selected_memory}",
@@ -5893,99 +5810,65 @@ def start_game_launch():
                 "username": username.get(),
                 "token": "",
                 "jvmArguments": jvm_args,
-                "gameLocale": "ru_RU",
+                "gameDirectory": CONFIG["minecraft_dir"],
+                "gameLocale": "ru_RU"
             }
 
-            # Формируем команду в зависимости от версии
-            loader_type = is_modloader_needed(selected_version)
-
+            # Определяем версию для запуска
             if loader_type == "fabric":
-                minecraft_version = get_minecraft_version_for_fabric(selected_version)
-                fabric_loader = "0.17.2"
-                fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
-
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=fabric_version,
-                    minecraft_directory=CONFIG["minecraft_dir"],
-                    options=options,
-                )
-                update_ui_log(f"🔧 Используем Fabric: {fabric_version}")
-
-
+                mc_ver = get_minecraft_version_for_fabric(selected_version)
+                launch_version = f"fabric-loader-0.17.2-{mc_ver}"
             elif loader_type == "neoforge":
-                minecraft_version = get_minecraft_version(selected_version)
-                # Получаем актуальную версию NeoForge
-                neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
-                if not neoforge_versions:
-                    raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-                latest_neoforge = neoforge_versions[0]
-                neoforge_version = f"neoforge-{latest_neoforge}"
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=neoforge_version,
-                    minecraft_directory=CONFIG["minecraft_dir"],
-                    options=options,
-                )
-                update_ui_log(f"🟣 Используем NeoForge: {neoforge_version}")
-
-            else:
-                # Для vanilla версий используем чистый Minecraft
-                minecraft_version = get_minecraft_version(selected_version)
-                command = minecraft_launcher_lib.command.get_minecraft_command(
-                    version=minecraft_version,
-                    minecraft_directory=CONFIG["minecraft_dir"],
-                    options=options,
-                )
-                update_ui_log(f"⚡ Используем Vanilla: {minecraft_version}")
-
-            update_ui_log("🚀 Запускаем Minecraft...")
-
-            # Запускаем процесс
-            process = launch_minecraft_process(command)
-
-            if process:
-                update_ui_status("Игра запущена", "Minecraft загружается...")
-                update_ui_log("✅ Процесс запущен")
-
-                # Ждем немного и проверяем
-                time.sleep(3)
-
-                if is_minecraft_process_running(process):
-                    # Успешный запуск
-                    win.after(2000, progress_window.destroy)
-                    win.after(0, lambda: set_launch_state(False))
-
-                    win.after(
-                        100,
-                        lambda: messagebox.showinfo(
-                            "Успешный запуск",
-                            f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
-                        ),
-                    )
-
-                    # Мониторим процесс
-                    threading.Thread(
-                        target=monitor_game_process, args=(process,), daemon=True
-                    ).start()
+                mc_ver = get_minecraft_version(selected_version)
+                neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(mc_ver)
+                if neoforge_versions:
+                    latest = neoforge_versions[0]
+                    launch_version = f"neoforge-{latest}"
                 else:
-                    raise Exception("Minecraft не запустился")
+                    raise Exception(f"Не найдено версий NeoForge для {mc_ver}")
             else:
+                launch_version = get_minecraft_version(selected_version)
+
+            command = minecraft_launcher_lib.command.get_minecraft_command(
+                version=launch_version,
+                minecraft_directory=CONFIG["minecraft_dir"],
+                options=options,
+            )
+            update_ui_log(f"⚡ Запускаем: {launch_version}")
+
+            if cancelled:
+                return
+
+            process = launch_minecraft_process(command)
+            if not process:
                 raise Exception("Не удалось создать процесс")
 
-        except Exception as e:
-            error_msg = f"Ошибка запуска: {str(e)}"
-            print(f"[LAUNCH ERROR] {error_msg}")
+            update_ui_status("Игра запущена", "Minecraft загружается...")
+            update_ui_log("✅ Процесс запущен")
 
+            time.sleep(3)
+            if is_minecraft_process_running(process):
+                win.after(2000, lambda: progress_window.destroy() if progress_window.winfo_exists() else None)
+                win.after(
+                    100,
+                    lambda: messagebox.showinfo(
+                        "Успешный запуск",
+                        f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
+                    ),
+                )
+                threading.Thread(target=monitor_game_process, args=(process,), daemon=True).start()
+            else:
+                raise Exception("Процесс Minecraft завершился сразу")
+
+        except Exception as exc:
+            error_msg = str(e)
+            print(f"[LAUNCH ERROR] {error_msg}")
             if progress_window.winfo_exists():
                 progress_window.destroy()
-
             set_launch_state(False)
+            win.after(0, lambda e=exc: messagebox.showerror("Ошибка", f"❌ Не удалось запустить игру:\n\n{e}"))
 
-            messagebox.showerror(
-                "Ошибка запуска",
-                f"❌ Не удалось запустить игру:\n\n{error_msg}"
-            )
-
-    # Запускаем основной процесс в отдельном потоке
+    # Запускаем основной процесс в потоке
     threading.Thread(target=execute_launch_process, daemon=True).start()
 
 
@@ -9023,8 +8906,8 @@ def create_new_collection():
                 values = selected_tree.item(item)["values"]
                 tags = selected_tree.item(item)["tags"]
 
-                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))
-                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))
+                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods)) # noqa
+                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}")) # noqa
 
                 mod_info = {"source": tags[0], "name": values[1], "filename": values[2]}
 
