@@ -7340,7 +7340,7 @@ online_btn = ModernOnlineButton(
 )
 
 # Размещаем кнопку
-online_btn.place(relx=0.5, rely=0.61, anchor="c")
+online_btn.place(relx=0.5, rely=0.61, anchor="c") # noqa
 
 # Запускаем анимацию
 online_btn.start_animation()
@@ -7530,7 +7530,7 @@ version_selector = ModernVersionSelector(
     corner_radius=20,
     versions_list=versions,
 )
-version_selector.place(relx=0.5, rely=0.4, anchor="c")
+version_selector.place(relx=0.5, rely=0.4, anchor="c")  # noqa
 
 
 # Функция выбора версии
@@ -7595,11 +7595,11 @@ def show_version_change_message(version_name):
     ttk.Button(main_frame, text="OK", command=message_window.destroy, width=10).pack()
 
     # Автоматическое закрытие через 2 секунды
-    message_window.after(2000, message_window.destroy)
+    message_window.after(2000, message_window.destroy)  # noqa
 
 
 # Вызываем функцию обновления статуса Discord после создания окна
-win.after(300, update_discord_status)
+win.after(300, update_discord_status)  # noqa
 
 
 
@@ -7831,8 +7831,8 @@ def create_new_collection():
 
                 # 3. Помечаем каждый мод: совместим или нет
                 for idx, mod in enumerate(mods):
-                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))
-                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))
+                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))  # noqa
+                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))  # noqa
 
                     # Проверяем совместимость
                     versions = api.get_mod_versions(
@@ -7850,16 +7850,16 @@ def create_new_collection():
                         mod["compatible_version"] = "❌ Нет версии"
                         mod["filename"] = "N/A"
 
-                collection_window.after(0, compatibility_window.destroy)
+                collection_window.after(0, compatibility_window.destroy) # noqa
 
                 # 4. Сортируем: совместимые — вверх
                 mods.sort(key=lambda m: (not m["compatible"], -m.get("downloads", 0)))
 
-                collection_window.after(0, lambda: display_modrinth_results(mods))
+                collection_window.after(0, lambda: display_modrinth_results(mods)) # noqa
 
             except Exception as e:
-                collection_window.after(0, progress_window.destroy)
-                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}"))
+                collection_window.after(0, progress_window.destroy) # noqa
+                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}")) # noqa
 
         threading.Thread(target=do_search, daemon=True).start()
 

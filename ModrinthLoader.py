@@ -1,6 +1,6 @@
 # modrinth_api.py
 import requests
-import re
+import re # noqa
 import os
 from typing import List, Dict, Optional
 import urllib.parse
