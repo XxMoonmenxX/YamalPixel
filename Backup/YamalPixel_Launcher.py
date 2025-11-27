@@ -4384,7 +4384,7 @@ def is_game_process_running():
 
 
 def create_progress_window():
-    """Создает окно прогресса с защитой от множественного создания"""
+    """Создает окно прогресса с защитой от множественного создания и корректной отменой запуска"""
     progress_window = tk.Toplevel(win)
     set_window_icon(progress_window)
     progress_window.title("YamalPixel - Запуск игры")
@@ -4409,11 +4409,9 @@ def create_progress_window():
     # Заголовок
     header_frame = ttk.Frame(main_frame)
     header_frame.pack(fill="x", pady=(0, 20))
-
     ttk.Label(
         header_frame, text="🚀 Запуск YamalPixel", font=("Comfortaa", 16, "bold")
     ).pack()
-
     ttk.Label(
         header_frame,
         text="Подготовка к запуску игры...",
@@ -4424,7 +4422,6 @@ def create_progress_window():
     # Прогресс-бар
     progress_frame = ttk.Frame(main_frame)
     progress_frame.pack(fill="x", pady=10)
-
     progress = ttk.Progressbar(
         progress_frame, orient="horizontal", length=400, mode="indeterminate"
     )
@@ -4437,39 +4434,7 @@ def create_progress_window():
     )
     status_label.pack()
 
-    # Таймер
-    timer_frame = ttk.Frame(main_frame)
-    timer_frame.pack(fill="x", pady=10)
 
-    timer_label = ttk.Label(
-        timer_frame, text="⏱️ Прошло времени: 0 сек.", font=("Comfortaa", 9)
-    )
-    timer_label.pack()
-
-    # Кнопка отмены
-    button_frame = ttk.Frame(main_frame)
-    button_frame.pack(fill="x", pady=20)
-
-    def cancel_launch():
-        progress_window.destroy()
-        set_launch_state(False)
-        messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
-
-    cancel_btn = ttk.Button(
-        button_frame, text="❌ Отменить запуск", command=cancel_launch
-    )
-    cancel_btn.pack()
-
-    # Функция обновления таймера
-    def update_timer():
-        if LAUNCH_IN_PROGRESS and progress_window.winfo_exists():
-            elapsed = int(time.time() - LAUNCH_START_TIME)
-            timer_label.config(text=f"⏱️ Прошло времени: {elapsed} сек.")
-            progress_window.after(1000, update_timer)
-
-    update_timer()
-
-    return progress_window
 
 
 def monitor_game_process(process):
@@ -5715,11 +5680,11 @@ def start_game_launch():
     )
     status_label.pack()
 
-    # Таймер
+    # ТАЙМЕР - ДОБАВЬТЕ ЭТОТ БЛОК
     timer_frame = ttk.Frame(main_frame)
     timer_frame.pack(fill="x", pady=10)
     timer_label = ttk.Label(
-        timer_frame, text="⏱️ Прошло времени: 0 сек.", font=("Comfortaa", 9)
+        timer_frame, text="⏱️ Прошло времени: 0 сек", font=("Comfortaa", 9)
     )
     timer_label.pack()
 
@@ -5737,27 +5702,42 @@ def start_game_launch():
     )
     log_label.pack()
 
-    # Кнопка отмены
-    button_frame = ttk.Frame(main_frame)
-    button_frame.pack(fill="x", pady=20)
+    # Флаг отмены
+    cancelled = False
 
     def cancel_launch():
+        nonlocal cancelled
+        cancelled = True  # Устанавливаем флаг
         progress_window.destroy()
         set_launch_state(False)
         messagebox.showinfo("Отменено", "✅ Запуск игры отменен")
 
-    cancel_btn = ttk.Button(
-        button_frame, text="❌ Отменить запуск", command=cancel_launch
-    )
+
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill="x", pady=20)
+    cancel_btn = ttk.Button(button_frame, text="❌ Отменить запуск", command=cancel_launch)
     cancel_btn.pack()
 
+    return progress_window, status_label, cancelled, cancel_launch
+
     # Локальные функции для обновления UI
-    def update_progress_ui():
-        """Обновляет UI прогресса"""
+    def update_timer():
+        """Обновляет таймер с минутами и секундами"""
         if LAUNCH_IN_PROGRESS and progress_window.winfo_exists():
             elapsed = int(time.time() - LAUNCH_START_TIME)
-            timer_label.config(text=f"⏱️ Прошло времени: {elapsed} сек.")
-            progress_window.after(1000, update_progress_ui)
+            minutes = elapsed // 60
+            seconds = elapsed % 60
+
+            if minutes > 0:
+                timer_label.config(text=f"⏱️ Прошло времени: {minutes} мин {seconds} сек")
+            else:
+                timer_label.config(text=f"⏱️ Прошло времени: {seconds} сек")
+
+            progress_window.after(1000, update_timer)
+
+    # Запускаем обновление таймера
+    update_timer()
+
 
     def update_ui_status(text="", detail=""):
         """Обновляет статус в UI"""
@@ -5783,8 +5763,10 @@ def start_game_launch():
 
     # ГЛАВНЫЙ ПРОЦЕСС ЗАПУСКА
     def execute_launch_process():
+
         """Основной процесс запуска игры"""
         try:
+
             selected_version = version_selector.get()
             if selected_version == "Minecraft 1.21.1 + NeoForge":
                 messagebox.showwarning(
@@ -6566,10 +6548,30 @@ def update_status(text, detail=""):
 
 def update_progress_ui():
     """Упрощенная версия без обновления UI"""
-    if LAUNCH_IN_PROGRESS:
-        elapsed = int(time.time() - LAUNCH_START_TIME)
-        print(f"[TIMER] Прошло времени: {elapsed} сек.")
-        win.after(1000, update_progress_ui)
+    # Переменная для хранения ID таймера
+    timer_id = None
+
+    def update_timer():
+        global timer_id
+        if LAUNCH_IN_PROGRESS and progress_window.winfo_exists():
+            elapsed = int(time.time() - LAUNCH_START_TIME)
+            minutes = elapsed // 60
+            seconds = elapsed % 60
+
+            if minutes > 0:
+                timer_label.config(text=f"⏱️ Прошло времени: {minutes} мин {seconds} сек")
+            else:
+                timer_label.config(text=f"⏱️ Прошло времени: {seconds} сек")
+
+            # Сохраняем ID для возможной отмены
+            timer_id = progress_window.after(1000, update_timer)
+        else:
+            # Останавливаем таймер если окно закрыто
+            if timer_id:
+                progress_window.after_cancel(timer_id)
+
+    # Запускаем обновление таймера
+    update_timer()
 
 
 def format_minecraft_output(line):
