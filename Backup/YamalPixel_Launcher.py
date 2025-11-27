@@ -2380,6 +2380,19 @@ def cleanup_before_launch():
             else:
                 os.remove(item)
             print(f"Удалено: {item}")
+    auth_cache_files = [
+        os.path.join(CONFIG["minecraft_dir"], "launcher_accounts.json"),
+        os.path.join(CONFIG["minecraft_dir"], "launcher_profiles.json"),
+        os.path.join(CONFIG["minecraft_dir"], "usercache.json")
+    ]
+
+    for cache_file in auth_cache_files:
+        if os.path.exists(cache_file):
+            try:
+                os.remove(cache_file)
+                print(f"Очищен кэш: {cache_file}")
+            except Exception as e:
+                print(f"Не удалось очистить {cache_file}: {e}")
 
 
 # Функция проверки версии Java
@@ -5197,18 +5210,32 @@ def check_and_download_missing_mods():
         return False
 
 
+def validate_username(username):
+    """Проверяет корректность имени пользователя"""
+    if not username or username == "Введите никнейм":
+        return False, "Имя пользователя не может быть пустым"
+
+    if len(username) < 3 or len(username) > 16:
+        return False, "Длина имени должна быть от 3 до 16 символов"
+
+    # Проверка разрешенных символов
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        return False, "Имя может содержать только буквы, цифры и _"
+
+    return True, "OK"
 # ЗАГРУЗКА МОДОВ ТОЛЬКО ДЛЯ YamalPixel
 def runn():
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
+    import uuid
+    import random
 
-    if LAUNCH_IN_PROGRESS:
-        elapsed = int(time.time() - LAUNCH_START_TIME)
-        messagebox.showwarning(
-            "Запуск уже выполняется",
-            f"🔄 Игра уже запускается!\n\nПрошло: {elapsed} секунд\nПожалуйста, дождитесь завершения запуска.",
-        )
+    username_text = username.get().strip()
+    is_valid, error_msg = validate_username(username_text)
+
+    if not is_valid:
+        messagebox.showerror("Ошибка", f"❌ Некорректное имя пользователя!\n\n{error_msg}")
         return
-
     try:
         if not username.get().strip() or username.get().strip() == "Введите никнейм":
             messagebox.showerror("Ошибка", "❌ Введите имя пользователя!")
@@ -5707,13 +5734,13 @@ def start_game_launch():
             selected_version = version_selector.get()
             update_ui_log(f"🔧 Выбрана версия: {selected_version}")
 
-            if selected_version == "Minecraft 1.21.1 + NeoForge":
-                messagebox.showwarning(
-                    "Проблемная версия",
-                    "Версия временно недоступна из-за проблем с Neoforge.\n"
-                    "Пожалуйста, выберите другую версию Minecraft."
-                )
-                return
+            #if selected_version == "Minecraft 1.21.1 + NeoForge":
+                #messagebox.showwarning(
+                    #"Проблемная версия",
+                    #"Версия временно недоступна из-за проблем с Neoforge.\n"
+                    #"Пожалуйста, выберите другую версию Minecraft."
+                #)
+                #return
 
             # Шаг 0: Установка компонентов (кроме YamalPixel)
             if selected_version != "YamalPixel":
@@ -5797,6 +5824,14 @@ def start_game_launch():
             # Шаг 3: Запуск игры
             update_ui_status("Запуск Minecraft", "Формируем команду...")
 
+            import uuid
+            import hashlib
+
+            # Генерируем UUID на основе имени пользователя (стандартный метод для оффлайн-режима)
+            username_text = username.get().strip()
+            namespace = uuid.UUID('6ba7b811-9dad-11d1-80b4-00c04fd430c8')  # DNS namespace
+            offline_uuid = str(uuid.uuid5(namespace, "OfflinePlayer:" + username_text))
+
             selected_memory = CONFIG.get("jvm_memory", "4G").replace("-Xmx", "")
             jvm_args = [
                 f"-Xmx{selected_memory}",
@@ -5806,14 +5841,17 @@ def start_game_launch():
                 "-Duser.country=RU",
             ]
 
+            # ИСПРАВЛЕННЫЕ ОПЦИИ ЗАПУСКА
             options = {
-                "username": username.get(),
+                "username": username_text,
+                "uuid": offline_uuid,  # Важно: передаем сгенерированный UUID
                 "token": "",
                 "jvmArguments": jvm_args,
                 "gameDirectory": CONFIG["minecraft_dir"],
                 "gameLocale": "ru_RU"
             }
-
+            if not options["username"] or options["username"] == "Введите никнейм":
+                raise Exception("Введите корректное имя пользователя!")
             # Определяем версию для запуска
             if loader_type == "fabric":
                 mc_ver = get_minecraft_version_for_fabric(selected_version)
@@ -5861,7 +5899,7 @@ def start_game_launch():
                 raise Exception("Процесс Minecraft завершился сразу")
 
         except Exception as exc:
-            error_msg = str(e)
+            error_msg = str(exc)
             print(f"[LAUNCH ERROR] {error_msg}")
             if progress_window.winfo_exists():
                 progress_window.destroy()
