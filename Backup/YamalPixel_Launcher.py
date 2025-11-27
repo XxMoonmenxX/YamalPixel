@@ -2619,56 +2619,82 @@ def get_java_installer_url():
 
     return None
 
-
 def install_java_with_progress():
-    """
-    Улучшенная установка Java 17 с детектированием ОС и архитектуры
-    """
     java_window = tk.Toplevel(win)
     java_window.title("Установка Java 17")
-    java_window.geometry("450x200")
-    java_window.resizable(False, False)
+    java_window.geometry("400x150")
 
-    # Центрируем окно
-    java_window.transient(win)
-    java_window.grab_set()
-
-    progress_label = ttk.Label(
-        java_window, text="Установка Java 17...", font=("Comfortaa", 10)
-    )
-    progress_label.pack(pady=15)
+    progress_label = ttk.Label(java_window, text="Прогресс установки Java 17:")
+    progress_label.pack(pady=10)
 
     progress = ttk.Progressbar(
-        java_window, orient="horizontal", length=350, mode="indeterminate"
+        java_window, orient="horizontal", length=300, mode="determinate"
     )
     progress.pack(pady=10)
-    progress.start()
 
-    status_label = ttk.Label(
-        java_window, text="Подготовка к установке...", font=("Comfortaa", 9)
-    )
-    status_label.pack(pady=5)
+    status_label = ttk.Label(java_window, text="")
+    status_label.pack()
 
-    details_label = ttk.Label(
-        java_window, text="", font=("Comfortaa", 8), foreground="gray"
-    )
-    details_label.pack(pady=5)
+    def download_progress_hook(count, block_size, total_size):
+        if total_size > 0:
+            percent = int(count * block_size * 100 / total_size)
+            progress["value"] = percent
+            status_label.config(text=f"Скачано {percent}%")
+            java_window.update_idletasks()
 
+    def install_thread():
+        try:
+            system = platform.system()
+            if system == "Windows":
+                url = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_windows_hotspot_17.0.11_9.msi"
+                msi_path = os.path.join(os.environ["TEMP"], "OpenJDK17.msi")
+                urllib.request.urlretrieve(
+                    url,
+                    msi_path,
+                    reporthook=lambda c, b, t: download_progress_hook(c, b, t),
+                )
+                subprocess.run(
+                    f'msiexec /i "{msi_path}" /quiet', shell=True, check=True
+                )
+                os.remove(msi_path)
+            elif system == "Linux":
+                subprocess.run(
+                    "sudo apt-get install -y wget apt-transport-https",
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run(
+                    "wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo apt-key add -",
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run(
+                    "echo \"deb https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main\" | sudo tee /etc/apt/sources.list.d/adoptium.list",
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run("sudo apt-get update -y", shell=True, check=True)
+                subprocess.run(
+                    "sudo apt-get install -y temurin-17-jdk", shell=True, check=True
+                )
+            elif system == "Darwin":
+                subprocess.run(
+                    '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+                    shell=True,
+                    check=True,
+                )
+                subprocess.run("brew tap adoptium/temurin", shell=True, check=True)
+                subprocess.run("brew install --cask temurin17", shell=True, check=True)
+            java_window.destroy()
+            messagebox.showinfo("Успех :D", "Java 17 успешно установлена! ЗАПУСКАЙ!!!")
+        except Exception as e:
+            messagebox.showerror("АШЫПКА :D", f"Java 17 установлена. ЗАПУСКАЙ!!!!")
+            sys.exit(1)
 
-    def verify_java_installation(window):
-        if check_java_version():
-            window.destroy()
-            messagebox.showinfo(
-                "Успех", "Java 17 успешно установлена! Теперь вы можете запустить игру."
-            )
-        else:
-            messagebox.showwarning(
-                "Предупреждение",
-                "Java может быть установлена, но не обнаружена.\n"
-                "Попробуйте перезапустить лаунчер или перезагрузить компьютер.",
-            )
-
-    threading.Thread(target=install_thread, daemon=True).start()
+    if not check_java_version():
+        threading.Thread(target=install_thread, daemon=True).start()
+    else:
+        java_window.destroy()
 
 
 def install_java_windows(status_label, details_label):
@@ -2873,82 +2899,7 @@ debug_java_installation()
 
 
 # Функция установки Java с прогрессом
-def install_java_with_progress():
-    java_window = tk.Toplevel(win)
-    java_window.title("Установка Java 17")
-    java_window.geometry("400x150")
 
-    progress_label = ttk.Label(java_window, text="Прогресс установки Java 17:")
-    progress_label.pack(pady=10)
-
-    progress = ttk.Progressbar(
-        java_window, orient="horizontal", length=300, mode="determinate"
-    )
-    progress.pack(pady=10)
-
-    status_label = ttk.Label(java_window, text="")
-    status_label.pack()
-
-    def download_progress_hook(count, block_size, total_size):
-        if total_size > 0:
-            percent = int(count * block_size * 100 / total_size)
-            progress["value"] = percent
-            status_label.config(text=f"Скачано {percent}%")
-            java_window.update_idletasks()
-
-    def install_thread():
-        try:
-            system = platform.system()
-            if system == "Windows":
-                url = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.11%2B9/OpenJDK17U-jdk_x64_windows_hotspot_17.0.11_9.msi"
-                msi_path = os.path.join(os.environ["TEMP"], "OpenJDK17.msi")
-                urllib.request.urlretrieve(
-                    url,
-                    msi_path,
-                    reporthook=lambda c, b, t: download_progress_hook(c, b, t),
-                )
-                subprocess.run(
-                    f'msiexec /i "{msi_path}" /quiet', shell=True, check=True
-                )
-                os.remove(msi_path)
-            elif system == "Linux":
-                subprocess.run(
-                    "sudo apt-get install -y wget apt-transport-https",
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run(
-                    "wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo apt-key add -",
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run(
-                    "echo \"deb https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print $2}' /etc/os-release) main\" | sudo tee /etc/apt/sources.list.d/adoptium.list",
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run("sudo apt-get update -y", shell=True, check=True)
-                subprocess.run(
-                    "sudo apt-get install -y temurin-17-jdk", shell=True, check=True
-                )
-            elif system == "Darwin":
-                subprocess.run(
-                    '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-                    shell=True,
-                    check=True,
-                )
-                subprocess.run("brew tap adoptium/temurin", shell=True, check=True)
-                subprocess.run("brew install --cask temurin17", shell=True, check=True)
-            java_window.destroy()
-            messagebox.showinfo("Успех :D", "Java 17 успешно установлена! ЗАПУСКАЙ!!!")
-        except Exception as e:
-            messagebox.showerror("АШЫПКА :D", f"Java 17 установлена. ЗАПУСКАЙ!!!!")
-            sys.exit(1)
-
-    if not check_java_version():
-        threading.Thread(target=install_thread, daemon=True).start()
-    else:
-        java_window.destroy()
 
 
 # Инициализация проверки Java при запуске
