@@ -60,13 +60,10 @@ fix_python314_dll_issue()
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+    if hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
-    except Exception:
-        # В режиме разработки используем домашнюю директорию
+    else:
         base_path = Path.home() / "YamalPixelRes"
-
     return os.path.join(base_path, relative_path)
 
 
@@ -653,11 +650,12 @@ class TurboDownloader:
 
 def download_single_mod_turbo(mod_info):
     """Турбо-загрузка одного мода с правильным закрытием ресурсов"""
+    downloader = TurboDownloader()
     try:
         print(f"🔍 Начинаем загрузку мода: {mod_info['file']}")
 
         # Создаем новый загрузчик для каждого мода
-        downloader = TurboDownloader()
+
 
         # Получаем прямую ссылку
         direct_link = asyncio.run(downloader.get_turbo_link(mod_info["url"]))
@@ -1778,16 +1776,6 @@ def setup_environment():
         sys.exit(1)
 
 
-def validate_backup_integrity(backup_path):
-    """Проверяет целостность ZIP-архива"""
-    try:
-        with zipfile.ZipFile(backup_path, "r") as zip_ref:
-            return zip_ref.testzip() is None
-    except Exception as e:
-        print(f"Ошибка проверки целостности бэкапа: {str(e)}")
-        return False
-
-
 def download_missing_mods_silent():
     """Тихая загрузка отсутствующих модов без UI"""
     try:
@@ -2857,54 +2845,6 @@ def show_java_install_error(error_msg):
 
     tk.Button(error_window, text="Закрыть", command=error_window.destroy).pack(pady=10)
 
-
-def debug_java_installation():
-    """
-    Функция для диагностики проблем с Java
-    """
-    print("=== ДИАГНОСТИКА JAVA ===")
-
-    # Проверка PATH
-    print("Переменная PATH:", os.environ.get("PATH", "").split(";"))
-
-    # Проверка JAVA_HOME
-    java_home = os.environ.get("JAVA_HOME")
-    print(f"JAVA_HOME: {java_home}")
-
-    if java_home:
-        java_exe = os.path.join(
-            java_home, "bin", "java.exe" if os.name == "nt" else "java"
-        )
-        print(f"Java executable exists: {os.path.exists(java_exe)}")
-
-    # Попытка запуска java -version с подробным выводом
-    try:
-        result = subprocess.run(
-            ["java", "-version"],
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            timeout=10,
-        )
-        print(f"Java -version stderr: {result.stderr}")
-        print(f"Java -version stdout: {result.stdout}")
-        print(f"Return code: {result.returncode}")
-    except Exception as e:
-        print(f"Error running java -version: {e}")
-
-    print("=== КОНЕЦ ДИАГНОСТИКИ ===")
-
-
-debug_java_installation()
-
-
-# Функция установки Java с прогрессом
-
-
-
-# Инициализация проверки Java при запуске
-
-
 def skip_java_check():
     """Пропустить проверку Java (для опытных пользователей)"""
     result = messagebox.askyesno(
@@ -3385,251 +3325,6 @@ def get_available_backups():
 
     return result
 
-
-def restore_single_component(backup_path, target_dir, component_name):
-    """Восстанавливает один компонент с улучшенной обработкой ошибок"""
-    try:
-        print(f"📦 Восстанавливаем {component_name} из: {backup_path}")
-        print(f"📁 В папку: {target_dir}")
-
-        # Проверяем существует ли бэкап
-        if not os.path.exists(backup_path):
-            print(f"❌ Бэкап {component_name} не существует: {backup_path}")
-            return False
-
-        # Проверяем архив
-        try:
-            with zipfile.ZipFile(backup_path, "r") as zip_ref:
-                file_list = zip_ref.namelist()
-                print(f"📄 Файлов в архиве {component_name}: {len(file_list)}")
-
-                if not file_list:
-                    print(f"⚠️ Архив {component_name} пустой")
-                    return False
-
-                if file_list:
-                    print(f"📄 Примеры файлов: {file_list[:5]}")
-        except Exception as e:
-            print(f"❌ Ошибка чтения архива {component_name}: {e}")
-            return False
-
-        # Удаляем старую папку
-        if os.path.exists(target_dir):
-            print(f"🗑️ Удаляем старые {component_name}")
-            shutil.rmtree(target_dir)
-
-        # Создаем новую папку
-        os.makedirs(target_dir, exist_ok=True)
-        print(f"📁 Создана новая папка {component_name}: {target_dir}")
-
-        # Распаковываем
-        with zipfile.ZipFile(backup_path, "r") as zip_ref:
-            zip_ref.extractall(target_dir)
-            extracted_files = zip_ref.namelist()
-            print(f"✅ Распаковано файлов {component_name}: {len(extracted_files)}")
-
-        # Проверяем результат
-        restored_files = []
-        for root, dirs, files in os.walk(target_dir):
-            restored_files.extend(files)
-
-        print(f"📁 Файлов восстановлено в папке: {len(restored_files)}")
-        if restored_files:
-            print(f"📄 Примеры восстановленных файлов: {restored_files[:5]}")
-
-        return True
-
-    except Exception as e:
-        print(f"❌ Ошибка восстановления {component_name}: {e}")
-        return False
-
-
-def restore_from_backup(backup_data):
-    """Восстанавливает моды, версии и мир из выбранного бэкапа"""
-    try:
-        print(f"🔄 Начинаем восстановление...")
-        print(f"📦 Данные для восстановления: {list(backup_data.keys())}")
-
-        # Проверка что бэкапные файлы существуют
-        for backup_type, backup_info in backup_data.items():
-            if backup_type in ["mods", "versions", "world"]:
-                if not os.path.exists(backup_info["path"]):
-                    print(
-                        f"❌ Бэкап {backup_type} не существует: {backup_info['path']}"
-                    )
-                    messagebox.showerror("Ошибка", f"Бэкап {backup_type} не найден!")
-                    return
-
-        minecraft_dir = CONFIG["minecraft_dir"]
-        success_messages = []
-        errors = []
-
-        # Восстанавливаем моды если есть
-        if "mods" in backup_data:
-            mods_backup = backup_data["mods"]["path"]
-            mods_dir = os.path.join(minecraft_dir, "mods")
-
-            if restore_single_component(mods_backup, mods_dir, "моды"):
-                success_messages.append("✅ Моды восстановлены")
-            else:
-                errors.append("❌ Ошибка восстановления модов")
-
-        # Восстанавливаем версии если есть
-        if "versions" in backup_data:
-            versions_backup = backup_data["versions"]["path"]
-            versions_dir = os.path.join(minecraft_dir, "versions")
-
-            if restore_single_component(versions_backup, versions_dir, "версии"):
-                success_messages.append("✅ Версии восстановлены")
-            else:
-                errors.append("❌ Ошибка восстановления версий")
-
-        # Восстанавливаем мир если есть
-        if "world" in backup_data:
-            world_backup = backup_data["world"]["path"]
-            world_dir = os.path.join(minecraft_dir, "world")
-
-            if restore_single_component(world_backup, world_dir, "мир"):
-                success_messages.append("✅ Мир восстановлен")
-            else:
-                errors.append("❌ Ошибка восстановления мира")
-
-        # Формируем итоговое сообщение
-        if success_messages:
-            message = "🔄 Восстановление завершено!\n\n" + "\n".join(success_messages)
-            if errors:
-                message += "\n\n⚠️ Были ошибки:\n" + "\n".join(errors)
-            messagebox.showinfo("Успех", message)
-        elif errors:
-            messagebox.showerror(
-                "Ошибка", "Не удалось восстановить данные:\n" + "\n".join(errors)
-            )
-        else:
-            messagebox.showwarning("Внимание", "Нечего восстанавливать")
-
-    except Exception as e:
-        print(f"❌ Общая ошибка восстановления: {str(e)}")
-        messagebox.showerror("Ошибка", f"Не удалось восстановить: {str(e)}")
-
-
-def choose_backup_to_restore():
-    """Показывает диалог выбора бэкапа для восстановления"""
-    print("🎯 Запуск выбора бэкапа...")
-    backups = get_available_backups()
-
-    if not backups:
-        print("❌ Нет бэкапов для показа")
-        messagebox.showinfo(
-            "Восстановление", "Нет доступных бэкапов для восстановления"
-        )
-        return
-
-    # Создаем окно выбора
-    backup_window = tk.Toplevel(win)
-    backup_window.title("Выбор бэкапа для восстановления")
-    backup_window.geometry("600x400")
-    backup_window.transient(win)
-    backup_window.grab_set()
-
-    # Заголовок
-    ttk.Label(
-        backup_window,
-        text="Выберите бэкап для восстановления:",
-        font=("Comfortaa", 12, "bold"),
-    ).pack(pady=10)
-
-    # Фрейм для списка
-    frame = ttk.Frame(backup_window)
-    frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-    # Создаем Treeview
-    columns = ("date", "components")
-    tree = ttk.Treeview(frame, columns=columns, show="headings", height=10)
-
-    # Настраиваем колонки
-    tree.heading("date", text="📅 Дата создания")
-    tree.heading("components", text="🔄 Компоненты")
-
-    tree.column("date", width=200)
-    tree.column("components", width=350)
-
-    # Добавляем данные
-    for backup in backups:
-        components = []
-        if "mods" in backup:
-            components.append("Моды")
-        if "versions" in backup:
-            components.append("Версии")
-        if "world" in backup:
-            components.append("Мир")
-
-        display_components = (
-            " + ".join(components) if components else "Только частичный бэкап"
-        )
-        tree.insert(
-            "",
-            "end",
-            values=(backup["date"], display_components),
-            tags=(backup["timestamp"],),
-        )
-
-    # Скроллбар
-    scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-    tree.configure(yscrollcommand=scrollbar.set)
-
-    tree.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    # Фрейм для кнопок
-    button_frame = ttk.Frame(backup_window)
-    button_frame.pack(pady=10)
-
-    def on_restore():
-        selection = tree.selection()
-        if not selection:
-            messagebox.showwarning(
-                "Выбор", "Пожалуйста, выберите бэкап для восстановления"
-            )
-            return
-
-        selected_timestamp = tree.item(selection[0])["tags"][0]
-        selected_backup = next(
-            (b for b in backups if b["timestamp"] == selected_timestamp), None
-        )
-
-        if selected_backup:
-            # Подтверждение восстановления
-            components = []
-            if "mods" in selected_backup:
-                components.append("Моды")
-            if "versions" in selected_backup:
-                components.append("Версии")
-            if "world" in selected_backup:
-                components.append("Мир")
-
-            result = messagebox.askyesno(
-                "Подтверждение восстановления",
-                f"Вы уверены, что хотите восстановить игру из бэкапа от {selected_backup['date']}?\n\n"
-                f"Будет восстановлено: {', '.join(components) if components else 'частичные данные'}\n\n"
-                f"Текущие данные будут заменены.",
-            )
-
-            if result:
-                backup_window.destroy()
-                restore_from_backup(selected_backup)
-
-    def on_cancel():
-        backup_window.destroy()
-
-    # Кнопки
-    ttk.Button(
-        button_frame, text="🔄 Восстановить", command=on_restore, style="Accent.TButton"
-    ).pack(side="left", padx=5)
-    ttk.Button(button_frame, text="❌ Отмена", command=on_cancel).pack(
-        side="left", padx=5
-    )
-
-
 def create_manual_backup():
     """Создает бэкап вручную по кнопке с автоматическими тестовыми файлами"""
     print("💾 Запуск создания бэкапа...")
@@ -3814,12 +3509,6 @@ def setup_backup_buttons(parent_frame):
     ttk.Button(
         button_row1, text="💾 Создать бэкап", command=create_manual_backup, width=15
     ).pack(side="left", padx=5)
-    ttk.Button(
-        button_row1,
-        text="🔄 Восстановить последний",
-        command=choose_backup_to_restore,
-        width=15,
-    ).pack(side="left", padx=5)
 
     # Второй ряд кнопок
     button_row2 = ttk.Frame(backup_frame)
@@ -3831,130 +3520,6 @@ def setup_backup_buttons(parent_frame):
     ttk.Button(
         button_row2, text="🗑️ Удалить все бэкапы", command=delete_all_backups, width=18
     ).pack(side="left", padx=5)
-
-
-def fig1():
-    """Очистка игры с созданием бэкапов"""
-    minecraft_dir = CONFIG["minecraft_dir"]
-    mods_dir = os.path.join(minecraft_dir, "mods")
-    versions_dir = os.path.join(minecraft_dir, "versions")
-    world_dir = os.path.join(minecraft_dir, "world")
-
-    # Создаем бэкапы перед удалением
-    backups_created = []
-
-    # Бэкап модов (только если папка существует и не пустая)
-    if os.path.exists(mods_dir) and os.listdir(mods_dir):
-        backup_path_mods = create_backup(mods_dir, "mods")
-        if backup_path_mods:
-            backups_created.append(backup_path_mods)
-
-    # Бэкап версий (только если папка существует и не пустая)
-    if os.path.exists(versions_dir) and os.listdir(versions_dir):
-        backup_path_versions = create_backup(versions_dir, "versions")
-        if backup_path_versions:
-            backups_created.append(backup_path_versions)
-
-    # Бэкап мира (только если папка существует и не пустая)
-    if os.path.exists(world_dir) and os.listdir(world_dir):
-        backup_path_world = create_backup(world_dir, "world")
-        if backup_path_world:
-            backups_created.append(backup_path_world)
-
-    # Удаляем папки если они существуют (кроме мира)
-    items_to_remove = [mods_dir, versions_dir]  # Мир не удаляем при очистке!
-    for item in items_to_remove:
-        if os.path.exists(item):
-            try:
-                if os.path.isdir(item):
-                    shutil.rmtree(item)
-                    print(f"Удалено: {item}")
-                else:
-                    os.remove(item)
-                    print(f"Удалено: {item}")
-            except Exception as e:
-                print(f"Ошибка удаления {item}: {str(e)}")
-
-    # Показываем информацию о созданных бэкапах
-    if backups_created:
-        backup_info = "Созданы бэкапы:\n" + "\n".join(
-            [f"• {os.path.basename(b)}" for b in backups_created]
-        )
-        messagebox.showinfo("Бэкапы созданы", f"Игра очищена!\n\n{backup_info}")
-    else:
-        messagebox.showinfo(
-            "Очистка",
-            "Папки mods и versions очищены (бэкапы не создавались - папки были пустые)",
-        )
-
-
-def repair_game_with_options():
-    """Упрощенная версия починки - только то, что работает"""
-    choice_window = tk.Toplevel(win)
-    set_window_icon(choice_window)
-    choice_window.title("Починить игру")
-    choice_window.geometry("400x200")
-
-    ttk.Label(choice_window, text="Выберите действие:", font=("Comfortaa", 14)).pack(
-        pady=20
-    )
-
-    def simple_repair():
-        choice_window.destroy()
-        auto_repair_game_files()  # Наша новая простая функция
-
-    def cleanup_only():
-        choice_window.destroy()
-        fig1()  # Старая функция очистки
-
-    ttk.Button(
-        choice_window,
-        text="🔧 Проверить и починить файлы",
-        command=simple_repair,
-        width=25,
-    ).pack(pady=10)
-
-    ttk.Button(
-        choice_window,
-        text="🧹 Очистить игру (удалить моды и версии)",
-        command=cleanup_only,
-        width=25,
-    ).pack(pady=10)
-
-    ttk.Button(choice_window, text="❌ Отмена", command=choice_window.destroy).pack(
-        pady=10
-    )
-
-
-def auto_repair_game_files():
-    """Починка файлов игры с прогресс-баром"""
-    try:
-        minecraft_dir = CONFIG["minecraft_dir"]
-
-        # 1. Создаем папки если их нет
-        for folder in ["mods", "versions", "config", "shaderpacks"]:
-            path = os.path.join(minecraft_dir, folder)
-            if not os.path.exists(path):
-                os.makedirs(path, exist_ok=True)
-                print(f"✅ Создана папка: {folder}")
-
-        # 2. Проверяем и скачиваем моды ТОЛЬКО для YamalPixel с прогресс-баром
-        if version_selector.get() == "YamalPixel":
-            repair_missing_mods_with_progress()
-        else:
-            print(f"🚫 Версия {version_selector.get()} - моды не проверяются")
-
-        # 3. Проверяем Fabric
-        if not check_fabric_installed():
-            print("🔧 Устанавливаем Fabric...")
-            install_fabric_silent()
-
-        messagebox.showinfo("✅ Готово", "Проверка и починка завершены!")
-        return True
-
-    except Exception as e:
-        messagebox.showerror("❌ Ошибка", f"Не удалось починить игру: {e}")
-        return False
 
 
 def repair_missing_mods_with_progress():
@@ -4590,10 +4155,6 @@ def create_diagnostic_panel():
     row1.pack(fill="x", pady=5)
 
     ttk.Button(
-        row1, text="Быстрая починка", command=lambda: auto_repair_game_files(), width=18
-    ).pack(side="left", padx=5)
-
-    ttk.Button(
         row1, text="Запуск без модов", command=launch_without_mods, width=18
     ).pack(side="left", padx=5)
 
@@ -4731,188 +4292,7 @@ def show_version_info():
     )
 
 
-def create_diagnostic_panel():
-    """Создает панель диагностики с цветными сообщениями"""
-    diag_window = tk.Toplevel(win)
-    diag_window.title("Диагностика проблем")
-    diag_window.geometry("700x550")
 
-    # ВСЕ ОСТАЛЬНОЕ ОБЫЧНОЕ, БЕЗ ТЕМНЫХ ФОНОВ
-
-    # Заголовок
-    header_frame = ttk.Frame(diag_window)
-    header_frame.pack(fill="x", padx=20, pady=15)
-
-    ttk.Label(
-        header_frame, text="Диагностика проблем", font=("Comfortaa", 16, "bold")
-    ).pack()
-
-    ttk.Label(
-        header_frame,
-        text="Автоматическая проверка и решение проблем",
-        font=("Comfortaa", 10),
-        foreground="gray",
-    ).pack(pady=(5, 0))
-
-    # Прогресс-бар
-    progress_frame = ttk.Frame(diag_window)
-    progress_frame.pack(fill="x", padx=20, pady=10)
-
-    progress_label = ttk.Label(progress_frame, text="Проводим диагностику...")
-    progress_label.pack()
-
-    progress_bar = ttk.Progressbar(
-        progress_frame, orient="horizontal", length=650, mode="indeterminate"
-    )
-    progress_bar.pack(pady=5)
-    progress_bar.start()
-
-    # Окно результатов - ОБЫЧНОЕ, белый фон, черный текст
-    results_frame = ttk.LabelFrame(
-        diag_window, text="Результаты диагностики", padding=10
-    )
-    results_frame.pack(fill="both", expand=True, padx=20, pady=10)
-
-    results_text = tk.Text(
-        results_frame, height=12, wrap="word", font=("Consolas", 9)
-    )  # Обычный белый фон
-
-    scrollbar = ttk.Scrollbar(
-        results_frame, orient="vertical", command=results_text.yview
-    )
-    results_text.configure(yscrollcommand=scrollbar.set)
-
-    results_text.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
-    # Статус
-    status_frame = ttk.Frame(diag_window)
-    status_frame.pack(fill="x", padx=20, pady=5)
-
-    status_label = ttk.Label(status_frame, text="Начинаем проверку...")
-    status_label.pack()
-
-    # Кнопки
-    button_frame = ttk.Frame(diag_window)
-    button_frame.pack(fill="x", padx=20, pady=15)
-
-    # Первый ряд
-    row1 = ttk.Frame(button_frame)
-    row1.pack(fill="x", pady=5)
-
-    ttk.Button(
-        row1, text="Быстрая починка", command=lambda: auto_repair_game_files(), width=18
-    ).pack(side="left", padx=5)
-
-    ttk.Button(
-        row1, text="Запуск без модов", command=launch_without_mods, width=18
-    ).pack(side="left", padx=5)
-
-    # Второй ряд
-    row2 = ttk.Frame(button_frame)
-    row2.pack(fill="x", pady=5)
-
-    ttk.Button(
-        row2, text="Полная переустановка", command=complete_reinstall, width=18
-    ).pack(side="left", padx=5)
-
-    ttk.Button(
-        row2,
-        text="Создать отчет",
-        command=lambda: create_debug_report(results_text),
-        width=15,
-    ).pack(side="left", padx=5)
-
-    ttk.Button(row2, text="Закрыть", command=diag_window.destroy, width=12).pack(
-        side="right", padx=5
-    )
-
-    # Функции диагностики - ТОЛЬКО ЗДЕСЬ ЦВЕТНЫЙ ТЕКСТ
-    def add_result(text, color="black"):  # По умолчанию черный
-        results_text.insert("end", f"{text}\n", color)
-        results_text.see("end")
-        diag_window.update()
-
-    def run_diagnostic():
-        try:
-            problems_found = []
-            minecraft_dir = CONFIG["minecraft_dir"]
-
-            # Проверка структуры - зеленый
-            for folder in ["mods", "versions", "config"]:
-                path = os.path.join(minecraft_dir, folder)
-                if os.path.exists(path):
-                    add_result(f"✅ Папка {folder} найдена", "green")
-                else:
-                    problems_found.append(f"Отсутствует папка {folder}")
-                    add_result(f"❌ Папка {folder} не найдена", "red")
-
-            # Проверка модов - синий
-            mods_dir = os.path.join(minecraft_dir, "mods")
-            if os.path.exists(mods_dir):
-                mod_files = [f for f in os.listdir(mods_dir) if f.endswith(".jar")]
-                add_result(f"📦 Найдено модов: {len(mod_files)}", "blue")
-
-                if len(mod_files) == 0:
-                    problems_found.append("Папка модов пустая")
-                    add_result("⚠️ Папка модов пуста", "orange")
-
-            # Проверка ресурсов
-            memory = psutil.virtual_memory()
-            if memory.available < 3 * 1024 * 1024 * 1024:
-                problems_found.append("Мало оперативной памяти")
-                add_result(
-                    f"⚠️ Мало ОЗУ: {memory.available // 1024 // 1024}MB свободно",
-                    "orange",
-                )
-            else:
-                add_result(
-                    f"✅ ОЗУ: {memory.available // 1024 // 1024}MB свободно", "green"
-                )
-
-            disk = psutil.disk_usage(minecraft_dir)
-            if disk.free < 2 * 1024 * 1024 * 1024:
-                problems_found.append("Мало места на диске")
-                add_result(
-                    f"⚠️ Мало места: {disk.free // 1024 // 1024}MB свободно", "orange"
-                )
-            else:
-                add_result(f"✅ Диск: {disk.free // 1024 // 1024}MB свободно", "green")
-
-            # Java
-            java_ok = check_java_version()
-            if java_ok:
-                add_result("✅ Java установлена и работает", "green")
-            else:
-                problems_found.append("Проблемы с Java")
-                add_result("❌ Java не найдена", "red")
-
-            # Финальный отчет
-            progress_bar.stop()
-
-            if problems_found:
-                add_result(f"\n🚨 Найдено проблем: {len(problems_found)}", "red")
-                for problem in problems_found:
-                    add_result(f"• {problem}", "orange")
-                status_label.config(text=f"Обнаружено {len(problems_found)} проблем")
-            else:
-                add_result("\n🎉 Все системы в норме!", "green")
-                add_result("Игра должна запускаться без проблем", "blue")
-                status_label.config(text="Проблем не обнаружено")
-
-        except Exception as e:
-            add_result(f"❌ Ошибка диагностики: {str(e)}", "red")
-            status_label.config(text="Ошибка при диагностике")
-
-    # Настройка цветов для текста
-    results_text.tag_configure("green", foreground="green")
-    results_text.tag_configure("red", foreground="red")
-    results_text.tag_configure("orange", foreground="orange")
-    results_text.tag_configure("blue", foreground="blue")
-
-    # Запускаем диагностику
-    diag_window.after(500, run_diagnostic)
-    diag_window.focus_force()
 
 
 def format_changelog(changelog):
@@ -5241,9 +4621,6 @@ settings_menu.add_command(
     label="🎨 Скачать шейдеры", command=download_shaders
 )  # НОВАЯ КНОПКА
 settings_menu.add_separator()
-settings_menu.add_command(label="🔧 Починка файлов", command=auto_repair_game_files)
-settings_menu.add_command(label="🛠️ Починить игру", command=repair_game_with_options)
-settings_menu.add_separator()
 settings_menu.add_command(label="📂 Открыть папку с игрой", command=open_game_folder)
 settings_menu.add_command(label="💾 Сделать бэкап", command=create_manual_backup)
 settings_menu.add_command(label="📊 Показать бэкапы", command=show_backup_info)
@@ -5251,13 +4628,9 @@ settings_menu.add_command(label="🗑️ Удалить ВСЕ бэкапы", co
 settings_menu.add_separator()
 settings_menu.add_command(label="🔄 Полная переустановка", command=complete_reinstall)
 settings_menu.add_separator()
-settings_menu.add_command(
-    label="🔧 Диагностика проблем", command=create_diagnostic_panel
-)
+settings_menu.add_command(label="🔧 Диагностика проблем", command=create_diagnostic_panel)
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
-settings_menu.add_command(
-    label="🎨 Выбрать фон вручную", command=show_simple_background_selector
-)
+settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
 
 # Или если хотите в выпадающем меню "Справка":
 help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -5755,7 +5128,7 @@ def clear_auth_cache():
     """Очищает кэш аутентификации Minecraft"""
     minecraft_dir = CONFIG["minecraft_dir"]
     cache_files = [
-        #os.path.join(minecraft_dir, "usercache.json"),
+        os.path.join(minecraft_dir, "usercache.json"),
         os.path.join(minecraft_dir, "launcher_profiles.json"),
         os.path.join(minecraft_dir, "launcher_accounts.json"),
     ]
@@ -6013,7 +5386,7 @@ def install_required_components(version_name):
 
             except Exception as e:
                 win.after(0, lambda: progress_window.destroy())
-                win.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}"))
+                win.after(0, lambda e=e: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}"))
 
         threading.Thread(target=install_thread, daemon=True).start()
 
@@ -6413,6 +5786,13 @@ def start_game_launch():
         """Основной процесс запуска игры"""
         try:
             selected_version = version_selector.get()
+            if selected_version == "Minecraft 1.21.1 + NeoForge":
+                messagebox.showwarning(
+                    "Проблемная версия",
+                    "Версия временно недоступна из-за проблем с Neoforge.\n"
+                    "Пожалуйста, выберите другую версию Minecraft."
+                )
+                return
 
             # Шаг 0: Устанавливаем необходимые компоненты для ВСЕХ версий кроме YamalPixel
             if selected_version != "YamalPixel":
@@ -6770,8 +6150,6 @@ def install_required_components_sync(version_name):
     """Синхронная установка компонентов (без отдельного окна)"""
     version_configs = {
         "YamalPixel": ("1.20.1", "0.17.2"),  # ИСПРАВЛЕНО: версия fabric
-        "Minecraft 1.7.10": ("1.7.10", None),
-        "Minecraft 1.8.9": ("1.8.9", None),
         "Minecraft 1.12.2": ("1.12.2", None),
         "Minecraft 1.14.4": ("1.14.4", None),
         "Minecraft 1.14.4 + Fabric": ("1.14.4", "0.17.2"),
@@ -6948,8 +6326,6 @@ def get_minecraft_version(version_name):
     """Получает версию Minecraft для выбранной версии"""
     version_map = {
         "YamalPixel": "1.20.1",
-        "Minecraft 1.7.10": "1.7.10",
-        "Minecraft 1.8.9": "1.8.9",
         "Minecraft 1.12.2": "1.12.2",
         "Minecraft 1.14.4": "1.14.4",
         "Minecraft 1.14.4 + Fabric": "1.14.4",
@@ -7027,7 +6403,7 @@ def install_with_ssl_bypass(version, minecraft_directory):
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-
+        ssl._create_default_https_context = ssl._create_unverified_context
         # Здесь должен быть код для установки с кастомным SSL контекстом
         # К сожалению, minecraft-launcher-lib не поддерживает это напрямую
 
@@ -8663,8 +8039,6 @@ online_btn.start_animation()
 # Список версий для селектора
 versions = [
     "YamalPixel",
-    "Minecraft 1.7.10",
-    "Minecraft 1.8.9",
     "Minecraft 1.12.2",
     "Minecraft 1.14.4",
     "Minecraft 1.14.4 + Fabric",
@@ -8892,8 +8266,6 @@ def select_version(event):
     # Обновляем конфигурацию в зависимости от выбранной версии
     version_configs = {
         "YamalPixel": ("1.20.1", "fabric", "0.17.2"),
-        "Minecraft 1.7.10": ("1.7.10", None, None),
-        "Minecraft 1.8.9": ("1.8.9", None, None),
         "Minecraft 1.12.2": ("1.12.2", None, None),
         "Minecraft 1.14.4": ("1.14.4", None, None),
         "Minecraft 1.14.4 + Fabric": ("1.14.4", "fabric", "0.17.2"),
@@ -10422,7 +9794,6 @@ def load_collection_to_game(filename):
     threading.Thread(target=download_thread, daemon=True).start()
 
 # Добавляем в меню
-settings_menu.add_separator()
 settings_menu.add_command(
     label="📦 Сборки модов (Бета)", command=show_collection_manager
 )
@@ -10648,158 +10019,3 @@ def apply_background_and_close(filename, window):
 
 if __name__ == "__main__":
     safe_mainloop()
-import json
-from pathlib import Path
-
-# Папка для файла состояния
-JAVA_STATE_FILE = Path.home() / "YamalPixelRes" / "java_state.json"
-
-# Создаем папку если не существует
-JAVA_STATE_FILE.parent.mkdir(exist_ok=True)
-
-
-def load_java_state():
-    """Загружает состояние установки Java из файла"""
-    try:
-        if JAVA_STATE_FILE.exists():
-            with open(JAVA_STATE_FILE, "r", encoding="utf-8") as f:
-                state = json.load(f)
-                return state.get("java_installed", False)
-        return False
-    except Exception as e:
-        print(f"Ошибка чтения файла состояния Java: {e}")
-        return False
-
-
-def save_java_state(installed=True):
-    """Сохраняет состояние установки Java в файл"""
-    try:
-        state = {
-            "java_installed": installed,
-            "last_check": datetime.now().isoformat(),
-            "version": CURRENT_VERSION,
-        }
-        with open(JAVA_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-        print(
-            f"✅ Состояние Java сохранено: {'установлена' if installed else 'не установлена'}"
-        )
-    except Exception as e:
-        print(f"❌ Ошибка сохранения файла состояния Java: {e}")
-
-
-def should_skip_java_check():
-    """Проверяет, нужно ли пропускать проверку Java"""
-    return load_java_state()
-
-
-def check_java_version_simple():
-    """
-    Упрощенная проверка Java с системой пропуска
-    """
-    # Если ранее уже устанавливали Java - пропускаем проверку
-    if should_skip_java_check():
-        print("✅ Проверка Java пропущена (ранее уже устанавливали)")
-        return True
-
-    print("🔍 Проверяем установленную Java...")
-
-    try:
-        # Используем твою существующую функцию проверки
-        return check_java_version()
-
-    except Exception as e:
-        print(f"❌ Ошибка проверки Java: {e}")
-        return False
-
-
-def initial_check_simple():
-    """
-    Упрощенная начальная проверка с системой пропуска
-    """
-    print("🎯 Запускаем проверку системы...")
-
-    # Если ранее уже устанавливали Java - просто сообщаем и пропускаем
-    if should_skip_java_check():
-        print("✅ Java ранее уже устанавливалась - проверка пропущена")
-        return True
-
-    # Используем твою существующую проверку Java
-    if not check_java_version():
-        print("❌ Java 17 не найдена")
-
-        # Показываем простое окно выбора
-        choice = messagebox.askyesno(
-            "Требуется Java 17",
-            "Для работы лаунчера нужна Java 17.\n\n"
-            "Установить её автоматически?\n\n"
-            "Если вы уже устанавливали Java, нажмите 'Нет'",
-            icon="info",
-        )
-
-        if choice:
-            # Используем твою существующую установку Java
-            install_java_with_progress()
-
-            # После установки проверяем еще раз
-            if check_java_version():
-                save_java_state(True)  # Сохраняем что установили
-                return True
-            else:
-                return False
-        else:
-            # Пользователь отказался - предлагаем пропустить навсегда
-            skip_forever = messagebox.askyesno(
-                "Пропустить проверку Java",
-                "Пропускать проверку Java в будущем?\n\n"
-                "Вы сможете сбросить это в настройках.",
-                icon="question",
-            )
-            if skip_forever:
-                save_java_state(
-                    True
-                )  # Сохраняем как "установлено" чтобы больше не проверять
-            return True
-    else:
-        print("✅ Правильная версия Java установлена")
-        save_java_state(True)  # Сохраняем что Java уже установлена
-        return True
-
-
-def reset_java_state():
-    """Сбрасывает файл состояния Java (для исправления проблем)"""
-    try:
-        if JAVA_STATE_FILE.exists():
-            JAVA_STATE_FILE.unlink()
-            messagebox.showinfo(
-                "Сброс",
-                "Файл состояния Java сброшен. Проверка будет выполняться снова.",
-            )
-        else:
-            messagebox.showinfo("Информация", "Файл состояния Java не найден.")
-    except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось сбросить состояние: {e}")
-
-
-def check_java_now():
-    """Принудительная проверка Java"""
-    if check_java_version():
-        messagebox.showinfo("Java", "✅ Java установлена и работает правильно!")
-    else:
-        messagebox.showwarning("Java", "❌ Java не найдена или устаревшая версия!")
-
-
-def add_java_tools_to_menu():
-    """Добавляет инструменты Java в меню"""
-    # Добавляем в существующее меню "Инструменты"
-    settings_menu.add_separator()
-    settings_menu.add_command(
-        label="🔄 Сбросить проверку Java", command=reset_java_state
-    )
-    settings_menu.add_command(label="ℹ️ Проверить Java сейчас", command=check_java_now)
-
-
-win.after(100, initial_check_simple)
-
-
-win.after(300, add_java_tools_to_menu)
