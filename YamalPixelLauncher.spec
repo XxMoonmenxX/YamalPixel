@@ -1,7 +1,7 @@
 block_cipher = None
 
 a = Analysis(
-    ['YamalPixel_Launcher.py, Configs.py, ScaleRes.py, utils.py, ModrinthLoader.py'],
+    ['YamalPixel_Launcher.py, Configs.py, ScaleRes.py, utils.py, ModrinthLoader.py, Versions.py'],
     pathex=[],
     binaries=[],
     datas=[('icon.ico', '.')],
