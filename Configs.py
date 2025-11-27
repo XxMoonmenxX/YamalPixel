@@ -538,3 +538,4 @@ essential_mods = [
                     "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
                 },
             ]
+

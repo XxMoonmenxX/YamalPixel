@@ -34,6 +34,7 @@ from ModrinthLoader import ModrinthAPI
 from utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
 from ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds
 from Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods
+from Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions
 
 import tempfile # Для временных файлов
 
@@ -4399,31 +4400,7 @@ def check_minecraft_and_fabric_installed():
 
 def is_modloader_needed(selected_version):
     """Проверяет нужен ли модлоадер (Fabric/NeoForge)"""
-    fabric_supported_versions = [
-        "YamalPixel",
-        "Minecraft 1.14.4 + Fabric",
-        "Minecraft 1.15.2 + Fabric",
-        "Minecraft 1.16.5 + Fabric",
-        "Minecraft 1.17.1 + Fabric",
-        "Minecraft 1.18.2 + Fabric",
-        "Minecraft 1.19.2 + Fabric",
-        "Minecraft 1.20.1 + Fabric",
-        "Minecraft 1.20.2 + Fabric",
-        "Minecraft 1.21 + Fabric",
-        "Minecraft 1.21.1 + Fabric",
-        "Minecraft 1.21.2 + Fabric",
-        "Minecraft 1.21.3 + Fabric",
-        "Minecraft 1.21.4 + Fabric",
-    ]
 
-    neoforge_supported_versions = [
-        "Minecraft 1.20.2 + NeoForge",
-        "Minecraft 1.21 + NeoForge",
-        "Minecraft 1.21.1 + NeoForge",
-        "Minecraft 1.21.2 + NeoForge",
-        "Minecraft 1.21.3 + NeoForge",
-        "Minecraft 1.21.4 + NeoForge",
-    ]
 
     if selected_version in fabric_supported_versions:
         return "fabric"
@@ -7370,43 +7347,7 @@ online_btn.start_animation()
 
 # Список версий для селектора
 # Список версий для селектора
-versions = [
-    "YamalPixel",
-    "Minecraft 1.12.2",
-    "Minecraft 1.14.4",
-    "Minecraft 1.14.4 + Fabric",
-    "Minecraft 1.15.2",
-    "Minecraft 1.15.2 + Fabric",
-    "Minecraft 1.16.5",
-    "Minecraft 1.16.5 + Fabric",
-    "Minecraft 1.17.1",
-    "Minecraft 1.17.1 + Fabric",
-    "Minecraft 1.18.2",
-    "Minecraft 1.18.2 + Fabric",
-    "Minecraft 1.19.2",
-    "Minecraft 1.19.2 + Fabric",
-    "Minecraft 1.20.1",
-    "Minecraft 1.20.1 + Fabric",
-    "Minecraft 1.20.1 + NeoForge",  # НОВОЕ
-    "Minecraft 1.20.2",
-    "Minecraft 1.20.2 + Fabric",
-    "Minecraft 1.20.2 + NeoForge",  # НОВОЕ
-    "Minecraft 1.21",
-    "Minecraft 1.21 + Fabric",
-    "Minecraft 1.21 + NeoForge",    # НОВОЕ
-    "Minecraft 1.21.1",
-    "Minecraft 1.21.1 + Fabric",
-    "Minecraft 1.21.1 + NeoForge",  # НОВОЕ
-    "Minecraft 1.21.2",
-    "Minecraft 1.21.2 + Fabric",
-    "Minecraft 1.21.2 + NeoForge",  # НОВОЕ
-    "Minecraft 1.21.3",
-    "Minecraft 1.21.3 + Fabric",
-    "Minecraft 1.21.3 + NeoForge",  # НОВОЕ
-    "Minecraft 1.21.4",
-    "Minecraft 1.21.4 + Fabric",
-    "Minecraft 1.21.4 + NeoForge",  # НОВОЕ
-]
+
 
 
 class ModernVersionSelector(tk.Canvas):
@@ -7597,43 +7538,7 @@ def select_version(event):
     selected_version = version_selector.get()
 
     # Обновляем конфигурацию в зависимости от выбранной версии
-    version_configs = {
-        "YamalPixel": ("1.20.1", "fabric", "0.17.2"),
-        "Minecraft 1.12.2": ("1.12.2", None, None),
-        "Minecraft 1.14.4": ("1.14.4", None, None),
-        "Minecraft 1.14.4 + Fabric": ("1.14.4", "fabric", "0.17.2"),
-        "Minecraft 1.15.2": ("1.15.2", None, None),
-        "Minecraft 1.15.2 + Fabric": ("1.15.2", "fabric", "0.17.2"),
-        "Minecraft 1.16.5": ("1.16.5", None, None),
-        "Minecraft 1.16.5 + Fabric": ("1.16.5", "fabric", "0.17.2"),
-        "Minecraft 1.17.1": ("1.17.1", None, None),
-        "Minecraft 1.17.1 + Fabric": ("1.17.1", "fabric", "0.17.2"),
-        "Minecraft 1.18.2": ("1.18.2", None, None),
-        "Minecraft 1.18.2 + Fabric": ("1.18.2", "fabric", "0.17.2"),
-        "Minecraft 1.19.2": ("1.19.2", None, None),
-        "Minecraft 1.19.2 + Fabric": ("1.19.2", "fabric", "0.17.2"),
-        "Minecraft 1.20.1": ("1.20.1", None, None),
-        "Minecraft 1.20.1 + Fabric": ("1.20.1", "fabric", "0.17.2"),
-        "Minecraft 1.20.2": ("1.20.2", None, None),
-        "Minecraft 1.20.2 + Fabric": ("1.20.2", "fabric", "0.17.2"),
-        "Minecraft 1.21": ("1.21", None, None),
-        "Minecraft 1.21 + Fabric": ("1.21", "fabric", "0.17.2"),
-        "Minecraft 1.21.1": ("1.21.1", None, None),
-        "Minecraft 1.21.1 + Fabric": ("1.21.1", "fabric", "0.17.2"),
-        "Minecraft 1.21.2": ("1.21.2", None, None),
-        "Minecraft 1.21.2 + Fabric": ("1.21.2", "fabric", "0.17.2"),
-        "Minecraft 1.21.3": ("1.21.3", None, None),
-        "Minecraft 1.21.3 + Fabric": ("1.21.3", "fabric", "0.17.2"),
-        "Minecraft 1.21.4": ("1.21.4", None, None),
-        "Minecraft 1.21.4 + Fabric": ("1.21.4", "fabric", "0.17.2"),
-        # NeoForge версии
-        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),  # NeoForge сам выберет версию
-        "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", None),
-        "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", None),
-        "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", None),
-        "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", None),
-        "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", None),
-    }
+
 
     if selected_version in version_configs:
         config = version_configs[selected_version]
@@ -7738,11 +7643,7 @@ def create_new_collection():
     ttk.Label(meta_frame, text="Версия:").pack(side="left")
     version_var = tk.StringVar(value="1.20.1")
 
-    all_versions = [
-        "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
-        "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
-        "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
-    ]
+
 
     version_combo = ttk.Combobox(
         meta_frame,
