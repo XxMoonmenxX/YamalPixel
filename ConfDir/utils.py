@@ -68,3 +68,4 @@ COLLECTIONS_CONFIG = {
         os.path.expanduser("~"), "YamalPixel", "collections"
     )
 }
+

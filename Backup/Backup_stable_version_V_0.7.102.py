@@ -25,20 +25,11 @@ from concurrent.futures import ThreadPoolExecutor # Для асинхронно�
 import hashlib # Для хеширования
 import time # Для таймеров
 from datetime import datetime as dt # Для даты
-
+from pathlib import Path # Для работы с путями
 import psutil # Для получения информации о процессах
 import math # Для математики
 import json # Для работы с JSON
 from PIL import Image, ImageTk # Для работы с изображениями
-
-from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
-from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds # noqa
-from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods
-from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions, CURRENT_VERSION
-
-from Network.Updates import check_for_updates_local
-from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
-from Network.ModrinthLoader import ModrinthAPI
 
 import tempfile # Для временных файлов
 
@@ -274,26 +265,498 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-
+CURRENT_VERSION = "0.7.102"  # обновление
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
+# Конфигурация ресурсов
+RESOURCE_DIR = Path.home() / "YamalPixelRes"
+# Обновляем RESOURCES в начале кода
+RESOURCES = {
+    "logo.png": "https://disk.yandex.ru/i/XJ1rNloj-EcIGw",
+    "logo1.png": "https://disk.yandex.ru/i/IazaA10AvflA2Q",
+    "logo2.png": "https://disk.yandex.ru/i/X7VlJutjTuJI5g",
+    "logo3.png": "https://disk.yandex.ru/i/aw_NY_pDSQ_yeg",
+    "logo4.png": "https://disk.yandex.ru/i/qHwCeXH8SyMBqg",
+    "logo5.png": "https://disk.yandex.ru/i/2ZbSia8Q4sPOmQ",
+    "logo6.png": "https://disk.yandex.ru/i/9sk7fpOYULQe-w",
+    "logo7.png": "https://disk.yandex.ru/i/Vks2YtorAoECdg",
+    "logo8.png": "https://disk.yandex.ru/i/ztj5t0_y39yjcw",
+    "menu_song.mp3": "https://disk.yandex.ru/d/Ahqnmj2T8YlNKg",
+    "icon.ico": "https://disk.yandex.ru/i/nRwZp3AzRI16qQ"
+}
+# Конфигурация
+CONFIG = {
+    "version": "1.20.1",
+    "fabric_loader": "0.17.2",
+    "minecraft_dir": os.path.expanduser("~/YamalPixel"),
+    "mods": [
+        {
+            "url": "https://disk.yandex.ru/d/aJHjc2LrzS8ndA",
+            "file": "XaerosWorldMap_1.39.12_Fabric_1.20.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/UzM5BWOXB9S7OA",
+            "file": "AdvancedReborn-1.20.1-1.2.9.jar",
+        },
+        # {'url': 'https://disk.yandex.ru/d/S_m78H3B-N9dCQ', 'file': 'pocket-repose-1.2.7-1.20.1.jar'},
+        {
+            "url": "https://disk.yandex.ru/d/c81POD3HZgp48Q",
+            "file": "cc-tweaked-1.20.1-fabric-1.116.2.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/B48FGIIitm-olA",
+            "file": "ae2-emi-crafting-1.3.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/YXPRt1scCMJ8kQ",
+            "file": "antixray-fabric-1.4.6+1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/ukmqzaHQaTP03g",
+            "file": "appliedenergistics2-fabric-15.4.9.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/aH-BHO05_WeuLw",
+            "file": "architectury-9.2.14-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/fo5V3PpaLtZ-gw",
+            "file": "areas-1.20.1-6.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/Tif04Xw7_kd8rQ",
+            "file": "cardinal-components-api-5.2.3.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/k5xux5BX_T9-7g",
+            "file": "choicetheorems-overhauled-village-friends-and-foes-add-on-1.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/378xaPNzlblGFA",
+            "file": "cloth-config-11.1.136-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/5AivLjfk6Wgbog",
+            "file": "collective-1.20.1-8.12.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/nSspzPB5G5ReWA",
+            "file": "crafting_enchanted_golden_apple-1.0.0-fabric-1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/Ox5-1T4a9qkXHg",
+            "file": "ctov-beautify-compat-2.0.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/o2kPxeHul4byng",
+            "file": "emi-1.1.22+1.20.1+fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/PNZi_54Tj4HP3Q",
+            "file": "entityculling-fabric-1.9.1-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/GNW5lwib5Xq9Eg",
+            "file": "extra-mod-integrations-0.4.7+1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/EHHAo7HSzH2mmg",
+            "file": "fabric-api-0.92.6+1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/IHBo3qyqAjR3fQ",
+            "file": "fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/r8gwsUQF7Wy9BQ",
+            "file": "fallingleaves-1.15.6+1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/pddZ2W8za1yiSQ",
+            "file": "indium-1.0.36+mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/PghcNlFWKcgSeg",
+            "file": "InventoryProfilesNext-fabric-1.20-1.10.19.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/AZHbvFGGX_JAKQ",
+            "file": "iris-1.7.6+mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/wwCGHqSxly5pXg",
+            "file": "ironchests-5.0.2-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/OrlYw3O3rnSN1A",
+            "file": "lambdynamiclights-4.4.0+1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/Sr4rPWBdFjEZfA",
+            "file": "libIPN-fabric-1.20-4.0.2.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/7G3BPLxK1Dul1g",
+            "file": "lithium-fabric-mc1.20.1-0.11.3.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/yE26wprToTM9hg",
+            "file": "mavapi-1.1.4-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/Po8eTPEwzDAOpg",
+            "file": "mavm-1.2.6-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/8luIo8Ygz83BEg",
+            "file": "mcpitanlib-3.3.9-1.20.1-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/EsACr5Ex3R9Zdg",
+            "file": "modmenu-badges-lib-2023.6.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/6CF52_F3QbnCzQ",
+            "file": "noindium-1.1.0+1.20.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/B10LX8LVEZg0DQ",
+            "file": "Patchouli-1.20.1-84.1-FABRIC.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/fCkZvVrEqlU3Rg",
+            "file": "RebornCore-5.8.3.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/_CgYmn4OYeGnBQ",
+            "file": "servercore-fabric-1.5.2+1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/uI7zlr5Yg-7skQ",
+            "file": "sodium-extra-0.5.9+mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/Mft3dmbdbHjhHA",
+            "file": "sodium-fabric-0.5.13+mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/dncEQy1PhTcgrw",
+            "file": "TechReborn-5.8.3.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/_c-mQTKC4UB1cw",
+            "file": "Terralith_1.20.x_v2.5.4.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ",
+            "file": "Xaeros_Minimap_25.2.10_Fabric_1.20.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/H0dkq2G5XcrZFQ",
+            "file": "moonlight-1.20-2.16.15-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/uXJYqfjy_aedHQ",
+            "file": "immersive_weathering-1.20.1-2.0.5-fabric.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/5XOEqn8FkypWkg",
+            "file": "create-fabric-6.0.8.0+build.1734-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/XfzgIDOOzleiTA",
+            "file": "create-structures-0.1.1-1.20.1-FABRIC.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/fMv6pNJFcHOKkA",
+            "file": "createaddition-fabric+1.20.1-1.3.3.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/E_jBP9cQfeVX6g",
+            "file": "Steam_Rails-1.6.14-beta+fabric-mc1.20.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/2bh0oqQsq4INXg",
+            "file": "botarium-fabric-1.20.1-2.3.4.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
+            "file": "travelersbackpack-fabric-1.20.1-9.1.41.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/P2yhjpE96GaH1Q",
+            "file": "carryon-fabric-1.20.1-2.1.2.7.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/g33-cksFAVrbmg",
+            "file": "treeharvester-1.20.1-9.1.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/tG9ulUDXHr53vQ",
+            "file": "framework-fabric-1.20.1-0.7.15.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/lePC1Exc3PrWQA",
+            "file": "refurbished_furniture-fabric-1.20.1-1.0.20.jar",
+        },
+        {
+            "url": "https://disk.yandex.ru/d/_JyuGFFBszGFog",
+            "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
+        },
+    ],
+}
 
 
 LAUNCH_IN_PROGRESS = False
 LAUNCH_START_TIME = None
 
 
+class LauncherCache:
+    def __init__(self):
+        self.cache_dir = Path.home() / ".yamalpixel_cache"
+        self.cache_dir.mkdir(exist_ok=True)
+
+    def is_cache_fresh(self, cache_file, max_age_hours=24):
+        """Проверяет свежесть кэша"""
+        if not cache_file.exists():
+            return False
+
+        file_age = time.time() - cache_file.stat().st_mtime
+        return file_age < (max_age_hours * 3600)
+
+    def get_file_hash(self, url):
+        """Создает хеш для имени файла кэша"""
+        return hashlib.md5(url.encode()).hexdigest()
+
+    def download_and_cache(self, url, cache_file):
+        """Скачивает и кэширует файл"""
+        try:
+            response = requests.get(url, timeout=30, stream=True)
+            response.raise_for_status()
+
+            with open(cache_file, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192 * 4):
+                    f.write(chunk)
+
+            logging.info(f"Файл закэширован: {cache_file.name}")
+        except Exception as e:
+            logging.error(f"Ошибка кэширования {url}: {e}")
+            raise
+
+    def get_cached_file(self, url, force_refresh=False):
+        """Возвращает кэшированный файл или качает новый"""
+        file_hash = self.get_file_hash(url)
+        cache_file = self.cache_dir / file_hash
+
+        if cache_file.exists() and not force_refresh:
+            if self.is_cache_fresh(cache_file):
+                return cache_file
+
+        # Качаем и кэшируем
+        self.download_and_cache(url, cache_file)
+        return cache_file
 
 
+class TurboDownloader:
+    def __init__(self):
+        self.cache = {}
+        self.cache_manager = LauncherCache()
+        self._session = None  # Будем переиспользовать сессию
+
+    @property
+    def session(self):
+        if self._session is None:
+            timeout = aiohttp.ClientTimeout(total=300)
+            self._session = aiohttp.ClientSession(timeout=timeout)
+        return self._session
+
+    async def cleanup(self):
+        """Закрывает сессию при завершении"""
+        if self._session:
+            await self._session.close()
+            self._session = None
+
+    async def get_turbo_link(self, public_key):
+        """Быстрое получение ссылки через асинхронность"""
+        if public_key in self.cache:
+            return self.cache[public_key]
+
+        api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
+        try:
+            async with self.session.get(
+                api_url, params={"public_key": public_key}
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    direct_link = data.get("href")
+                    self.cache[public_key] = direct_link
+                    return direct_link
+                else:
+                    logging.error(f"Ошибка API Яндекс: {response.status}")
+                    return None
+        except asyncio.TimeoutError:
+            logging.error("Таймаут получения ссылки Яндекс")
+            return None
+        except Exception as e:
+            logging.error(f"Ошибка получения ссылки: {e}")
+            return None
+
+    async def download_file_async(self, url, file_path, progress_callback=None):
+        """Турбо-загрузка с прогрессом"""
+        try:
+            async with self.session.get(url) as response:
+                if response.status != 200:
+                    raise Exception(f"HTTP {response.status}")
+
+                total_size = int(response.headers.get("content-length", 0))
+
+                with open(file_path, "wb") as f:
+                    downloaded = 0
+                    async for chunk in response.content.iter_chunked(8192 * 8):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size > 0:
+                            progress_callback(downloaded, total_size)
+
+                return True
+        except Exception as e:
+            logging.error(f"Ошибка загрузки {url}: {e}")
+            return False
+
+    def download_file_sync(self, url, file_path, progress_callback=None):
+        """Синхронная версия для использования в потоках"""
+        try:
+            return asyncio.run(
+                self.download_file_async(url, file_path, progress_callback)
+            )
+        finally:
+            # Закрываем сессию после завершения
+            asyncio.run(self.cleanup())
 
 
+def download_single_mod_turbo(mod_info):
+    """Турбо-загрузка одного мода с правильным закрытием ресурсов"""
+    downloader = TurboDownloader()
+    try:
+        print(f"🔍 Начинаем загрузку мода: {mod_info['file']}")
+
+        # Создаем новый загрузчик для каждого мода
 
 
+        # Получаем прямую ссылку
+        direct_link = asyncio.run(downloader.get_turbo_link(mod_info["url"]))
+        print(f"🔗 Прямая ссылка получена: {direct_link is not None}")
 
+        if not direct_link:
+            logging.error(f"Не удалось получить ссылку для {mod_info['file']}")
+            asyncio.run(downloader.cleanup())
+            return False
+
+        # Путь для сохранения
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+        os.makedirs(mods_dir, exist_ok=True)
+        file_path = os.path.join(mods_dir, mod_info["file"])
+
+        # Загружаем файл
+        success = downloader.download_file_sync(direct_link, file_path)
+        print(
+            f"📥 Результат загрузки {mod_info['file']}: {'✅ Успех' if success else '❌ Ошибка'}"
+        )
+
+        if success and mod_info["file"].endswith(".zip"):
+            # Распаковываем ZIP
+            try:
+                with zipfile.ZipFile(file_path, "r") as zip_ref:
+                    zip_ref.extractall(mods_dir)
+                print(f"📦 Мод распакован: {mod_info['file']}")
+            except Exception as e:
+                logging.error(f"Ошибка распаковки {mod_info['file']}: {e}")
+
+        # Явно закрываем загрузчик
+        asyncio.run(downloader.cleanup())
+        return success
+
+    except Exception as e:
+        logging.error(f"Ошибка загрузки мода {mod_info['file']}: {e}")
+        # Пытаемся закрыть загрузчик даже при ошибке
+        try:
+            asyncio.run(downloader.cleanup())
+        except:  # noqa
+            pass
+        return False
+
+
+def download_mods_turbo_ui(mods_list):
+    """Версия с UI для использования в лаунчере - ИСПРАВЛЕННАЯ"""
+
+    # Создаем окно прогресса
+    progress_window = tk.Toplevel(win)
+    set_window_icon(progress_window)
+    progress_window.title("Загрузка модов")
+    progress_window.geometry("400x150")
+
+    progress_label = ttk.Label(progress_window, text="Подготовка к загрузке...")
+    progress_label.pack(pady=10)
+
+    progress = ttk.Progressbar(
+        progress_window, orient="horizontal", length=300, mode="determinate"
+    )
+    progress.pack(pady=10)
+
+    status_label = ttk.Label(progress_window, text=f"0/{len(mods_list)} модов")
+    status_label.pack()
+
+    def download_thread():
+        total_mods = len(mods_list)
+        success_count = 0
+
+        def update_progress(current, total, mod_name=""):
+            percent = (current * 100) // total
+            progress["value"] = percent
+            status_label.config(text=f"{current}/{total} модов - {mod_name}")
+            progress_window.update()
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = []
+
+            for i, mod in enumerate(mods_list):
+                future = executor.submit(download_single_mod_turbo, mod)
+                futures.append((future, mod["file"]))
+
+            # Обновляем прогресс
+            for i, (future, mod_name) in enumerate(futures):
+                try:
+                    win.after(0, lambda: update_progress(i, total_mods, mod_name)) # noqa
+                    success = future.result(timeout=180)  # 3 минуты на мод
+                    if success:
+                        success_count += 1
+
+                    win.after(0, lambda: update_progress(i + 1, total_mods, mod_name)) # noqa
+
+                except Exception as e:
+                    logging.error(f"Ошибка в потоке загрузки {mod_name}: {e}")
+
+        # Финальное сообщение
+        win.after(0, lambda: show_download_result(success_count, total_mods, progress_window)) # noqa
+
+    def show_download_result(success, total, window):
+        window.destroy()
+        if success == total:
+            messagebox.showinfo(
+                "Загрузка завершена", f"✅ Все {success} модов успешно загружены!"
+            )
+        else:
+            messagebox.showwarning(
+                "Загрузка завершена",
+                f"📊 Загружено {success} из {total} модов\n\n"
+                f"Некоторые моды могли не загрузиться. Проверьте логи.",
+            )
+
+    threading.Thread(target=download_thread, daemon=True).start()
 
 
 # 🎯 ОБНОВЛЕННАЯ ФУНКЦИЯ ДЛЯ ШЕЙДЕРОВ:
@@ -394,7 +857,121 @@ def fig1():
         messagebox.showinfo("Очистка", "Папки mods и versions очищены")
 
 
-
+# Конфигурация шейдеров
+SHADERS_CONFIG = {
+    "shaders": [
+        {
+            "name": "Aurora Shaders",
+            "url": "https://disk.yandex.ru/d/AXeR74NrLMDpMw",
+            "file": "Aurora-s-Shaders-1.20.2-1.20.zip",
+        },
+        {
+            "name": "BSL Shaders",
+            "url": "https://disk.yandex.ru/d/G7YX0Az5ZuUptA",
+            "file": "BSL_v8.4.01.2.zip",
+        },
+        {
+            "name": "Bliss Shaders",
+            "url": "https://disk.yandex.ru/d/GjbXRVgDF9S55w",
+            "file": "Bliss_v2.0.4_(Chocapic13_Shaders_edit).zip",
+        },
+        {
+            "name": "Complementary Reimagined",
+            "url": "https://disk.yandex.ru/d/1afdG-63Z4dxog",
+            "file": "ComplementaryReimagined_r5.0.1.zip",
+        },
+        {
+            "name": "Complementary Unbound",
+            "url": "https://disk.yandex.ru/d/mPKPzpM5Rfw4Ag",
+            "file": "ComplementaryUnbound_r5.1.1.zip",
+        },
+        {
+            "name": "Hysteria Shaders",
+            "url": "https://disk.yandex.ru/d/-sJWGfa1wzA77w",
+            "file": "Hysteria-Shaders-Universal-v1.1.0.zip",
+        },
+        {
+            "name": "Insanity Shader",
+            "url": "https://disk.yandex.ru/d/fu3X8ZJ1FdyfWQ",
+            "file": "Insanity-Shader-Universal-v1.500.zip",
+        },
+        {
+            "name": "IterationT Shaders",
+            "url": "https://disk.yandex.ru/d/U4ZsdD303pamBg",
+            "file": "IterationT-Shaders-v2.0.0-All-Versions.zip",
+        },
+        {
+            "name": "Kappa Shaders",
+            "url": "https://disk.yandex.ru/d/salUSNvQg01C0A",
+            "file": "Kappa_v5.2.zip",
+        },
+        {
+            "name": "Lost Souls",
+            "url": "https://disk.yandex.ru/d/XydaLzVyWPOeFg",
+            "file": "Lost Souls version ComplementaryReimagined_r5.2.1.zip",
+        },
+        {
+            "name": "MakeUp UltraFast",
+            "url": "https://disk.yandex.ru/d/lXzHIs0K3Ico0Q",
+            "file": "MakeUp-UltraFast-8.9d.zip",
+        },
+        {
+            "name": "SEUS Renewed",
+            "url": "https://disk.yandex.ru/d/yPiGbWFPYdfcqA",
+            "file": "SEUS-Renewed-1.0.0.zip",
+        },
+        {
+            "name": "Sildur Vibrant Shaders",
+            "url": "https://disk.yandex.ru/d/258c6NIYVdugWw",
+            "file": "Sildur's Vibrant Shaders v1.32 Extreme.zip",
+        },
+        {
+            "name": "Solas Shader",
+            "url": "https://disk.yandex.ru/d/z-tQHGTsiwQAhg",
+            "file": "Solas Shader V2.0 [BETA 0.6b].zip",
+        },
+        {
+            "name": "Spooklementary",
+            "url": "https://disk.yandex.ru/d/AjAhhGl1ueGdsQ",
+            "file": "Spooklementary_1.1.zip",
+        },
+        {
+            "name": "VanillAA",
+            "url": "https://disk.yandex.ru/d/NErUzx0Q6ZCgew",
+            "file": "VanillAA.zip",
+        },
+        {
+            "name": "Ymir Shader",
+            "url": "https://disk.yandex.ru/d/IOv8qwrvYktaJQ",
+            "file": "Ymir_beta3.0.zip",
+        },
+        {
+            "name": "Miniature Shader",
+            "url": "https://disk.yandex.ru/d/dNcMKdHzP1cFRQ",
+            "file": "miniature-shader-2.14.1.zip",
+        },
+        {
+            "name": "Nostalgia Shader",
+            "url": "https://disk.yandex.ru/d/QwLrr-DRx2k8tw",
+            "file": "nostalgia_v5.0.zip",
+        },
+        {
+            "name": "Photon Shader",
+            "url": "https://disk.yandex.ru/d/JNOA4ITKiqA04g",
+            "file": "photon-iris-stable.zip",
+        },
+        {
+            "name": "Rethinking Voxels",
+            "url": "https://disk.yandex.ru/d/3SUoopowIUI8pA",
+            "file": "rethinking-voxels_beta18c.zip",
+        },
+        {
+            "name": "Super Duper Vanilla",
+            "url": "https://disk.yandex.ru/d/aEiGZvEBXRe67Q",
+            "file": "superDuperVanilla.zip",
+        },
+    ]
+}
 
 
 def speed_test():
@@ -2413,7 +2990,7 @@ def load_session_on_start():
                 f"🔄 Восстанавливаем сессию от {session.get('timestamp', 'неизвестно')}"
             )
             # Даем время на создание всех элементов интерфейса
-            win.after(3000, lambda: apply_session_settings(session)) # noqa
+            win.after(3000, lambda: apply_session_settings(session))
         else:
             print("🔰 Сессия не найдена, используем настройки по умолчанию")
     except Exception as e:
@@ -2421,9 +2998,9 @@ def load_session_on_start():
 
 
 # Запускаем загрузку сессии после полной инициализации
-win.after(3500, load_session_on_start)  # noqa
+win.after(3500, load_session_on_start)
 
-win.after(200, check_for_updates)  # noqa
+win.after(200, check_for_updates)  # NEW
 
 # Вызываем перед созданием главного окна
 setup_environment()
@@ -2442,6 +3019,18 @@ img.place(x=0, y=-1, relwidth=1, relheight=1)
 def setup_adaptive_background():
     """Автоматический подбор фона под разрешение экрана"""
     try:
+        RESOLUTION_MAP = {
+            (1920, 1080): "logo1.png",  # Full HD
+            (1920, 1200): "logo2.png",  # WUXGA
+            (2048, 1080): "logo3.png",  # 2K DCI
+            (2048, 1536): "logo4.png",  # QXGA
+            (2560, 1440): "logo5.png",  # 2K QHD
+            (2560, 1600): "logo6.png",  # WQXGA
+            (3440, 1440): "logo7.png",  # UltraWide
+            (3840, 2160): "logo8.png",  # 4K UHD
+            (3840, 2400): "logo2.png",  # WQUXGA (временно используем logo2)
+        }
+
         screen_width = win.winfo_screenwidth()
         screen_height = win.winfo_screenheight()
 
@@ -2506,7 +3095,7 @@ def create_background_selector():
             command=show_background_menu,
             font_size=10,
         )
-        selector_btn.place(relx=0.5, rely=0.68, anchor="center")
+        selector_btn.place(relx=0.5, rely=0.68, anchor="c")
         return selector_btn
     except Exception as e:
         print(f"❌ Ошибка создания кнопки фона: {e}")
@@ -2516,6 +3105,17 @@ def show_background_menu():
     """Показывает меню выбора фона"""
     try:
         menu = tk.Menu(win, tearoff=0, bg="#2b2b2b", fg="white", font=("Comfortaa", 9))
+
+        backgrounds = [
+            ("🖥️  1920×1080 (Full HD)", "logo1.png"),
+            ("💻  1920×1200 (WUXGA)", "logo2.png"),
+            ("🎬  2048×1080 (2K DCI)", "logo3.png"),
+            ("📊  2048×1536 (QXGA)", "logo4.png"),
+            ("🔥  2560×1440 (2K QHD)", "logo5.png"),
+            ("🚀  2560×1600 (WQXGA)", "logo6.png"),
+            ("🎮  3440×1440 (UltraWide)", "logo7.png"),
+            ("4K  3840×2160 (4K UHD)", "logo8.png"),
+        ]
 
         for name, file in backgrounds:
             menu.add_command(
@@ -2552,6 +3152,14 @@ def open_game_folder():
             )
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
+
+
+import os
+import zipfile
+import shutil
+import datetime
+import tkinter as tk
+from tkinter import ttk, messagebox
 
 
 def create_backup(folder_path, backup_type):
@@ -3176,7 +3784,188 @@ def complete_reinstall():
             # Скачиваем только ОСНОВНЫЕ моды (без проблемных)
             base_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?"
 
-
+            essential_mods = [
+                {
+                    "url": "https://disk.yandex.ru/d/aJHjc2LrzS8ndA",
+                    "file": "XaerosWorldMap_1.39.12_Fabric_1.20.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/UzM5BWOXB9S7OA",
+                    "file": "AdvancedReborn-1.20.1-1.2.9.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/B48FGIIitm-olA",
+                    "file": "ae2-emi-crafting-1.3.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/YXPRt1scCMJ8kQ",
+                    "file": "antixray-fabric-1.4.6+1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/ukmqzaHQaTP03g",
+                    "file": "appliedenergistics2-fabric-15.4.9.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/aH-BHO05_WeuLw",
+                    "file": "architectury-9.2.14-fabric.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/fo5V3PpaLtZ-gw",
+                    "file": "areas-1.20.1-6.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/Tif04Xw7_kd8rQ",
+                    "file": "cardinal-components-api-5.2.3.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/k5xux5BX_T9-7g",
+                    "file": "choicetheorems-overhauled-village-friends-and-foes-add-on-1.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/378xaPNzlblGFA",
+                    "file": "cloth-config-11.1.136-fabric.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/5AivLjfk6Wgbog",
+                    "file": "collective-1.20.1-8.12.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/nSspzPB5G5ReWA",
+                    "file": "crafting_enchanted_golden_apple-1.0.0-fabric-1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/Ox5-1T4a9qkXHg",
+                    "file": "ctov-beautify-compat-2.0.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/o2kPxeHul4byng",
+                    "file": "emi-1.1.22+1.20.1+fabric.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/PNZi_54Tj4HP3Q",
+                    "file": "entityculling-fabric-1.9.1-mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/GNW5lwib5Xq9Eg",
+                    "file": "extra-mod-integrations-0.4.7+1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/EHHAo7HSzH2mmg",
+                    "file": "fabric-api-0.92.6+1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/IHBo3qyqAjR3fQ",
+                    "file": "fabric-language-kotlin-1.13.6+kotlin.2.2.20.jarr",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/r8gwsUQF7Wy9BQ",
+                    "file": "fallingleaves-1.15.6+1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/pddZ2W8za1yiSQ",
+                    "file": "indium-1.0.36+mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/PghcNlFWKcgSeg",
+                    "file": "InventoryProfilesNext-fabric-1.20-1.10.19.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/AZHbvFGGX_JAKQ",
+                    "file": "iris-1.7.6+mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/wwCGHqSxly5pXg",
+                    "file": "ironchests-5.0.2-fabric.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/OrlYw3O3rnSN1A",
+                    "file": "lambdynamiclights-4.4.0+1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/Sr4rPWBdFjEZfA",
+                    "file": "libIPN-fabric-1.20-4.0.2.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/7G3BPLxK1Dul1g",
+                    "file": "lithium-fabric-mc1.20.1-0.11.3.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/yE26wprToTM9hg",
+                    "file": "mavapi-1.1.4-mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/Po8eTPEwzDAOpg",
+                    "file": "mavm-1.2.6-mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/8luIo8Ygz83BEg",
+                    "file": "mcpitanlib-3.3.9-1.20.1-fabric.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/EsACr5Ex3R9Zdg",
+                    "file": "modmenu-badges-lib-2023.6.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/6CF52_F3QbnCzQ",
+                    "file": "noindium-1.1.0+1.20.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/B10LX8LVEZg0DQ",
+                    "file": "Patchouli-1.20.1-84.1-FABRIC.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/fCkZvVrEqlU3Rg",
+                    "file": "RebornCore-5.8.3.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/_CgYmn4OYeGnBQ",
+                    "file": "servercore-fabric-1.5.2+1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/uI7zlr5Yg-7skQ",
+                    "file": "sodium-extra-0.5.9+mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/Mft3dmbdbHjhHA",
+                    "file": "sodium-fabric-0.5.13+mc1.20.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/dncEQy1PhTcgrw",
+                    "file": "TechReborn-5.8.3.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/_c-mQTKC4UB1cw",
+                    "file": "Terralith_1.20.x_v2.5.4.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ",
+                    "file": "Xaeros_Minimap_25.2.10_Fabric_1.20.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
+                    "file": "travelersbackpack-fabric-1.20.1-9.1.41.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/P2yhjpE96GaH1Q",
+                    "file": "carryon-fabric-1.20.1-2.1.2.7.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/g33-cksFAVrbmg",
+                    "file": "treeharvester-1.20.1-9.1.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/tG9ulUDXHr53vQ",
+                    "file": "framework-fabric-1.20.1-0.7.15.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/lePC1Exc3PrWQA",
+                    "file": "refurbished_furniture-fabric-1.20.1-1.0.20.jar",
+                },
+                {
+                    "url": "https://disk.yandex.ru/d/_JyuGFFBszGFog",
+                    "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
+                },
+            ]
 
             for mod in essential_mods:
                 try:
@@ -3504,10 +4293,6 @@ def is_latest_version():
         return True  # Если не удалось проверить, считаем что актуальная
 
 
-
-
-
-
 def set_launch_state(launching=False):
     """Управляет состоянием кнопок во время запуска"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
@@ -3518,9 +4303,17 @@ def set_launch_state(launching=False):
         # Блокируем только основные кнопки
         launch_btn.config(state="disabled")  # Блокируем кастомную кнопку
 
+        # Для кастомных кнопок меняем текст через их собственные методы
+        quick_btn.itemconfig("text", text="⏳ Запуск...")
+        quick_btn.itemconfig("shadow", text="⏳ Запуск...")
     else:
-
+        # Разблокируем кнопки
         launch_btn.config(state="normal")  # Разблокируем кастомную кнопку
+
+        # Возвращаем оригинальный текст
+        quick_btn.itemconfig("text", text="🚀 Быстрый запуск (оффлайн)")
+        quick_btn.itemconfig("shadow", text="🚀 Быстрый запуск (оффлайн)")
+
 
 def is_launch_timeout():
     """Проверяет, не завис ли запуск"""
@@ -3654,7 +4447,16 @@ def show_simple_background_selector():
         ).pack(pady=(0, 15))
 
         # Список фонов
-
+        backgrounds = [
+            ("🖥️  Full HD (1920×1080)", "logo1.png"),
+            ("💻  WUXGA (1920×1200)", "logo2.png"),
+            ("🎬  2K DCI (2048×1080)", "logo3.png"),
+            ("📊  QXGA (2048×1536)", "logo4.png"),
+            ("🔥  2K QHD (2560×1440)", "logo5.png"),
+            ("🚀  WQXGA (2560×1600)", "logo6.png"),
+            ("🎮  UltraWide (3440×1440)", "logo7.png"),
+            ("4K  UHD (3840×2160)", "logo8.png"),
+        ]
 
         # Создаем кнопки выбора
         for name, filename in backgrounds:
@@ -3755,19 +4557,28 @@ settings_menu.add_command(label="🔧 Диагностика проблем", co
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
 settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
 
-
 # Или если хотите в выпадающем меню "Справка":
 help_menu = tk.Menu(menu_bar, tearoff=0)
 help_menu.add_command(label="О лаунчере", command=show_version_info)
 help_menu.add_separator()
-help_menu.add_command(label="Проверить обновления", command=lambda: check_for_updates_local(win))
+help_menu.add_command(label="Проверить обновления", command=check_for_updates)
 menu_bar.add_cascade(label="Справка", menu=help_menu)
-
-
 
 
 def setup_adaptive_background():
     """Автоматический подбор фона под разрешение экрана"""
+
+    RESOLUTION_MAP = {
+        (1920, 1080): "logo1.png",  # Full HD
+        (1920, 1200): "logo2.png",  # WUXGA
+        (2048, 1080): "logo3.png",  # 2K DCI
+        (2048, 1536): "logo4.png",  # QXGA
+        (2560, 1440): "logo5.png",  # 2K QHD
+        (2560, 1600): "logo6.png",  # WQXGA
+        (3440, 1440): "logo7.png",  # UltraWide
+        (3840, 2160): "logo8.png",  # 4K UHD
+        (3840, 2400): "logo9.png",  # WQUXGA
+    }
 
     screen_width = win.winfo_screenwidth()
     screen_height = win.winfo_screenheight()
@@ -3786,12 +4597,23 @@ def setup_adaptive_background():
         print(f"🔄 Используем ближайшее: {bg_file}")
         load_custom_background(bg_file)
 
+
 def find_closest_resolution(width, height):
     """Находит ближайшее разрешение по соотношению сторон"""
     aspect_ratio = width / height
 
     # Ближайшие соотношения сторон
-
+    ratios = {
+        (1920, 1080): 1.78,  # 16:9
+        (1920, 1200): 1.60,  # 16:10
+        (2048, 1080): 1.90,  # ~17:9
+        (2048, 1536): 1.33,  # 4:3
+        (2560, 1440): 1.78,  # 16:9
+        (2560, 1600): 1.60,  # 16:10
+        (3440, 1440): 2.39,  # 21:9
+        (3840, 2160): 1.78,  # 16:9
+        (3840, 2400): 1.60,  # 16:10
+    }
 
     # Ищем с наименьшей разницей в соотношении
     best_match = "logo1.png"  # дефолт
@@ -3840,6 +4662,17 @@ def load_default_background():
 def setup_adaptive_background():
     """Автоматический подбор фона под разрешение экрана"""
 
+    RESOLUTION_MAP = {
+        (1920, 1080): "logo1.png",  # Full HD
+        (1920, 1200): "logo2.png",  # WUXGA
+        (2048, 1080): "logo3.png",  # 2K DCI
+        (2048, 1536): "logo4.png",  # QXGA
+        (2560, 1440): "logo5.png",  # 2K QHD
+        (2560, 1600): "logo6.png",  # WQXGA
+        (3440, 1440): "logo7.png",  # UltraWide
+        (3840, 2160): "logo8.png",  # 4K UHD
+        (3840, 2400): "logo2.png",  # WQUXGA (временно используем logo2)
+    }
 
     screen_width = win.winfo_screenwidth()
     screen_height = win.winfo_screenheight()
@@ -3867,7 +4700,16 @@ def find_closest_resolution(width, height):
     aspect_ratio = width / height
 
     # Соотношения сторон для каждого разрешения
-
+    resolution_ratios = {
+        "logo1.png": 1.78,  # 1920x1080 (16:9)
+        "logo2.png": 1.60,  # 1920x1200 (16:10)
+        "logo3.png": 1.90,  # 2048x1080 (~17:9)
+        "logo4.png": 1.33,  # 2048x1536 (4:3)
+        "logo5.png": 1.78,  # 2560x1440 (16:9)
+        "logo6.png": 1.60,  # 2560x1600 (16:10)
+        "logo7.png": 2.39,  # 3440x1440 (21:9)
+        "logo8.png": 1.78,  # 3840x2160 (16:9)
+    }
 
     # Ищем с наименьшей разницей в соотношении
     best_match = "logo1.png"  # дефолт - самый популярный
@@ -3956,6 +4798,17 @@ def show_background_menu():
     """Показывает меню выбора фона"""
     menu = tk.Menu(win, tearoff=0, bg="#2b2b2b", fg="white", font=("Comfortaa", 9))
 
+    backgrounds = [
+        ("🖥️  1920×1080 (Full HD)", "logo1.png"),
+        ("💻  1920×1200 (WUXGA)", "logo2.png"),
+        ("🎬  2048×1080 (2K DCI)", "logo3.png"),
+        ("📊  2048×1536 (QXGA)", "logo4.png"),
+        ("🔥  2560×1440 (2K QHD)", "logo5.png"),
+        ("🚀  2560×1600 (WQXGA)", "logo6.png"),
+        ("🎮  3440×1440 (UltraWide)", "logo7.png"),
+        ("4K  3840×2160 (4K UHD)", "logo8.png"),
+    ]
+
     for name, file in backgrounds:
         menu.add_command(label=name, command=lambda f=file: load_custom_background(f))
 
@@ -4000,6 +4853,18 @@ def show_simple_background_selector():
             foreground="#cccccc",
             background="#2b2b2b",
         ).pack(pady=(0, 15))
+
+        # Список фонов
+        backgrounds = [
+            ("🖥️  Full HD (1920×1080)", "logo1.png"),
+            ("💻  WUXGA (1920×1200)", "logo2.png"),
+            ("🎬  2K DCI (2048×1080)", "logo3.png"),
+            ("📊  QXGA (2048×1536)", "logo4.png"),
+            ("🔥  2K QHD (2560×1440)", "logo5.png"),
+            ("🚀  WQXGA (2560×1600)", "logo6.png"),
+            ("🎮  UltraWide (3440×1440)", "logo7.png"),
+            ("4K  UHD (3840×2160)", "logo8.png"),
+        ]
 
         # Создаем кнопки выбора
         for name, filename in backgrounds:
@@ -4124,7 +4989,31 @@ def check_minecraft_and_fabric_installed():
 
 def is_modloader_needed(selected_version):
     """Проверяет нужен ли модлоадер (Fabric/NeoForge)"""
+    fabric_supported_versions = [
+        "YamalPixel",
+        "Minecraft 1.14.4 + Fabric",
+        "Minecraft 1.15.2 + Fabric",
+        "Minecraft 1.16.5 + Fabric",
+        "Minecraft 1.17.1 + Fabric",
+        "Minecraft 1.18.2 + Fabric",
+        "Minecraft 1.19.2 + Fabric",
+        "Minecraft 1.20.1 + Fabric",
+        "Minecraft 1.20.2 + Fabric",
+        "Minecraft 1.21 + Fabric",
+        "Minecraft 1.21.1 + Fabric",
+        "Minecraft 1.21.2 + Fabric",
+        "Minecraft 1.21.3 + Fabric",
+        "Minecraft 1.21.4 + Fabric",
+    ]
 
+    neoforge_supported_versions = [
+        "Minecraft 1.20.2 + NeoForge",
+        "Minecraft 1.21 + NeoForge",
+        "Minecraft 1.21.1 + NeoForge",
+        "Minecraft 1.21.2 + NeoForge",
+        "Minecraft 1.21.3 + NeoForge",
+        "Minecraft 1.21.4 + NeoForge",
+    ]
 
     if selected_version in fabric_supported_versions:
         return "fabric"
@@ -4418,7 +5307,7 @@ def install_required_components(version_name):
                     # Получаем версию Minecraft из названия
                     minecraft_version = get_minecraft_version(version_name)
 
-                    win.after(0, lambda: status_label.config(text="Установка Minecraft...")) #noqa
+                    win.after(0, lambda: status_label.config(text="Установка Minecraft..."))
 
                     # Устанавливаем чистый Minecraft
                     success = safe_install_minecraft_version(
@@ -4435,9 +5324,8 @@ def install_required_components(version_name):
                 win.after(0, progress_window.destroy)
 
             except Exception as e:
-                error_message = str(e)  # Сохраняем сообщение до вызова win.after
                 win.after(0, lambda: progress_window.destroy())
-                win.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {error_message}"))
+                win.after(0, lambda e=e: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {str(e)}"))
 
         threading.Thread(target=install_thread, daemon=True).start()
 
@@ -5943,11 +6831,287 @@ launch_btn = ModernButton(
     font_size=16,
     corner_radius=20,
 )
-launch_btn.place(relx=0.5, rely=0.5, anchor="center")
+launch_btn.place(relx=0.5, rely=0.5, anchor="c")
 
 # Запускаем анимацию
 launch_btn.start_animation()
 
+
+def disable_problematic_mods():
+    """Временно отключает потенциально проблемные моды"""
+    minecraft_dir = CONFIG["minecraft_dir"]
+    mods_dir = os.path.join(minecraft_dir, "mods")
+    disabled_dir = os.path.join(minecraft_dir, "mods_disabled")
+
+    os.makedirs(disabled_dir, exist_ok=True)
+
+    # Моды которые могут вызывать проблемы при подключении
+    problematic_mods = [
+        "antixray-fabric-1.4.6+1.20.1.jar",
+        "servercore-fabric-1.5.2+1.20.1.jar",
+        "auth-1.0.0.jar",
+    ]
+
+    moved_mods = []
+    for mod in problematic_mods:
+        mod_path = os.path.join(mods_dir, mod)
+        if os.path.exists(mod_path):
+            try:
+                shutil.move(mod_path, os.path.join(disabled_dir, mod))
+                moved_mods.append(mod)
+                print(f"Отключен мод: {mod}")
+            except Exception as e:
+                print(f"Ошибка отключения мода {mod}: {e}")
+
+    if moved_mods:
+        messagebox.showinfo(
+            "Моды отключены",
+            f"Временно отключены моды:\n"
+            + "\n".join(moved_mods)
+            + f"\n\nОни перемещены в: {disabled_dir}",
+        )
+
+
+class ModernQuickLaunchButton(tk.Canvas):
+    def __init__(
+        self,
+        master=None,
+        text="🚀 Быстрый запуск",
+        width=250,
+        height=45,
+        gradient=("#667eea", "#764ba2"),
+        command=None,
+        font_size=12,
+        corner_radius=12,
+        **kwargs,
+    ):
+
+        super().__init__(
+            master, width=width, height=height, highlightthickness=0, **kwargs
+        )
+
+        self.text = text
+        self.width = width
+        self.height = height
+        self.gradient = gradient
+        self.command = command
+        self.font_size = font_size
+        self.corner_radius = corner_radius
+
+        # Состояния кнопки
+        self.is_pressed = False
+
+        self.bind("<Button-1>", self.on_press)
+        self.bind("<ButtonRelease-1>", self.on_release)
+
+        # Начальная отрисовка
+        self.draw_button()
+
+    def draw_button(self):
+        """Отрисовывает кнопку"""
+        self.delete("all")
+
+        # Создаем скругленный прямоугольник с градиентом
+        self.create_round_rect(
+            2,
+            2,
+            self.width - 2,
+            self.height - 2,
+            self.corner_radius,
+            fill=self.gradient[0],
+            outline="",
+            tags="bg",
+        )
+
+        # Добавляем градиентный эффект
+        steps = 8
+        for i in range(steps):
+            ratio = i / steps
+            r = int(
+                (1 - ratio) * self.hex_to_rgb(self.gradient[0])[0]
+                + ratio * self.hex_to_rgb(self.gradient[1])[0]
+            )
+            g = int(
+                (1 - ratio) * self.hex_to_rgb(self.gradient[0])[1]
+                + ratio * self.hex_to_rgb(self.gradient[1])[1]
+            )
+            b = int(
+                (1 - ratio) * self.hex_to_rgb(self.gradient[0])[2]
+                + ratio * self.hex_to_rgb(self.gradient[1])[2]
+            )
+
+            color = self.rgb_to_hex((r, g, b))
+            x1 = i * (self.width / steps)
+            x2 = (i + 1) * (self.width / steps)
+            self.create_round_rect(
+                x1,
+                2,
+                x2,
+                self.height - 2,
+                self.corner_radius,
+                fill=color,
+                outline="",
+                tags="gradient",
+            )
+
+        # Добавляем текст
+        text_color = "white"
+
+        # Основной текст
+        self.create_text(
+            self.width / 2,
+            self.height / 2,
+            text=self.text,
+            fill=text_color,
+            font=("Comfortaa", self.font_size, "bold"),
+            tags="text",
+        )
+
+    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
+        """Создает скругленный прямоугольник"""
+        points = [
+            x1 + radius,
+            y1,
+            x2 - radius,
+            y1,
+            x2,
+            y1,
+            x2,
+            y1 + radius,
+            x2,
+            y2 - radius,
+            x2,
+            y2,
+            x2 - radius,
+            y2,
+            x1 + radius,
+            y2,
+            x1,
+            y2,
+            x1,
+            y2 - radius,
+            x1,
+            y1 + radius,
+            x1,
+            y1,
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+
+    def on_press(self, event):
+        """При нажатии"""
+        self.is_pressed = True
+        # Временно затемняем кнопку при нажатии
+        self.itemconfig("bg", fill=self.darken_color(self.gradient[0]))
+        self.itemconfig("gradient", fill=self.darken_color(self.gradient[1]))
+
+    def on_release(self, event):
+        """При отпускании"""
+        self.is_pressed = False
+        # Возвращаем нормальные цвета
+        self.itemconfig("bg", fill=self.gradient[0])
+        self.itemconfig("gradient", fill=self.gradient[1])
+
+        if self.command:
+            self.command()
+
+    def darken_color(self, color, factor=0.1):
+        """Затемняет цвет"""
+        rgb = self.hex_to_rgb(color)
+        rgb = [max(0, c - int(255 * factor)) for c in rgb]
+        return self.rgb_to_hex(rgb)
+
+    def hex_to_rgb(self, hex_color):
+        """Конвертирует HEX в RGB"""
+        hex_color = hex_color.lstrip("#")
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
+    def rgb_to_hex(self, rgb):
+        """Конвертирует RGB в HEX"""
+        return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def quick_launch_action():
+    """Действие для быстрого запуска"""
+    print("🚀 Быстрый запуск игры!")
+    quick_launch_offline()
+
+
+quick_btn = ModernQuickLaunchButton(
+    win,
+    text="🚀 Быстрый запуск (оффлайн)",
+    width=260,
+    height=48,
+    gradient=("#667eea", "#764ba2"),  # Фиолетовый градиент
+    command=quick_launch_action,
+    font_size=12,
+    corner_radius=15,
+)
+
+# Размещаем кнопку
+quick_btn.place(relx=0.5, rely=0.56, anchor="c")
+
+
+def quick_launch_offline():
+    """Быстрый запуск в оффлайн-режиме с отключенными проблемными модами"""
+    result = messagebox.askyesno(
+        "Быстрый запуск",
+        "Запустить игру в оффлайн-режиме?\n\n"
+        + "Это может помочь если есть проблемы с:\n"
+        + "• Аутентификацией\n"
+        + "• Подключением к серверу\n"
+        + "• Зависаниями при входе\n\n"
+        + "Попробуйте этот режим если обычный запуск не работает.",
+    )
+
+    if result:
+        # Временно отключаем проблемные моды
+        disable_problematic_mods()
+
+        # Запускаем в оффлайн режиме
+        runn()  # Функция runn() теперь будет использовать оффлайн режим из выбора
+
+
+def quick_file_check():
+    """Быстрая проверка основных файлов"""
+    minecraft_dir = CONFIG["minecraft_dir"]
+    required_dirs = ["mods", "versions", "config"]
+
+    for dir_name in required_dirs:
+        dir_path = os.path.join(minecraft_dir, dir_name)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+
+
+def check_mods_quick():
+    """Быстрая проверка модов без скачивания"""
+    mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+    if not os.path.exists(mods_dir):
+        os.makedirs(mods_dir)
+        return
+
+    # Просто проверяем существование папки mods
+    print("Быстрая проверка модов выполнена")
+
+
+def enable_all_mods():
+    """Включает все отключенные моды"""
+    minecraft_dir = CONFIG["minecraft_dir"]
+    mods_dir = os.path.join(minecraft_dir, "mods")
+    disabled_dir = os.path.join(minecraft_dir, "mods_disabled")
+
+    if os.path.exists(disabled_dir):
+        for mod in os.listdir(disabled_dir):
+            try:
+                shutil.move(
+                    os.path.join(disabled_dir, mod), os.path.join(mods_dir, mod)
+                )
+                print(f"Включен мод: {mod}")
+            except Exception as e:
+                print(f"Ошибка включения мода {mod}: {e}")
+
+        # Удаляем пустую папку
+        if not os.listdir(disabled_dir):
+            os.rmdir(disabled_dir)
 
 
 # Стили
@@ -6789,14 +7953,50 @@ online_btn = ModernOnlineButton(
 )
 
 # Размещаем кнопку
-online_btn.place(relx=0.5, rely=0.61, anchor="c") # noqa
+online_btn.place(relx=0.5, rely=0.61, anchor="c")
 
 # Запускаем анимацию
 online_btn.start_animation()
 
 # Список версий для селектора
 # Список версий для селектора
-
+versions = [
+    "YamalPixel",
+    "Minecraft 1.12.2",
+    "Minecraft 1.14.4",
+    "Minecraft 1.14.4 + Fabric",
+    "Minecraft 1.15.2",
+    "Minecraft 1.15.2 + Fabric",
+    "Minecraft 1.16.5",
+    "Minecraft 1.16.5 + Fabric",
+    "Minecraft 1.17.1",
+    "Minecraft 1.17.1 + Fabric",
+    "Minecraft 1.18.2",
+    "Minecraft 1.18.2 + Fabric",
+    "Minecraft 1.19.2",
+    "Minecraft 1.19.2 + Fabric",
+    "Minecraft 1.20.1",
+    "Minecraft 1.20.1 + Fabric",
+    "Minecraft 1.20.1 + NeoForge",  # НОВОЕ
+    "Minecraft 1.20.2",
+    "Minecraft 1.20.2 + Fabric",
+    "Minecraft 1.20.2 + NeoForge",  # НОВОЕ
+    "Minecraft 1.21",
+    "Minecraft 1.21 + Fabric",
+    "Minecraft 1.21 + NeoForge",    # НОВОЕ
+    "Minecraft 1.21.1",
+    "Minecraft 1.21.1 + Fabric",
+    "Minecraft 1.21.1 + NeoForge",  # НОВОЕ
+    "Minecraft 1.21.2",
+    "Minecraft 1.21.2 + Fabric",
+    "Minecraft 1.21.2 + NeoForge",  # НОВОЕ
+    "Minecraft 1.21.3",
+    "Minecraft 1.21.3 + Fabric",
+    "Minecraft 1.21.3 + NeoForge",  # НОВОЕ
+    "Minecraft 1.21.4",
+    "Minecraft 1.21.4 + Fabric",
+    "Minecraft 1.21.4 + NeoForge",  # НОВОЕ
+]
 
 
 class ModernVersionSelector(tk.Canvas):
@@ -6979,7 +8179,7 @@ version_selector = ModernVersionSelector(
     corner_radius=20,
     versions_list=versions,
 )
-version_selector.place(relx=0.5, rely=0.4, anchor="c")  # noqa
+version_selector.place(relx=0.5, rely=0.4, anchor="c")
 
 
 # Функция выбора версии
@@ -6987,7 +8187,43 @@ def select_version(event):
     selected_version = version_selector.get()
 
     # Обновляем конфигурацию в зависимости от выбранной версии
-
+    version_configs = {
+        "YamalPixel": ("1.20.1", "fabric", "0.17.2"),
+        "Minecraft 1.12.2": ("1.12.2", None, None),
+        "Minecraft 1.14.4": ("1.14.4", None, None),
+        "Minecraft 1.14.4 + Fabric": ("1.14.4", "fabric", "0.17.2"),
+        "Minecraft 1.15.2": ("1.15.2", None, None),
+        "Minecraft 1.15.2 + Fabric": ("1.15.2", "fabric", "0.17.2"),
+        "Minecraft 1.16.5": ("1.16.5", None, None),
+        "Minecraft 1.16.5 + Fabric": ("1.16.5", "fabric", "0.17.2"),
+        "Minecraft 1.17.1": ("1.17.1", None, None),
+        "Minecraft 1.17.1 + Fabric": ("1.17.1", "fabric", "0.17.2"),
+        "Minecraft 1.18.2": ("1.18.2", None, None),
+        "Minecraft 1.18.2 + Fabric": ("1.18.2", "fabric", "0.17.2"),
+        "Minecraft 1.19.2": ("1.19.2", None, None),
+        "Minecraft 1.19.2 + Fabric": ("1.19.2", "fabric", "0.17.2"),
+        "Minecraft 1.20.1": ("1.20.1", None, None),
+        "Minecraft 1.20.1 + Fabric": ("1.20.1", "fabric", "0.17.2"),
+        "Minecraft 1.20.2": ("1.20.2", None, None),
+        "Minecraft 1.20.2 + Fabric": ("1.20.2", "fabric", "0.17.2"),
+        "Minecraft 1.21": ("1.21", None, None),
+        "Minecraft 1.21 + Fabric": ("1.21", "fabric", "0.17.2"),
+        "Minecraft 1.21.1": ("1.21.1", None, None),
+        "Minecraft 1.21.1 + Fabric": ("1.21.1", "fabric", "0.17.2"),
+        "Minecraft 1.21.2": ("1.21.2", None, None),
+        "Minecraft 1.21.2 + Fabric": ("1.21.2", "fabric", "0.17.2"),
+        "Minecraft 1.21.3": ("1.21.3", None, None),
+        "Minecraft 1.21.3 + Fabric": ("1.21.3", "fabric", "0.17.2"),
+        "Minecraft 1.21.4": ("1.21.4", None, None),
+        "Minecraft 1.21.4 + Fabric": ("1.21.4", "fabric", "0.17.2"),
+        # NeoForge версии
+        "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),  # NeoForge сам выберет версию
+        "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", None),
+        "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", None),
+        "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", None),
+        "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", None),
+        "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", None),
+    }
 
     if selected_version in version_configs:
         config = version_configs[selected_version]
@@ -7044,14 +8280,155 @@ def show_version_change_message(version_name):
     ttk.Button(main_frame, text="OK", command=message_window.destroy, width=10).pack()
 
     # Автоматическое закрытие через 2 секунды
-    message_window.after(2000, message_window.destroy)  # noqa
+    message_window.after(2000, message_window.destroy)
 
 
 # Вызываем функцию обновления статуса Discord после создания окна
-win.after(300, update_discord_status)  # noqa
+win.after(300, update_discord_status)
 
 
+class ModrinthAPI:
+    def __init__(self):
+        self.session = requests.Session()
+        self.base_url = "https://api.modrinth.com/v2"
+        self.session.headers.update(
+            {"User-Agent": "YamalPixel-Launcher/1.0 (moonmen@example.com)"}
+        )
 
+        # Поддерживаемые версии и загрузчики
+        self.supported_versions = {
+            "fabric": [
+                "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
+                "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+                "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ],
+            "neoforge": [
+                "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.6",
+                "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ],
+            "forge": [
+                "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
+                "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+                "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ],
+            "quilt": [
+                "1.18.2", "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+                "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+            ]
+        }
+
+    def get_supported_loaders(self, minecraft_version):
+        """Получить доступные загрузчики для версии Minecraft"""
+        available_loaders = []
+        for loader, versions in self.supported_versions.items():
+            if minecraft_version in versions:
+                available_loaders.append(loader)
+        return available_loaders
+
+    def search_mods(self, query, limit=30):
+        """Поиск модов на Modrinth"""
+        try:
+            url = f"{self.base_url}/search"
+            params = {"query": query, "limit": limit, "index": "relevance"}
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Ошибка поиска модов: {e}")
+            return None
+
+    def get_mod_versions(self, mod_id, minecraft_version, loader):
+        try:
+            url = f"{self.base_url}/project/{mod_id}/version"
+            # Передаём как JSON-строки
+            params = {
+                "game_versions": f'["{minecraft_version}"]',
+                "loaders": f'["{loader}"]',
+            }
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            versions = response.json()
+
+            # Фильтруем версии, у которых есть JAR-файл
+            return [
+                v for v in versions
+                if v.get("files") and any(f["filename"].endswith(".jar") for f in v["files"])
+            ]
+
+        except Exception as e:
+            print(f"Ошибка получения версий мода {mod_id}: {e}")
+            return None
+
+    import urllib.parse
+
+    def download_mod(self, project_slug, version_id, filename, mods_dir):
+        """Скачивание мода с правильным экранированием имени файла"""
+        try:
+            # Экранируем имя файла — особенно важно для +, пробелов, % и т.д.
+            encoded_filename = urllib.parse.quote(filename)
+
+            # Правильный URL
+            file_url = f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{encoded_filename}"
+
+            print(f"📥 Скачиваем: {file_url}")
+
+            response = self.session.get(file_url, stream=True, timeout=30)
+            response.raise_for_status()
+
+            filepath = os.path.join(mods_dir, filename)
+            with open(filepath, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+            print(f"✅ Успешно скачан: {filename}")
+            return True
+
+        except Exception as e:
+            print(f"❌ Ошибка скачивания мода {filename}: {e}")
+            return self.download_mod_alternative(project_slug, version_id, filename, mods_dir)
+
+    def download_mod_alternative(self, _project_slug, version_id, filename, mods_dir):
+        """Альтернативный метод скачивания через получение информации о версии"""
+        try:
+            # Получаем информацию о версии
+            version_url = f"{self.base_url}/version/{version_id}"
+            response = self.session.get(version_url, timeout=30)
+            response.raise_for_status()
+            version_data = response.json()
+
+            print(f"🔍 Ищем файл в информации о версии: {filename}")
+
+            if "files" in version_data and version_data["files"]:
+                # Ищем нужный файл по имени
+                target_file = None
+                for file_info in version_data["files"]:
+                    if file_info["filename"] == filename:
+                        target_file = file_info
+                        break
+
+                if target_file and "url" in target_file:
+                    download_url = target_file["url"]
+                    print(f"📥 Альтернативное скачивание: {download_url}")
+
+                    response = self.session.get(download_url, stream=True, timeout=30)
+                    response.raise_for_status()
+
+                    filepath = os.path.join(mods_dir, filename)
+                    with open(filepath, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+
+                    print(f"✅ Успешно скачан альтернативным методом: {filename}")
+                    return True
+
+            print(f"❌ Файл {filename} не найден в информации о версии")
+            return False
+
+        except Exception as e:
+            print(f"❌ Альтернативный метод скачивания также не удался: {e}")
+            return False
 
 
 # Функция создания новой сборки с выбором модов
@@ -7092,7 +8469,11 @@ def create_new_collection():
     ttk.Label(meta_frame, text="Версия:").pack(side="left")
     version_var = tk.StringVar(value="1.20.1")
 
-
+    all_versions = [
+        "1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2",
+        "1.19.2", "1.19.4", "1.20.1", "1.20.2", "1.20.3", "1.20.4",
+        "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"
+    ]
 
     version_combo = ttk.Combobox(
         meta_frame,
@@ -7280,8 +8661,8 @@ def create_new_collection():
 
                 # 3. Помечаем каждый мод: совместим или нет
                 for idx, mod in enumerate(mods):
-                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))  # noqa
-                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))  # noqa
+                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))
+                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))
 
                     # Проверяем совместимость
                     versions = api.get_mod_versions(
@@ -7299,16 +8680,16 @@ def create_new_collection():
                         mod["compatible_version"] = "❌ Нет версии"
                         mod["filename"] = "N/A"
 
-                collection_window.after(0, compatibility_window.destroy) # noqa
+                collection_window.after(0, compatibility_window.destroy)
 
                 # 4. Сортируем: совместимые — вверх
                 mods.sort(key=lambda m: (not m["compatible"], -m.get("downloads", 0)))
 
-                collection_window.after(0, lambda: display_modrinth_results(mods)) # noqa
+                collection_window.after(0, lambda: display_modrinth_results(mods))
 
             except Exception as e:
-                collection_window.after(0, progress_window.destroy) # noqa
-                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}")) # noqa
+                collection_window.after(0, progress_window.destroy)
+                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}"))
 
         threading.Thread(target=do_search, daemon=True).start()
 
@@ -7683,7 +9064,27 @@ def find_mod_on_modrinth(api, mod_name, minecraft_version, loader):
         return None
 
 
+def aggressive_clean_name(mod_name):
+    """Более агрессивная очистка названия мода"""
+    import re
 
+    # Удаляем версии, загрузчики и другие мусорные слова
+    patterns_to_remove = [
+        r"[\d\.\-_]+(?:fabric|forge|quilt|neoforge|mc|minecraft)",
+        r"\b(?:fabric|forge|quilt|neoforge|mc|minecraft|mod|jar)\b",
+        r"[\(\\)\[\]\{\}]",
+        r"\s+",
+    ]
+
+    cleaned = mod_name.lower()
+    for pattern in patterns_to_remove:
+        cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+
+    # Удаляем лишние пробелы и возвращаем
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    # Если после очистки ничего не осталось, используем оригинал
+    return cleaned if cleaned else mod_name.lower()
 
 
 def generate_search_queries(original_name, clean_name):
@@ -7715,6 +9116,16 @@ def generate_search_queries(original_name, clean_name):
 
     # Фильтруем и возвращаем
     return [q for q in variants if q and len(q) > 1]
+
+
+def extract_core_name(mod_name):
+    """Извлекает ядро названия мода"""
+    # Удаляем все, что выглядит как версия
+    import re
+
+    core = re.sub(r"[\d.\-_]+.*$", "", mod_name)
+    return core.strip()
+
 
 def remove_version_info(mod_name):
     """Удаляет информацию о версии"""
@@ -7874,6 +9285,23 @@ def try_keyword_search(api, mod_name, minecraft_version, loader):
     return None
 
 
+MANUAL_MOD_MAPPINGS = {
+    "appliedenergistics2 fabric 15.4.9": "ae2",
+    "xaeros minimap 25.2.10 fabric 1.20": "xaeros-minimap",
+    "xaerosworldmap 1.39.12 fabric 1.20": "xaeros-world-map",
+    "travelersbackpack fabric 1.20.1 9.1.41": "travelers-backpack",
+    "ironchests 5.0.2 fabric": "iron-chests",
+    "fallingleaves 1.15.6+1.20.1": "falling-leaves",
+    "lambdynamiclights 4.4.0+1.20.1": "lambdynamiclights",
+    "techreborn 5.8.3": "techreborn",
+    "reborncore 5.8.3": "reborn-core",
+    "inventoryprofilesnext fabric 1.20 1.10.19": "inventory-profiles-next",
+    "noindium 1.1.0+1.20": "no-indium",
+    "mavapi 1.1.4 mc1.20.1": "more-axolotl-variants-api",
+    "mavm 1.2.6 mc1.20.1": "more-axolotl-variants-mod",
+}
+
+
 def try_manual_mapping(api, mod_name, minecraft_version, loader):
     """Пробует найти мод по ручным сопоставлениям"""
     clean_mod_name = mod_name.lower().strip()
@@ -7938,6 +9366,34 @@ def extract_main_words(mod_name):
     ]
     return " ".join(main_words[:3])  # Берем до 3 слов
 
+
+def calculate_similarity(str1, str2):
+    """Вычисляет схожесть между двумя строками"""
+    # Простой алгоритм схожести
+    str1, str2 = str1.lower(), str2.lower()
+
+    # Если одна строка содержится в другой
+    if str1 in str2 or str2 in str1:
+        return 0.8
+
+    # Считаем совпадающие слова
+    words1 = set(str1.split())
+    words2 = set(str2.split())
+
+    if not words1 or not words2:
+        return 0.0
+
+    common_words = words1.intersection(words2)
+    similarity = len(common_words) / max(len(words1), len(words2))
+
+    return similarity
+
+
+COLLECTIONS_CONFIG = {
+    "collections_dir": os.path.join(
+        os.path.expanduser("~"), "YamalPixel", "collections"
+    )
+}
 
 
 # Функция показа менеджера сборок
@@ -8441,7 +9897,7 @@ signal.signal(signal.SIGINT, graceful_shutdown)  # Ctrl+C
 signal.signal(signal.SIGTERM, graceful_shutdown)  # Завершение процесса
 
 
-
+# Добавь обработчик закрытия окна
 def on_closing():
     """При закрытии окна"""
     print("💾 Сохраняем настройки и выходим...")
@@ -8474,7 +9930,7 @@ def safe_mainloop():
 
 
 # Запуск главного цикла
-win.after(100, lambda: setup_adaptive_background()) # noqa
+win.after(100, lambda: setup_adaptive_background())
 
 
 def apply_background_and_close(filename, window):
