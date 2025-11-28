@@ -53,6 +53,30 @@ version_configs = {
     "Minecraft 1.20.2 + Quilt": ("1.20.2", "quilt", None),
     "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),
 
+    "Minecraft 1.20.3": ("1.20.3", None, None),
+    "Minecraft 1.20.3 + Fabric": ("1.20.3", "fabric", "0.17.2"),
+    "Minecraft 1.20.3 + Forge": ("1.20.3", "forge", "latest"),
+    "Minecraft 1.20.3 + Quilt": ("1.20.3", "quilt", None),
+    "Minecraft 1.20.3 + NeoForge": ("1.20.3", "neoforge", None),
+
+    "Minecraft 1.20.4": ("1.20.4", None, None),
+    "Minecraft 1.20.4 + Fabric": ("1.20.4", "fabric", "0.17.2"),
+    "Minecraft 1.20.4 + Forge": ("1.20.4", "forge", "latest"),
+    "Minecraft 1.20.4 + Quilt": ("1.20.4", "quilt", None),
+    "Minecraft 1.20.4 + NeoForge": ("1.20.4", "neoforge", None),
+
+    "Minecraft 1.20.5": ("1.20.5", None, None),
+    "Minecraft 1.20.5 + Fabric": ("1.20.5", "fabric", "0.17.2"),
+    "Minecraft 1.20.5 + Forge": ("1.20.5", "forge", "latest"),
+    "Minecraft 1.20.5 + Quilt": ("1.20.5", "quilt", None),
+    "Minecraft 1.20.5 + NeoForge": ("1.20.5", "neoforge", None),
+
+    "Minecraft 1.20.6": ("1.20.6", None, None),
+    "Minecraft 1.20.6 + Fabric": ("1.20.6", "fabric", "0.17.2"),
+    "Minecraft 1.20.6 + Forge": ("1.20.6", "forge", "latest"),
+    "Minecraft 1.20.6 + Quilt": ("1.20.6", "quilt", None),
+    "Minecraft 1.20.6 + NeoForge": ("1.20.6", "neoforge", None),
+
 
     "Minecraft 1.21": ("1.21", None, None),
     "Minecraft 1.21 + Fabric": ("1.21", "fabric", "0.17.2"),
