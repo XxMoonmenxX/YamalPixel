@@ -7563,8 +7563,8 @@ def create_new_collection():
                 values = selected_tree.item(item)["values"]
                 tags = selected_tree.item(item)["tags"]
 
-                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods)) # noqa
-                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}")) # noqa
+                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))  # noqa
+                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))  # noqa
 
                 mod_info = {"source": tags[0], "name": values[1], "filename": values[2]}
 
@@ -7595,7 +7595,6 @@ def create_new_collection():
             progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
 
         def finalize_collection_creation(name, mods, failed_mods):
-
             if not mods:
                 messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
                 return
@@ -7605,6 +7604,7 @@ def create_new_collection():
                     "Внимание",
                     f"Следующие моды не найдены на Modrinth и будут пропущены:\n" + "\n".join(failed_mods),
                 )
+
             collection_data = {
                 "name": name,
                 "minecraft_version": version_var.get(),
@@ -7616,7 +7616,11 @@ def create_new_collection():
 
             safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
             filename = f"{safe_name}.json"
-            filepath = os.path.join(COLLECTIONS_CONFIG["collections_dir"], filename)
+            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+            filepath = os.path.join(collections_dir, filename)
+
+            # ✅ Создаём папку, если её нет
+            os.makedirs(collections_dir, exist_ok=True)
 
             try:
                 with open(filepath, "w", encoding="utf-8") as f:
