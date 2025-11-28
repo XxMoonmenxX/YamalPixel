@@ -31,10 +31,16 @@ import math # Для математики
 import json # Для работы с JSON
 from PIL import Image, ImageTk # Для работы с изображениями
 
-from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
-from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds # noqa
-from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods, get_minecraft_version, version_configs
-from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions, CURRENT_VERSION
+from ConfDir.utils import (aggressive_clean_name, calculate_similarity,
+                           extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG)
+
+from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds
+
+from ConfDir.Configs import (CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods,
+                             get_minecraft_version, version_configs)
+
+from ConfDir.Versions import (version_configs, fabric_supported_versions, neoforge_supported_versions,
+                              versions, all_versions, CURRENT_VERSION)
 
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
