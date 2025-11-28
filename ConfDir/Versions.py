@@ -107,6 +107,9 @@ forge_supported_versions = [
     "Minecraft 1.20.6 + Forge",
     "Minecraft 1.21 + Forge",
     "Minecraft 1.21.1 + Forge",
+    "Minecraft 1.21.2 + Forge",
+    "Minecraft 1.21.3 + Forge",
+    "Minecraft 1.21.4 + Forge",
 ]
 
 versions = [

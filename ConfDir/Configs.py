@@ -546,120 +546,164 @@ def get_minecraft_version(version_name):
         "Minecraft 1.12.2": "1.12.2",
         "Minecraft 1.12.2 + Fabric": "1.12.2",
         "Minecraft 1.12.2 + Forge": "1.12.2",
+        "Minecraft 1.12.2 + Quilt": "1.12.2",
+
         "Minecraft 1.14.4": "1.14.4",
         "Minecraft 1.14.4 + Fabric": "1.14.4",
         "Minecraft 1.14.4 + Forge": "1.14.4",
+        "Minecraft 1.14.4 + Quilt": "1.14.4",
+
         "Minecraft 1.15.2": "1.15.2",
         "Minecraft 1.15.2 + Fabric": "1.15.2",
         "Minecraft 1.15.2 + Forge": "1.15.2",
+        "Minecraft 1.15.2 + Quilt": "1.15.2",
+
         "Minecraft 1.16.5": "1.16.5",
         "Minecraft 1.16.5 + Fabric": "1.16.5",
         "Minecraft 1.16.5 + Forge": "1.16.5",
+        "Minecraft 1.16.5 + Quilt": "1.16.5",
+
         "Minecraft 1.17.1": "1.17.1",
         "Minecraft 1.17.1 + Fabric": "1.17.1",
         "Minecraft 1.17.1 + Forge": "1.17.1",
+        "Minecraft 1.17.1 + Quilt": "1.17.1",
+
         "Minecraft 1.18.2": "1.18.2",
         "Minecraft 1.18.2 + Fabric": "1.18.2",
         "Minecraft 1.18.2 + Forge": "1.18.2",
+        "Minecraft 1.18.2 + Quilt": "1.18.2",
+
         "Minecraft 1.19.2": "1.19.2",
         "Minecraft 1.19.2 + Fabric": "1.19.2",
         "Minecraft 1.19.2 + Forge": "1.19.2",
+        "Minecraft 1.19.2 + Quilt": "1.19.2",
+
         "Minecraft 1.20.1": "1.20.1",
         "Minecraft 1.20.1 + Fabric": "1.20.1",
         "Minecraft 1.20.1 + Forge": "1.20.1",
+        "Minecraft 1.20.1 + Quilt": "1.20.1",
+        "Minecraft 1.20.1 + NeoForge": "1.20.1",
+
         "Minecraft 1.20.2": "1.20.2",
         "Minecraft 1.20.2 + Fabric": "1.20.2",
         "Minecraft 1.20.2 + Forge": "1.20.2",
+        "Minecraft 1.20.2 + Quilt": "1.20.2",
         "Minecraft 1.20.2 + NeoForge": "1.20.2",
+
         "Minecraft 1.21": "1.21",
         "Minecraft 1.21 + Fabric": "1.21",
         "Minecraft 1.21 + Forge": "1.21",
+        "Minecraft 1.21 + Quilt": "1.21",
         "Minecraft 1.21 + NeoForge": "1.21",
+
         "Minecraft 1.21.1": "1.21.1",
         "Minecraft 1.21.1 + Fabric": "1.21.1",
         "Minecraft 1.21.1 + Forge": "1.21.1",
+        "Minecraft 1.21.1 + Quilt": "1.21.1",
         "Minecraft 1.21.1 + NeoForge": "1.21.1",
+
         "Minecraft 1.21.2": "1.21.2",
         "Minecraft 1.21.2 + Fabric": "1.21.2",
         "Minecraft 1.21.2 + Forge": "1.21.2",
+        "Minecraft 1.21.2 + Quilt": "1.21.2",
         "Minecraft 1.21.2 + NeoForge": "1.21.2",
+
         "Minecraft 1.21.3": "1.21.3",
         "Minecraft 1.21.3 + Fabric": "1.21.3",
         "Minecraft 1.21.3 + Forge": "1.21.3",
+        "Minecraft 1.21.3 + Quilt": "1.21.3",
         "Minecraft 1.21.3 + NeoForge": "1.21.3",
+
         "Minecraft 1.21.4": "1.21.4",
         "Minecraft 1.21.4 + Fabric": "1.21.4",
         "Minecraft 1.21.4 + Forge": "1.21.4",
+        "Minecraft 1.21.4 + Quilt": "1.21.4",
         "Minecraft 1.21.4 + NeoForge": "1.21.4",
     }
+
     return version_map.get(version_name, "1.20.1")
 
 
 version_configs = {
-    "YamalPixel": ("1.20.1", "fabric", "0.17.2"),  # ИСПРАВЛЕНО: явно указан тип загрузчика
+    "YamalPixel": ("1.20.1", "fabric", "0.17.2"),
     "Minecraft 1.12.2": ("1.12.2", None),
     "Minecraft 1.12.2 + Fabric": ("1.12.2", "fabric", "0.17.2"),
     "Minecraft 1.12.2 + Forge": ("1.12.2", "forge", "latest"),
+    "Minecraft 1.12.2 + Quilt": ("1.12.2", "quilt", "latest"),
 
     "Minecraft 1.14.4": ("1.14.4", None),
     "Minecraft 1.14.4 + Fabric": ("1.14.4", "fabric", "0.17.2"),
     "Minecraft 1.14.4 + Forge": ("1.14.4", "forge", "latest"),
+    "Minecraft 1.14.4 + Quilt": ("1.14.4", "quilt", "latest"),
 
     "Minecraft 1.15.2": ("1.15.2", None),
     "Minecraft 1.15.2 + Fabric": ("1.15.2", "fabric", "0.17.2"),
     "Minecraft 1.15.2 + Forge": ("1.15.2", "forge", "latest"),
+    "Minecraft 1.15.2 + Quilt": ("1.15.2", "quilt", "latest"),
 
     "Minecraft 1.16.5": ("1.16.5", None),
     "Minecraft 1.16.5 + Fabric": ("1.16.5", "fabric", "0.17.2"),
     "Minecraft 1.16.5 + Forge": ("1.16.5", "forge", "latest"),
+    "Minecraft 1.16.5 + Quilt": ("1.16.5", "quilt", "latest"),
 
     "Minecraft 1.17.1": ("1.17.1", None),
     "Minecraft 1.17.1 + Fabric": ("1.17.1", "fabric", "0.17.2"),
     "Minecraft 1.17.1 + Forge": ("1.17.1", "forge", "latest"),
+    "Minecraft 1.17.1 + Quilt": ("1.17.1", "quilt", "latest"),
 
     "Minecraft 1.18.2": ("1.18.2", None),
     "Minecraft 1.18.2 + Fabric": ("1.18.2", "fabric", "0.17.2"),
     "Minecraft 1.18.2 + Forge": ("1.18.2", "forge", "latest"),
+    "Minecraft 1.18.2 + Quilt": ("1.18.2", "quilt", "latest"),
 
     "Minecraft 1.19.2": ("1.19.2", None),
     "Minecraft 1.19.2 + Fabric": ("1.19.2", "fabric", "0.17.2"),
     "Minecraft 1.19.2 + Forge": ("1.19.2", "forge", "latest"),
+    "Minecraft 1.19.2 + Quilt": ("1.19.2", "quilt", "latest"),
 
     "Minecraft 1.20.1": ("1.20.1", None),
     "Minecraft 1.20.1 + Fabric": ("1.20.1", "fabric", "0.17.2"),
     "Minecraft 1.20.1 + Forge": ("1.20.1", "forge", "latest"),
+    "Minecraft 1.20.1 + Quilt": ("1.20.1", "quilt", "latest"),
     "Minecraft 1.20.1 + NeoForge": ("1.20.1", "neoforge", "latest"),
 
     "Minecraft 1.20.2": ("1.20.2", None),
     "Minecraft 1.20.2 + Fabric": ("1.20.2", "fabric", "0.17.2"),
     "Minecraft 1.20.2 + Forge": ("1.20.2", "forge", "latest"),
+    "Minecraft 1.20.2 + Quilt": ("1.20.2", "quilt", "latest"),
     "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", "latest"),
 
     "Minecraft 1.21": ("1.21", None),
     "Minecraft 1.21 + Fabric": ("1.21", "fabric", "0.17.2"),
     "Minecraft 1.21 + Forge": ("1.21", "forge", "latest"),
+    "Minecraft 1.21 + Quilt": ("1.21", "quilt", "latest"),
     "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", "latest"),
 
     "Minecraft 1.21.1": ("1.21.1", None),
     "Minecraft 1.21.1 + Fabric": ("1.21.1", "fabric", "0.17.2"),
     "Minecraft 1.21.1 + Forge": ("1.21.1", "forge", "latest"),
+    "Minecraft 1.21.1 + Quilt": ("1.21.1", "quilt", "latest"),
     "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", "latest"),
 
     "Minecraft 1.21.2": ("1.21.2", None),
     "Minecraft 1.21.2 + Fabric": ("1.21.2", "fabric", "0.17.2"),
     "Minecraft 1.21.2 + Forge": ("1.21.2", "forge", "latest"),
+    "Minecraft 1.21.2 + Quilt": ("1.21.2", "quilt", "latest"),
     "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", "latest"),
 
     "Minecraft 1.21.3": ("1.21.3", None),
     "Minecraft 1.21.3 + Fabric": ("1.21.3", "fabric", "0.17.2"),
     "Minecraft 1.21.3 + Forge": ("1.21.3", "forge", "latest"),
+    "Minecraft 1.21.3 + Quilt": ("1.21.3", "quilt", "latest"),
     "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", "latest"),
 
     "Minecraft 1.21.4": ("1.21.4", None),
     "Minecraft 1.21.4 + Fabric": ("1.21.4", "fabric", "0.17.2"),
     "Minecraft 1.21.4 + Forge": ("1.21.4", "forge", "latest"),
+    "Minecraft 1.21.4 + Quilt": ("1.21.4", "quilt", "latest"),
     "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", "latest"),
 }
+
 
 QUILT_CONFIG = {
     "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
