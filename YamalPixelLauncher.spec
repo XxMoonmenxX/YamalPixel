@@ -7,7 +7,7 @@ a = Analysis(
     datas=[
         ('icon.ico', '.'),
         ('ConfDir', 'ConfDir'),
-        ('LoadersDir', 'LoadersDir'),
+        ('Network', 'Network'),
     ],
     hiddenimports=[
         'asyncio',
@@ -26,8 +26,8 @@ a = Analysis(
         'ConfDir.ScaleRes',
         'ConfDir.utils',
         'ConfDir.Versions',
-        'LoadersDir.ModrinthLoader',
-        'LoadersDir.Downloader',
+        'Network.ModrinthLoader',
+        'Network.Downloader',
     ],
     hookspath=[],
     hooksconfig={},

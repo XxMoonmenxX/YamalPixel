@@ -31,12 +31,14 @@ import math # Для математики
 import json # Для работы с JSON
 from PIL import Image, ImageTk # Для работы с изображениями
 
-from LoadersDir.ModrinthLoader import ModrinthAPI
 from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
 from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds # noqa
 from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods
-from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions
-from LoadersDir.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
+from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions, CURRENT_VERSION
+
+from Network.Updates import check_for_updates_local
+from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
+from Network.ModrinthLoader import ModrinthAPI
 
 import tempfile # Для временных файлов
 
@@ -272,7 +274,7 @@ def old_repair_with_ui():
 
 
 # Пишется при помощи DeepSeek, каждый может сделать то же самое хоть немного зная python!!!
-CURRENT_VERSION = "0.7.102"  # обновление
+
 logging.basicConfig(
     filename="launcher.log",
     level=logging.INFO,
@@ -3757,11 +3759,12 @@ settings_menu.add_command(label="🔧 Диагностика проблем", co
 settings_menu.add_command(label="🚀 Тест скорости", command=speed_test)
 settings_menu.add_command(label="🎨 Выбрать фон вручную", command=show_simple_background_selector)
 
+
 # Или если хотите в выпадающем меню "Справка":
 help_menu = tk.Menu(menu_bar, tearoff=0)
 help_menu.add_command(label="О лаунчере", command=show_version_info)
 help_menu.add_separator()
-help_menu.add_command(label="Проверить обновления", command=check_for_updates)
+help_menu.add_command(label="Проверить обновления", command=lambda: check_for_updates_local(win))
 menu_bar.add_cascade(label="Справка", menu=help_menu)
 
 
@@ -5971,282 +5974,6 @@ launch_btn.place(relx=0.5, rely=0.5, anchor="c")
 # Запускаем анимацию
 launch_btn.start_animation()
 
-
-def disable_problematic_mods():
-    """Временно отключает потенциально проблемные моды"""
-    minecraft_dir = CONFIG["minecraft_dir"]
-    mods_dir = os.path.join(minecraft_dir, "mods")
-    disabled_dir = os.path.join(minecraft_dir, "mods_disabled")
-
-    os.makedirs(disabled_dir, exist_ok=True)
-
-    # Моды которые могут вызывать проблемы при подключении
-    problematic_mods = [
-        "antixray-fabric-1.4.6+1.20.1.jar",
-        "servercore-fabric-1.5.2+1.20.1.jar",
-        "auth-1.0.0.jar",
-    ]
-
-    moved_mods = []
-    for mod in problematic_mods:
-        mod_path = os.path.join(mods_dir, mod)
-        if os.path.exists(mod_path):
-            try:
-                shutil.move(mod_path, os.path.join(disabled_dir, mod))
-                moved_mods.append(mod)
-                print(f"Отключен мод: {mod}")
-            except Exception as e:
-                print(f"Ошибка отключения мода {mod}: {e}")
-
-    if moved_mods:
-        messagebox.showinfo(
-            "Моды отключены",
-            f"Временно отключены моды:\n"
-            + "\n".join(moved_mods)
-            + f"\n\nОни перемещены в: {disabled_dir}",
-        )
-
-
-class ModernQuickLaunchButton(tk.Canvas):
-    def __init__(
-        self,
-        master=None,
-        text="🚀 Быстрый запуск",
-        width=250,
-        height=45,
-        gradient=("#667eea", "#764ba2"),
-        command=None,
-        font_size=12,
-        corner_radius=12,
-        **kwargs,
-    ):
-
-        super().__init__(
-            master, width=width, height=height, highlightthickness=0, **kwargs
-        )
-
-        self.text = text
-        self.width = width
-        self.height = height
-        self.gradient = gradient
-        self.command = command
-        self.font_size = font_size
-        self.corner_radius = corner_radius
-
-        # Состояния кнопки
-        self.is_pressed = False
-
-        self.bind("<Button-1>", self.on_press)
-        self.bind("<ButtonRelease-1>", self.on_release)
-
-        # Начальная отрисовка
-        self.draw_button()
-
-    def draw_button(self):
-        """Отрисовывает кнопку"""
-        self.delete("all")
-
-        # Создаем скругленный прямоугольник с градиентом
-        self.create_round_rect(
-            2,
-            2,
-            self.width - 2,
-            self.height - 2,
-            self.corner_radius,
-            fill=self.gradient[0],
-            outline="",
-            tags="bg",
-        )
-
-        # Добавляем градиентный эффект
-        steps = 8
-        for i in range(steps):
-            ratio = i / steps
-            r = int(
-                (1 - ratio) * self.hex_to_rgb(self.gradient[0])[0]
-                + ratio * self.hex_to_rgb(self.gradient[1])[0]
-            )
-            g = int(
-                (1 - ratio) * self.hex_to_rgb(self.gradient[0])[1]
-                + ratio * self.hex_to_rgb(self.gradient[1])[1]
-            )
-            b = int(
-                (1 - ratio) * self.hex_to_rgb(self.gradient[0])[2]
-                + ratio * self.hex_to_rgb(self.gradient[1])[2]
-            )
-
-            color = self.rgb_to_hex((r, g, b))
-            x1 = i * (self.width / steps)
-            x2 = (i + 1) * (self.width / steps)
-            self.create_round_rect(
-                x1,
-                2,
-                x2,
-                self.height - 2,
-                self.corner_radius,
-                fill=color,
-                outline="",
-                tags="gradient",
-            )
-
-        # Добавляем текст
-        text_color = "white"
-
-        # Основной текст
-        self.create_text(
-            self.width / 2,
-            self.height / 2,
-            text=self.text,
-            fill=text_color,
-            font=("Comfortaa", self.font_size, "bold"),
-            tags="text",
-        )
-
-    def create_round_rect(self, x1, y1, x2, y2, radius, **kwargs):
-        """Создает скругленный прямоугольник"""
-        points = [
-            x1 + radius,
-            y1,
-            x2 - radius,
-            y1,
-            x2,
-            y1,
-            x2,
-            y1 + radius,
-            x2,
-            y2 - radius,
-            x2,
-            y2,
-            x2 - radius,
-            y2,
-            x1 + radius,
-            y2,
-            x1,
-            y2,
-            x1,
-            y2 - radius,
-            x1,
-            y1 + radius,
-            x1,
-            y1,
-        ]
-        return self.create_polygon(points, smooth=True, **kwargs)
-
-    def on_press(self, event):
-        """При нажатии"""
-        self.is_pressed = True
-        # Временно затемняем кнопку при нажатии
-        self.itemconfig("bg", fill=self.darken_color(self.gradient[0]))
-        self.itemconfig("gradient", fill=self.darken_color(self.gradient[1]))
-
-    def on_release(self, event):
-        """При отпускании"""
-        self.is_pressed = False
-        # Возвращаем нормальные цвета
-        self.itemconfig("bg", fill=self.gradient[0])
-        self.itemconfig("gradient", fill=self.gradient[1])
-
-        if self.command:
-            self.command()
-
-    def darken_color(self, color, factor=0.1):
-        """Затемняет цвет"""
-        rgb = self.hex_to_rgb(color)
-        rgb = [max(0, c - int(255 * factor)) for c in rgb]
-        return self.rgb_to_hex(rgb)
-
-    def hex_to_rgb(self, hex_color):
-        """Конвертирует HEX в RGB"""
-        hex_color = hex_color.lstrip("#")
-        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
-
-    def rgb_to_hex(self, rgb):
-        """Конвертирует RGB в HEX"""
-        return "#{:02x}{:02x}{:02x}".format(*rgb)
-
-
-def quick_launch_action():
-    """Действие для быстрого запуска"""
-    print("🚀 Быстрый запуск игры!")
-    quick_launch_offline()
-
-
-quick_btn = ModernQuickLaunchButton(
-    win,
-    text="🚀 Быстрый запуск (оффлайн)",
-    width=260,
-    height=48,
-    gradient=("#667eea", "#764ba2"),  # Фиолетовый градиент
-    command=quick_launch_action,
-    font_size=12,
-    corner_radius=15,
-)
-
-# Размещаем кнопку
-quick_btn.place(relx=0.5, rely=0.56, anchor="c")
-
-
-def quick_launch_offline():
-    """Быстрый запуск в оффлайн-режиме с отключенными проблемными модами"""
-    result = messagebox.askyesno(
-        "Быстрый запуск",
-        "Запустить игру в оффлайн-режиме?\n\n"
-        + "Это может помочь если есть проблемы с:\n"
-        + "• Аутентификацией\n"
-        + "• Подключением к серверу\n"
-        + "• Зависаниями при входе\n\n"
-        + "Попробуйте этот режим если обычный запуск не работает.",
-    )
-
-    if result:
-        # Временно отключаем проблемные моды
-        disable_problematic_mods()
-
-        # Запускаем в оффлайн режиме
-        runn()  # Функция runn() теперь будет использовать оффлайн режим из выбора
-
-
-def quick_file_check():
-    """Быстрая проверка основных файлов"""
-    minecraft_dir = CONFIG["minecraft_dir"]
-    required_dirs = ["mods", "versions", "config"]
-
-    for dir_name in required_dirs:
-        dir_path = os.path.join(minecraft_dir, dir_name)
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path, exist_ok=True)
-
-
-def check_mods_quick():
-    """Быстрая проверка модов без скачивания"""
-    mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-    if not os.path.exists(mods_dir):
-        os.makedirs(mods_dir)
-        return
-
-    # Просто проверяем существование папки mods
-    print("Быстрая проверка модов выполнена")
-
-
-def enable_all_mods():
-    """Включает все отключенные моды"""
-    minecraft_dir = CONFIG["minecraft_dir"]
-    mods_dir = os.path.join(minecraft_dir, "mods")
-    disabled_dir = os.path.join(minecraft_dir, "mods_disabled")
-
-    if os.path.exists(disabled_dir):
-        for mod in os.listdir(disabled_dir):
-            try:
-                shutil.move(
-                    os.path.join(disabled_dir, mod), os.path.join(mods_dir, mod)
-                )
-                print(f"Включен мод: {mod}")
-            except Exception as e:
-                print(f"Ошибка включения мода {mod}: {e}")
-
-        # Удаляем пустую папку
-        if not os.listdir(disabled_dir):
-            os.rmdir(disabled_dir)
 
 
 # Стили
