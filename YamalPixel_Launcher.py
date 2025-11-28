@@ -1251,24 +1251,25 @@ def is_discord_installed():
         return False
 
 
-def update_discord_status():
-    if not is_discord_installed():
-        print("Discord не установлен. Интеграция с Discord пропущена.")
-        return
-
+def update_discord_status(state="В меню", details=None):
+    """Улучшенная версия вашего кода"""
     try:
-        RPC = Presence("1349070276327116890")
-        RPC.connect()
-        RPC.update(
-            state="Играет",
-            details="YamalPixel",
+        if not hasattr(update_discord_status, 'rpc'):
+            update_discord_status.rpc = Presence("1349070276327116890")
+            update_discord_status.rpc.connect()
+            update_discord_status.start_time = int(time.time())
+
+        update_discord_status.rpc.update(
+            state=state,
+            details=details or f"YamalPixel {CURRENT_VERSION}",
             large_image="logo",
-            buttons=[
-                {"label": "Скачать", "url": "https://disk.yandex.ru/d/WaJwp2ThduRrgQ"}
-            ],
+            start=update_discord_status.start_time,
         )
     except Exception as e:
-        print(f"Ошибка при подключении к Discord: {str(e)}")
+        print(f"Discord RPC error: {e}")
+
+
+
 
 
 def check_for_updates():
