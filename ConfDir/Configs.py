@@ -590,6 +590,30 @@ def get_minecraft_version(version_name):
         "Minecraft 1.20.2 + Quilt": "1.20.2",
         "Minecraft 1.20.2 + NeoForge": "1.20.2",
 
+        "Minecraft 1.20.3": "1.20.3",
+        "Minecraft 1.20.3 + Fabric": "1.20.3",
+        "Minecraft 1.20.3 + Forge": "1.20.3",
+        "Minecraft 1.20.3 + Quilt": "1.20.3",
+        "Minecraft 1.20.3 + NeoForge": "1.20.3",
+
+        "Minecraft 1.20.4": "1.20.4",
+        "Minecraft 1.20.4 + Fabric": "1.20.4",
+        "Minecraft 1.20.4 + Forge": "1.20.4",
+        "Minecraft 1.20.4 + Quilt": "1.20.4",
+        "Minecraft 1.20.4 + NeoForge": "1.20.4",
+
+        "Minecraft 1.20.5": "1.20.5",
+        "Minecraft 1.20.5 + Fabric": "1.20.5",
+        "Minecraft 1.20.5 + Forge": "1.20.5",
+        "Minecraft 1.20.5 + Quilt": "1.20.5",
+        "Minecraft 1.20.5 + NeoForge": "1.20.5",
+
+        "Minecraft 1.20.6": "1.20.6",
+        "Minecraft 1.20.6 + Fabric": "1.20.6",
+        "Minecraft 1.20.6 + Forge": "1.20.6",
+        "Minecraft 1.20.6 + Quilt": "1.20.6",
+        "Minecraft 1.20.6 + NeoForge": "1.20.6",
+
         "Minecraft 1.21": "1.21",
         "Minecraft 1.21 + Fabric": "1.21",
         "Minecraft 1.21 + Forge": "1.21",
@@ -736,5 +760,5 @@ version_configs = {
 
 
 QUILT_CONFIG = {
-    "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
+    "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
 }
