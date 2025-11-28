@@ -30,12 +30,14 @@ import psutil # Для получения информации о процесс
 import math # Для математики
 import json # Для работы с JSON
 from PIL import Image, ImageTk # Для работы с изображениями
-from ModrinthLoader import ModrinthAPI
-from utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
-from ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds
-from Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods
-from Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions
-from Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
+
+from LoadersDir.ModrinthLoader import ModrinthAPI
+from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
+from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds
+from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods
+from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions
+from LoadersDir.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
+
 import tempfile # Для временных файлов
 
 
@@ -2417,9 +2419,9 @@ def load_session_on_start():
 
 
 # Запускаем загрузку сессии после полной инициализации
-win.after(3500, load_session_on_start)
+win.after(3500, load_session_on_start)  # После загрузки GUI
 
-win.after(200, check_for_updates)  # NEW
+win.after(200, check_for_updates)  # Проверяем обновления после загрузки
 
 # Вызываем перед созданием главного окна
 setup_environment()
@@ -2513,17 +2515,6 @@ def show_background_menu():
     try:
         menu = tk.Menu(win, tearoff=0, bg="#2b2b2b", fg="white", font=("Comfortaa", 9))
 
-        backgrounds = [
-            ("🖥️  1920×1080 (Full HD)", "logo1.png"),
-            ("💻  1920×1200 (WUXGA)", "logo2.png"),
-            ("🎬  2048×1080 (2K DCI)", "logo3.png"),
-            ("📊  2048×1536 (QXGA)", "logo4.png"),
-            ("🔥  2560×1440 (2K QHD)", "logo5.png"),
-            ("🚀  2560×1600 (WQXGA)", "logo6.png"),
-            ("🎮  3440×1440 (UltraWide)", "logo7.png"),
-            ("4K  3840×2160 (4K UHD)", "logo8.png"),
-        ]
-
         for name, file in backgrounds:
             menu.add_command(
                 label=name, command=lambda f=file: load_custom_background(f)
@@ -2559,14 +2550,6 @@ def open_game_folder():
             )
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {str(e)}")
-
-
-import os
-import zipfile
-import shutil
-import datetime
-import tkinter as tk
-from tkinter import ttk, messagebox
 
 
 def create_backup(folder_path, backup_type):
