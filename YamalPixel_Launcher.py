@@ -33,7 +33,7 @@ from PIL import Image, ImageTk # Для работы с изображениям
 
 from LoadersDir.ModrinthLoader import ModrinthAPI
 from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
-from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds
+from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds # noqa
 from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods
 from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions
 from LoadersDir.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache

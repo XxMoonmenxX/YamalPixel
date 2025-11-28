@@ -1,10 +1,14 @@
 block_cipher = None
 
 a = Analysis(
-    ['YamalPixel_Launcher.py, Configs.py, ScaleRes.py, utils.py, ModrinthLoader.py, Versions.py'],
+    ['YamalPixel_Launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.ico', '.')],
+    datas=[
+        ('icon.ico', '.'),
+        ('ConfDir', 'ConfDir'),
+        ('LoadersDir', 'LoadersDir'),
+    ],
     hiddenimports=[
         'asyncio',
         'asyncio.windows_events', 
@@ -17,7 +21,13 @@ a = Analysis(
         'mcstatus.bedrock_async',
         'encodings',
         'encodings.utf_8',
-        'encodings.cp1251'
+        'encodings.cp1251',
+        'ConfDir.Configs',
+        'ConfDir.ScaleRes',
+        'ConfDir.utils',
+        'ConfDir.Versions',
+        'LoadersDir.ModrinthLoader',
+        'LoadersDir.Downloader',
     ],
     hookspath=[],
     hooksconfig={},
