@@ -8,6 +8,7 @@ a = Analysis(
         ('icon.ico', '.'),
         ('ConfDir', 'ConfDir'),
         ('Network', 'Network'),
+        ('Ui', 'Ui'),
     ],
     hiddenimports=[
         'asyncio',
