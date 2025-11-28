@@ -1252,7 +1252,6 @@ def is_discord_installed():
 
 
 def update_discord_status(state="В меню", details=None):
-    """Улучшенная версия вашего кода"""
     try:
         if not hasattr(update_discord_status, 'rpc'):
             update_discord_status.rpc = Presence("1349070276327116890")
