@@ -41,7 +41,7 @@ from ConfDir.Configs import (CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, es
                              get_minecraft_version, version_configs)
 
 from ConfDir.Versions import (version_configs, fabric_supported_versions, neoforge_supported_versions,
-                              versions, all_versions, CURRENT_VERSION, quilt_supported_versions)
+                              versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions)
 
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
@@ -1240,6 +1240,20 @@ def check_quilt_installed():
     except:
         return False
 
+
+def check_forge_installed():
+    """Проверяет установлен ли Forge"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        installed_versions = minecraft_launcher_lib.utils.get_installed_versions(minecraft_dir)
+
+        # Ищем версии с Forge
+        for version in installed_versions:
+            if "forge" in version["id"].lower():
+                return True
+        return False
+    except:
+        return False
 
 # Добавьте функцию установки Quilt
 def install_quilt_silent():
@@ -4143,11 +4157,13 @@ def check_minecraft_and_fabric_installed():
 
 
 def is_modloader_needed(selected_version):
-    """Проверяет нужен ли модлоадер (Fabric/Quilt/NeoForge)"""
+    """Проверяет нужен ли модлоадер (Fabric/Quilt/Forge/NeoForge)"""
     if selected_version in fabric_supported_versions:
         return "fabric"
     elif selected_version in quilt_supported_versions:
         return "quilt"
+    elif selected_version in forge_supported_versions:
+        return "forge"
     elif selected_version in neoforge_supported_versions:
         return "neoforge"
     else:
@@ -4882,15 +4898,14 @@ def start_game_launch():
 
         try:
             selected_version = version_selector.get()
-            update_ui_log(f"🔧 Выбрана версия: {selected_version}")
+            username_text = username.get().strip()
 
-            #if selected_version == "Minecraft 1.21.1 + NeoForge":
-                #messagebox.showwarning(
-                    #"Проблемная версия",
-                    #"Версия временно недоступна из-за проблем с Neoforge.\n"
-                    #"Пожалуйста, выберите другую версию Minecraft."
-                #)
-                #return
+            # Валидация имени пользователя
+            if not username_text or username_text == "Введите никнейм":
+                raise Exception("Введите корректное имя пользователя!")
+
+            update_ui_log(f"🔧 Выбрана версия: {selected_version}")
+            update_ui_log(f"👤 Игрок: {username_text}")
 
             # Шаг 0: Установка компонентов (кроме YamalPixel)
             if selected_version != "YamalPixel":
@@ -4917,9 +4932,11 @@ def start_game_launch():
 
             # Шаг 2: Проверка и установка модлоадеров
             loader_type = is_modloader_needed(selected_version)
+            minecraft_version = get_minecraft_version(selected_version)
+
             if loader_type:
-                minecraft_version = get_minecraft_version(selected_version)
                 update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
+                update_ui_log(f"🔧 Модлоадер: {loader_type}, Версия MC: {minecraft_version}")
 
                 if cancelled:
                     return
@@ -4937,7 +4954,14 @@ def start_game_launch():
                         elif loader_type == "quilt":
                             # Quilt использует формат quilt-loader-версия-версия_майнкрафта
                             for folder in os.listdir(versions_dir):
-                                if folder.startswith(f"quilt-loader-") and folder.endswith(f"-{minecraft_version}"):
+                                if folder.startswith("quilt-loader-") and folder.endswith(f"-{minecraft_version}"):
+                                    return True
+                            return False
+
+                        elif loader_type == "forge":
+                            # Forge версии содержат 'forge' в названии
+                            for folder in os.listdir(versions_dir):
+                                if "forge" in folder.lower() and minecraft_version in folder:
                                     return True
                             return False
 
@@ -4961,9 +4985,15 @@ def start_game_launch():
                                 minecraft_directory=CONFIG["minecraft_dir"],
                             )
                             update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
+
                         elif loader_type == "quilt":
                             install_quilt_sync(minecraft_version, CONFIG["minecraft_dir"])
                             update_ui_log(f"✅ Quilt установлен для {minecraft_version}")
+
+                        elif loader_type == "forge":
+                            install_forge_sync(minecraft_version, CONFIG["minecraft_dir"])
+                            update_ui_log(f"✅ Forge установлен для {minecraft_version}")
+
                         elif loader_type == "neoforge":
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
                             if not neoforge_versions:
@@ -4975,6 +5005,7 @@ def start_game_launch():
                                 minecraft_directory=CONFIG["minecraft_dir"],
                             )
                             update_ui_log(f"✅ NeoForge {latest} установлен")
+
                     except Exception as e:
                         update_ui_log(f"❌ Ошибка установки {loader_type.capitalize()}: {e}")
                         raise
@@ -4986,10 +5017,8 @@ def start_game_launch():
             update_ui_status("Запуск Minecraft", "Формируем команду...")
 
             import uuid
-            import hashlib
 
             # Генерируем UUID на основе имени пользователя (стандартный метод для оффлайн-режима)
-            username_text = username.get().strip()
             namespace = uuid.UUID('6ba7b811-9dad-11d1-80b4-00c04fd430c8')  # DNS namespace
             offline_uuid = str(uuid.uuid5(namespace, "OfflinePlayer:" + username_text))
 
@@ -5011,12 +5040,12 @@ def start_game_launch():
                 "gameDirectory": CONFIG["minecraft_dir"],
                 "gameLocale": "ru_RU"
             }
-            if not options["username"] or options["username"] == "Введите никнейм":
-                raise Exception("Введите корректное имя пользователя!")
+
             # Определяем версию для запуска
             if loader_type == "fabric":
                 mc_ver = get_minecraft_version_for_fabric(selected_version)
                 launch_version = f"fabric-loader-0.17.2-{mc_ver}"
+
             elif loader_type == "quilt":
                 mc_ver = get_minecraft_version(selected_version)
 
@@ -5040,16 +5069,51 @@ def start_game_launch():
                     quilt_version = f"quilt-loader-{get_latest_quilt_loader_version()}-{mc_ver}"
                     launch_version = quilt_version
                     update_ui_log(f"🔄 Используем версию Quilt: {quilt_version}")
+
+
+
+
+            elif loader_type == "forge":
+                mc_ver = get_minecraft_version(selected_version)
+                # Ищем реально установленную версию Forge
+                installed_versions = minecraft_launcher_lib.utils.get_installed_versions(CONFIG["minecraft_dir"])
+                forge_version = None
+                for version in installed_versions:
+                    version_id = version["id"]
+                    # Ищем версии типа "1.20.1-forge-47.4.5"
+                    if "forge" in version_id.lower() and mc_ver in version_id:
+                        forge_version = version_id
+                        break
+                if forge_version:
+                    launch_version = forge_version
+                    update_ui_log(f"✅ Найдена версия Forge: {forge_version}")
+                else:
+                    # Если не нашли, пробуем получить через API
+                    try:
+                        forge_loader = minecraft_launcher_lib.mod_loader.get_mod_loader("forge")
+                        forge_versions = forge_loader.get_loader_versions(mc_ver, stable_only=True)
+                        if forge_versions:
+                            latest_forge = forge_versions[0]
+                            launch_version = f"{mc_ver}-forge-{latest_forge}"
+                        else:
+                            launch_version = f"{mc_ver}-forge"
+                    except:
+                        launch_version = f"{mc_ver}-forge"
+                    update_ui_log(f"🔄 Используем Forge: {launch_version}")
+
             elif loader_type == "neoforge":
                 mc_ver = get_minecraft_version(selected_version)
                 neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(mc_ver)
                 if neoforge_versions:
                     latest = neoforge_versions[0]
                     launch_version = f"neoforge-{latest}"
+                    update_ui_log(f"✅ Используем NeoForge: {latest}")
                 else:
                     raise Exception(f"Не найдено версий NeoForge для {mc_ver}")
+
             else:
                 launch_version = get_minecraft_version(selected_version)
+                update_ui_log(f"🎯 Vanilla версия: {launch_version}")
 
             command = minecraft_launcher_lib.command.get_minecraft_command(
                 version=launch_version,
@@ -5075,7 +5139,7 @@ def start_game_launch():
                     100,
                     lambda: messagebox.showinfo(
                         "Успешный запуск",
-                        f"✅ Игра успешно запущена!\n\n• Игрок: {username.get()}\n• Версия: {selected_version}\n• Память: {selected_memory}"
+                        f"✅ Игра успешно запущена!\n\n• Игрок: {username_text}\n• Версия: {selected_version}\n• Память: {selected_memory}"
                     ),
                 )
                 threading.Thread(target=monitor_game_process, args=(process,), daemon=True).start()
@@ -5092,8 +5156,6 @@ def start_game_launch():
 
     # Запускаем основной процесс в потоке
     threading.Thread(target=execute_launch_process, daemon=True).start()
-
-
 def update_system_certificates():
     """Пытается обновить системные сертификаты (для Windows)"""
     if os.name != 'nt':
@@ -5319,6 +5381,45 @@ def get_latest_quilt_loader_version():
         return "0.25.0"  # Fallback версия
     except:
         return "0.25.0"  # Fallback версия
+
+
+def install_forge_sync(minecraft_version, minecraft_directory):
+    """Синхронная установка Forge через новый API"""
+    try:
+        print(f"🔧 Устанавливаем Forge для {minecraft_version}...")
+
+        # Используем новый API mod_loader для Forge
+        forge_loader = minecraft_launcher_lib.mod_loader.get_mod_loader("forge")
+
+        # Получаем доступные версии Forge
+        forge_versions = forge_loader.get_loader_versions(minecraft_version, stable_only=True)
+
+        if not forge_versions:
+            raise Exception(f"Не найдены версии Forge для {minecraft_version}")
+
+        # Берем последнюю стабильную версию
+        latest_forge = forge_versions[0]
+        print(f"📦 Используем Forge: {latest_forge}")
+
+        # Устанавливаем Forge через новый API
+        forge_loader.install(
+            minecraft_version=minecraft_version,
+            minecraft_directory=minecraft_directory,
+            loader_version=latest_forge,
+            java="java",  # используем системную Java
+            callback={
+                "setStatus": lambda status: print(f"Forge: {status}")
+            }
+        )
+
+        print(f"✅ Forge успешно установлен!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка установки Forge: {e}")
+        return False
+
+
 
 def install_neoforge_sync(minecraft_version, minecraft_directory):
     """Синхронная установка NeoForge - ИСПРАВЛЕННАЯ ВЕРСИЯ"""

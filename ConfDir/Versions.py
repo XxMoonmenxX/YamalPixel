@@ -93,55 +93,107 @@ neoforge_supported_versions = [
     "Minecraft 1.21.4 + NeoForge",
 ]
 
+forge_supported_versions = [
+    "Minecraft 1.12.2 + Forge",
+    "Minecraft 1.14.4 + Forge",
+    "Minecraft 1.15.2 + Forge",
+    "Minecraft 1.16.5 + Forge",
+    "Minecraft 1.17.1 + Forge",
+    "Minecraft 1.18.2 + Forge",
+    "Minecraft 1.19.2 + Forge",
+    "Minecraft 1.20.1 + Forge",
+    "Minecraft 1.20.2 + Forge",
+    "Minecraft 1.20.4 + Forge",
+    "Minecraft 1.20.6 + Forge",
+    "Minecraft 1.21 + Forge",
+    "Minecraft 1.21.1 + Forge",
+]
+
 versions = [
     "YamalPixel",
+
     "Minecraft 1.12.2",
+    "Minecraft 1.12.2 + Fabric",
+    "Minecraft 1.12.2 + Quilt",
+    "Minecraft 1.12.2 + Forge",
+
     "Minecraft 1.14.4",
     "Minecraft 1.14.4 + Fabric",
     "Minecraft 1.14.4 + Quilt",
+    "Minecraft 1.14.4 + Forge",
+
     "Minecraft 1.15.2",
     "Minecraft 1.15.2 + Fabric",
     "Minecraft 1.15.2 + Quilt",
+    "Minecraft 1.15.2 + Forge",
+
     "Minecraft 1.16.5",
     "Minecraft 1.16.5 + Fabric",
     "Minecraft 1.16.5 + Quilt",
+    "Minecraft 1.16.5 + Forge",
+
     "Minecraft 1.17.1",
     "Minecraft 1.17.1 + Fabric",
     "Minecraft 1.17.1 + Quilt",
+    "Minecraft 1.17.1 + Forge",
+
     "Minecraft 1.18.2",
     "Minecraft 1.18.2 + Fabric",
     "Minecraft 1.18.2 + Quilt",
+    "Minecraft 1.18.2 + Forge",
+
     "Minecraft 1.19.2",
     "Minecraft 1.19.2 + Fabric",
     "Minecraft 1.19.2 + Quilt",
+    "Minecraft 1.19.2 + Forge",
+
     "Minecraft 1.20.1",
     "Minecraft 1.20.1 + Fabric",
     "Minecraft 1.20.1 + Quilt",
+    "Minecraft 1.20.1 + Forge",
     "Minecraft 1.20.1 + NeoForge",
+
     "Minecraft 1.20.2",
     "Minecraft 1.20.2 + Fabric",
     "Minecraft 1.20.2 + Quilt",
+    "Minecraft 1.20.2 + Forge",
     "Minecraft 1.20.2 + NeoForge",
+
+    "Minecraft 1.20.4",
+    "Minecraft 1.20.4 + Forge",
+
+    "Minecraft 1.20.6",
+    "Minecraft 1.20.6 + Forge",
+
     "Minecraft 1.21",
     "Minecraft 1.21 + Fabric",
     "Minecraft 1.21 + Quilt",
+    "Minecraft 1.21 + Forge",
     "Minecraft 1.21 + NeoForge",
+
     "Minecraft 1.21.1",
     "Minecraft 1.21.1 + Fabric",
     "Minecraft 1.21.1 + Quilt",
+    "Minecraft 1.21.1 + Forge",
     "Minecraft 1.21.1 + NeoForge",
+
     "Minecraft 1.21.2",
     "Minecraft 1.21.2 + Fabric",
     "Minecraft 1.21.2 + Quilt",
+    "Minecraft 1.21.2 + Forge",
     "Minecraft 1.21.2 + NeoForge",
+
     "Minecraft 1.21.3",
     "Minecraft 1.21.3 + Fabric",
     "Minecraft 1.21.3 + Quilt",
+    "Minecraft 1.21.3 + Forge",
     "Minecraft 1.21.3 + NeoForge",
+
     "Minecraft 1.21.4",
     "Minecraft 1.21.4 + Fabric",
     "Minecraft 1.21.4 + Quilt",
-    "Minecraft 1.21.4 + NeoForge",
+    "Minecraft 1.21.4 + Forge",
+    "Minecraft 1.21.4 + NeoForge"
 ]
 
 all_versions = [
