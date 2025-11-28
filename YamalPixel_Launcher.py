@@ -5298,44 +5298,78 @@ def repair_single_version(version_name):
 def install_required_components_sync(version_name):
     """Синхронная установка компонентов (без отдельного окна)"""
     try:
-        if version_name in version_configs:
-            config = version_configs[version_name]
+        print(f"🔍 Начинаем установку для: {version_name}")
 
-            if len(config) == 2:
-                minecraft_version, loader_type = config
-                loader_version = None
-            elif len(config) == 3:
-                minecraft_version, loader_type, loader_version = config
-            else:
-                raise ValueError(f"Неверная конфигурация для {version_name}")
+        if version_name not in version_configs:
+            raise ValueError(f"Версия {version_name} не найдена в конфигурациях")
 
-            # Устанавливаем Minecraft версию
-            print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
-            success = safe_install_minecraft_version(
-                version=minecraft_version,
+        config = version_configs[version_name]
+        print(f"📋 Конфигурация: {config}")
+
+        # Безопасная распаковка конфигурации
+        if len(config) == 2:
+            minecraft_version, loader_type = config
+            loader_version = None
+        elif len(config) == 3:
+            minecraft_version, loader_type, loader_version = config
+        else:
+            raise ValueError(
+                f"Неверная конфигурация для {version_name}: ожидалось 2 или 3 значения, получено {len(config)}")
+
+        print(f"🎯 Целевая версия Minecraft: {minecraft_version}")
+        print(f"🎯 Тип лоадера: {loader_type}")
+        print(f"🎯 Версия лоадера: {loader_version}")
+
+        # ПРЯМАЯ установка Minecraft - обходим safe_install_minecraft_version
+        print(f"📥 Устанавливаем Minecraft {minecraft_version} для {version_name}")
+
+        # Удаляем существующую версию если есть
+        versions_dir = os.path.join(CONFIG["minecraft_dir"], "versions")
+        version_dir = os.path.join(versions_dir, minecraft_version)
+
+        if os.path.exists(version_dir):
+            print(f"🗑️ Удаляем существующую версию: {minecraft_version}")
+            import shutil
+            shutil.rmtree(version_dir)
+
+        # Устанавливаем напрямую
+        minecraft_launcher_lib.install.install_minecraft_version(
+            version=minecraft_version,
+            minecraft_directory=CONFIG["minecraft_dir"]
+        )
+
+        # Проверяем что установилось
+        if os.path.exists(version_dir):
+            print(f"✅ Minecraft {minecraft_version} успешно установлена")
+        else:
+            raise Exception(f"Minecraft {minecraft_version} не установилась!")
+
+        # Установка модлоадера (если требуется)
+        if loader_type == "fabric" and loader_version:
+            print(f"🧵 Устанавливаем Fabric {loader_version} для {minecraft_version}")
+            minecraft_launcher_lib.fabric.install_fabric(
+                minecraft_version=minecraft_version,
+                loader_version=loader_version,
                 minecraft_directory=CONFIG["minecraft_dir"]
             )
+        elif loader_type == "quilt":
+            print(f"🧵 Устанавливаем Quilt для {minecraft_version}")
+            install_quilt_sync(minecraft_version, CONFIG["minecraft_dir"])
+        elif loader_type == "neoforge":
+            print(f"⚡ Устанавливаем NeoForge для {minecraft_version}")
+            install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+        elif loader_type == "forge":
+            print(f"🔨 Устанавливаем Forge для {minecraft_version}")
+            install_forge_sync(minecraft_version, CONFIG["minecraft_dir"])
+        elif loader_type is None:
+            print(f"⚪ Vanilla - модлоадер не требуется")
 
-            if not success:
-                raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
-
-            # Устанавливаем модлоадер если нужно
-            if loader_type == "fabric" and loader_version:
-                print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
-                minecraft_launcher_lib.fabric.install_fabric(
-                    minecraft_version=minecraft_version,
-                    loader_version=loader_version,
-                    minecraft_directory=CONFIG["minecraft_dir"]
-                )
-            elif loader_type == "quilt":
-                print(f"Устанавливаем Quilt для {minecraft_version}")
-                install_quilt_sync(minecraft_version, CONFIG["minecraft_dir"])
-            elif loader_type == "neoforge":
-                print(f"Устанавливаем NeoForge для {minecraft_version}")
-                install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+        return True
 
     except Exception as e:
-        print(f"❌ Ошибка в install_required_components_sync: {e}")
+        print(f"❌ Критическая ошибка в install_required_components_sync: {e}")
+        return False
+
 
 
 def install_quilt_sync(minecraft_version, minecraft_directory):

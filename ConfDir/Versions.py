@@ -1,7 +1,7 @@
-CURRENT_VERSION = "0.7.102"
+CURRENT_VERSION = "0.8.0"
 
 version_configs = {
-    "YamalPixel": ("1.20.1", "fabric", "0.17.2"),
+    "YamalPixel": ("1.21.1", "fabric", "0.17.2"),
     "Minecraft 1.12.2": ("1.12.2", None, None),
     "Minecraft 1.14.4": ("1.14.4", None, None),
     "Minecraft 1.14.4 + Fabric": ("1.14.4", "fabric", "0.17.2"),
