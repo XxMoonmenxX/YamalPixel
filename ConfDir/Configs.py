@@ -619,3 +619,6 @@ version_configs = {
         "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", "latest"),
         "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", "latest"),
     }
+QUILT_CONFIG = {
+    "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
+}

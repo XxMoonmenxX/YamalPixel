@@ -1,6 +1,7 @@
 import tkinter as tk # Графический интерфейс
 from tkinter import ttk, messagebox # Для стилизации и сообщений
 import minecraft_launcher_lib # Для запуска лаунчера
+import minecraft_launcher_lib.mod_loader
 from minecraft_launcher_lib.mod_loader import get_mod_loader #Кастомная сборка minecraft_launcher_lib, пришлось повозиться с _neoforge.py
 import subprocess # Для запуска лаунчера
 import threading # Для асинхронного запуска лаунчера
@@ -40,7 +41,7 @@ from ConfDir.Configs import (CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, es
                              get_minecraft_version, version_configs)
 
 from ConfDir.Versions import (version_configs, fabric_supported_versions, neoforge_supported_versions,
-                              versions, all_versions, CURRENT_VERSION)
+                              versions, all_versions, CURRENT_VERSION, quilt_supported_versions)
 
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
@@ -252,6 +253,17 @@ def old_repair_with_ui():
                         fixes_applied.append("Установлен Fabric")
                         add_log("✅ Установлен Fabric", "green")
 
+                # Проверка Quilt
+                progress["value"] = 85
+                win.after(0, lambda: status_label.config(text="Проверка Quilt..."))
+
+                selected_version = version_selector.get()
+                if selected_version in quilt_supported_versions and not check_quilt_installed():
+                    issues_found.append("Quilt не установлен")
+                    add_log("❌ Quilt не установлен", "red")
+                    if install_quilt_silent():
+                        fixes_applied.append("Установлен Quilt")
+                        add_log("✅ Установлен Quilt", "green")
                 progress["value"] = 100
                 win.after(0, lambda: status_label.config(text="Проверка завершена!")) # noqa
 
@@ -1212,6 +1224,38 @@ def install_fabric_silent():
         print(f"❌ Ошибка установки Fabric: {e}")
         return False
 
+
+def check_quilt_installed():
+    """Проверяет установлен ли Quilt для конкретной версии"""
+    try:
+        minecraft_dir = CONFIG["minecraft_dir"]
+        versions_dir = os.path.join(minecraft_dir, "versions")
+
+        # Проверяем наличие папки версии Quilt
+        installed_versions = minecraft_launcher_lib.utils.get_installed_versions(minecraft_dir)
+        for version in installed_versions:
+            if version["id"].startswith("quilt-loader-"):
+                return True
+        return False
+    except:
+        return False
+
+
+# Добавьте функцию установки Quilt
+def install_quilt_silent():
+    """Тихая установка Quilt"""
+    try:
+        print("🔧 Устанавливаем Quilt...")
+        minecraft_launcher_lib.quilt.install_quilt(
+            minecraft_version=CONFIG["version"],
+            loader_version=None,  # Автоматически выберет последнюю версию
+            minecraft_directory=CONFIG["minecraft_dir"],
+        )
+        print("✅ Quilt установлен")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка установки Quilt: {e}")
+        return False
 
 def check_fabric_installed():
     """Проверяет установлен ли Fabric"""
@@ -4099,11 +4143,11 @@ def check_minecraft_and_fabric_installed():
 
 
 def is_modloader_needed(selected_version):
-    """Проверяет нужен ли модлоадер (Fabric/NeoForge)"""
-
-
+    """Проверяет нужен ли модлоадер (Fabric/Quilt/NeoForge)"""
     if selected_version in fabric_supported_versions:
         return "fabric"
+    elif selected_version in quilt_supported_versions:
+        return "quilt"
     elif selected_version in neoforge_supported_versions:
         return "neoforge"
     else:
@@ -4329,7 +4373,7 @@ def set_launch_state(launching=False):
         # Разблокируем кнопки
         launch_btn.config(state="normal")  # Разблокируем кастомную кнопку
 
-
+quilt = minecraft_launcher_lib.mod_loader.get_mod_loader("quilt")
 def runn():
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
     import uuid
@@ -4881,6 +4925,7 @@ def start_game_launch():
                     return
 
                 def check_modloader_installed():
+                    """Проверяет установлен ли модлоадер"""
                     try:
                         versions_dir = os.path.join(CONFIG["minecraft_dir"], "versions")
 
@@ -4888,6 +4933,13 @@ def start_game_launch():
                             fabric_loader = "0.17.2"
                             fabric_version = f"fabric-loader-{fabric_loader}-{minecraft_version}"
                             return os.path.exists(os.path.join(versions_dir, fabric_version))
+
+                        elif loader_type == "quilt":
+                            # Quilt использует формат quilt-loader-версия-версия_майнкрафта
+                            for folder in os.listdir(versions_dir):
+                                if folder.startswith(f"quilt-loader-") and folder.endswith(f"-{minecraft_version}"):
+                                    return True
+                            return False
 
                         elif loader_type == "neoforge":
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
@@ -4909,6 +4961,9 @@ def start_game_launch():
                                 minecraft_directory=CONFIG["minecraft_dir"],
                             )
                             update_ui_log(f"✅ Fabric установлен для {minecraft_version}")
+                        elif loader_type == "quilt":
+                            install_quilt_sync(minecraft_version, CONFIG["minecraft_dir"])
+                            update_ui_log(f"✅ Quilt установлен для {minecraft_version}")
                         elif loader_type == "neoforge":
                             neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
                             if not neoforge_versions:
@@ -4962,6 +5017,29 @@ def start_game_launch():
             if loader_type == "fabric":
                 mc_ver = get_minecraft_version_for_fabric(selected_version)
                 launch_version = f"fabric-loader-0.17.2-{mc_ver}"
+            elif loader_type == "quilt":
+                mc_ver = get_minecraft_version(selected_version)
+
+                # Получаем список всех установленных версий
+                installed_versions = minecraft_launcher_lib.utils.get_installed_versions(CONFIG["minecraft_dir"])
+
+                # Ищем версию Quilt для указанной версии Minecraft
+                quilt_version = None
+                for version in installed_versions:
+                    # Quilt версии обычно имеют формат "quilt-loader-версия-версия_майнкрафта"
+                    if (version["id"].startswith("quilt-loader-") and
+                            version["id"].endswith(f"-{mc_ver}")):
+                        quilt_version = version["id"]
+                        break
+
+                if quilt_version:
+                    launch_version = quilt_version
+                    update_ui_log(f"✅ Найдена версия Quilt: {quilt_version}")
+                else:
+                    # Если версия не найдена, создаем её автоматически
+                    quilt_version = f"quilt-loader-{get_latest_quilt_loader_version()}-{mc_ver}"
+                    launch_version = quilt_version
+                    update_ui_log(f"🔄 Используем версию Quilt: {quilt_version}")
             elif loader_type == "neoforge":
                 mc_ver = get_minecraft_version(selected_version)
                 neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(mc_ver)
@@ -5154,59 +5232,93 @@ def repair_single_version(version_name):
         print(f"❌ Ошибка исправления версии {version_name}: {e}")
         return False
 
+
 def install_required_components_sync(version_name):
-
     """Синхронная установка компонентов (без отдельного окна)"""
-
     try:
         if version_name in version_configs:
             config = version_configs[version_name]
 
-            # ЗАЩИТА: проверяем количество значений
             if len(config) == 2:
-                # Если 2 значения, добавляем третье (None)
                 minecraft_version, loader_type = config
                 loader_version = None
             elif len(config) == 3:
-                # Если 3 значения, распаковываем нормально
                 minecraft_version, loader_type, loader_version = config
             else:
                 raise ValueError(f"Неверная конфигурация для {version_name}")
-    except Exception as e:
-        print(f"❌ Ошибка в install_required_components_sync: {e}")
-    if version_name in version_configs:
-        config = version_configs[version_name]
-        # Безопасная распаковка
-        if len(config) == 3:
-            minecraft_version, loader_type, loader_version = config
-        else:
-            minecraft_version, loader_type = config
-            loader_version = None
 
-        # Устанавливаем Minecraft версию БЕЗОПАСНО
-        print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
-
-        success = safe_install_minecraft_version(
-            version=minecraft_version,
-            minecraft_directory=CONFIG["minecraft_dir"]
-        )
-
-        if not success:
-            raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
-
-        # Устанавливаем модлоадер если нужно
-        if loader_type == "fabric" and loader_version:
-            print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
-            minecraft_launcher_lib.fabric.install_fabric(
-                minecraft_version=minecraft_version,
-                loader_version=loader_version,
+            # Устанавливаем Minecraft версию
+            print(f"Устанавливаем Minecraft {minecraft_version} для {version_name}")
+            success = safe_install_minecraft_version(
+                version=minecraft_version,
                 minecraft_directory=CONFIG["minecraft_dir"]
             )
-        elif loader_type == "neoforge":
-            print(f"Устанавливаем NeoForge для {minecraft_version}")
-            install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+
+            if not success:
+                raise Exception(f"Не удалось установить Minecraft {minecraft_version}")
+
+            # Устанавливаем модлоадер если нужно
+            if loader_type == "fabric" and loader_version:
+                print(f"Устанавливаем Fabric {loader_version} для {minecraft_version}")
+                minecraft_launcher_lib.fabric.install_fabric(
+                    minecraft_version=minecraft_version,
+                    loader_version=loader_version,
+                    minecraft_directory=CONFIG["minecraft_dir"]
+                )
+            elif loader_type == "quilt":
+                print(f"Устанавливаем Quilt для {minecraft_version}")
+                install_quilt_sync(minecraft_version, CONFIG["minecraft_dir"])
+            elif loader_type == "neoforge":
+                print(f"Устанавливаем NeoForge для {minecraft_version}")
+                install_neoforge_sync(minecraft_version, CONFIG["minecraft_dir"])
+
+    except Exception as e:
+        print(f"❌ Ошибка в install_required_components_sync: {e}")
 
 
+def install_quilt_sync(minecraft_version, minecraft_directory):
+    """Синхронная установка Quilt через новый API"""
+    try:
+        print(f"🔧 Устанавливаем Quilt для {minecraft_version}...")
+
+        # Используем новый API mod_loader
+        quilt_loader = minecraft_launcher_lib.mod_loader.get_mod_loader("quilt")
+
+        # Получаем доступные версии Quilt
+        quilt_versions = quilt_loader.get_loader_versions(minecraft_version, stable_only=True)
+
+        if not quilt_versions:
+            raise Exception(f"Не найдены версии Quilt для {minecraft_version}")
+
+        # Берем последнюю стабильную версию
+        latest_quilt = quilt_versions[0]
+        print(f"📦 Используем Quilt {latest_quilt}")
+
+        # Устанавливаем Quilt
+        quilt_loader.install(
+            minecraft_version=minecraft_version,
+            minecraft_directory=minecraft_directory,
+            loader_version=latest_quilt
+        )
+
+        print(f"✅ Quilt успешно установлен!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка установки Quilt: {e}")
+        return False
+
+def get_latest_quilt_loader_version():
+    """Получает последнюю версию Quilt loader"""
+    try:
+        # Используем новый API mod_loader
+        quilt_loader = minecraft_launcher_lib.mod_loader.get_mod_loader("quilt")
+        versions = quilt_loader.get_loader_versions()
+        if versions:
+            return versions[0]  # Последняя версия
+        return "0.25.0"  # Fallback версия
+    except:
+        return "0.25.0"  # Fallback версия
 
 def install_neoforge_sync(minecraft_version, minecraft_directory):
     """Синхронная установка NeoForge - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
