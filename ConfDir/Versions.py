@@ -1,4 +1,4 @@
-CURRENT_VERSION = "0.8.0"
+CURRENT_VERSION = "0.8.1"
 
 version_configs = {
     "YamalPixel": ("1.20.1", "fabric", "0.17.2"),

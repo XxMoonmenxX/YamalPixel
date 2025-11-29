@@ -29,6 +29,7 @@ a = Analysis(
         'ConfDir.Versions',
         'Network.ModrinthLoader',
         'Network.Downloader',
+        'Ui.UiComponents',
     ],
     hookspath=[],
     hooksconfig={},

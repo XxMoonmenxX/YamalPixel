@@ -777,14 +777,6 @@ def speed_test():
 def download_shaders():
     global LAUNCH_IN_PROGRESS
 
-    # Проверяем, не запущена ли игра
-    if LAUNCH_IN_PROGRESS:
-        messagebox.showwarning(
-            "Запуск в процессе",
-            "❌ Нельзя скачивать шейдеры во время запуска игры!\n\n"
-            "Дождитесь завершения запуска игры, затем повторите попытку.",
-        )
-        return
 
     # Проверяем наличие папки shaderpacks
     shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
