@@ -6228,12 +6228,13 @@ current_sort_col = "downloads"
 current_sort_reverse = False
 
 
-def create_new_collection():
+def create_new_collection(collection_data=None, original_filename=None):
     """Создаёт окно для создания новой сборки модов"""
     global current_sort_col, current_sort_reverse
     collection_window = tk.Toplevel(win)
-    collection_window.title("Создать сборку")
-    collection_window.geometry("900x1080")
+    collection_window.title("Создать сборку" if not collection_data else "Редактировать сборку")
+    set_window_icon(collection_window)
+    collection_window.geometry("1200x1080")
     collection_window.transient(win)
     collection_window.grab_set()
 
@@ -6241,15 +6242,17 @@ def create_new_collection():
     main_frame.pack(fill="both", expand=True)
 
     ttk.Label(
-        main_frame, text="📦 Новая сборка модов", font=("Comfortaa", 16, "bold")
+        main_frame,
+        text="📦 " + ("Новая сборка модов" if not collection_data else "Редактировать сборку"),
+        font=("Comfortaa", 16, "bold"),
     ).pack(pady=(0, 20))
 
     # === Основные настройки ===
     settings_frame = ttk.Frame(main_frame)
-    settings_frame.pack(fill="x", pady=(0, 20))
+    settings_frame.pack(fill="x")
 
     ttk.Label(settings_frame, text="Название:").pack(anchor="w")
-    name_var = tk.StringVar()
+    name_var = tk.StringVar(value=collection_data["name"] if collection_data else "")
     ttk.Entry(settings_frame, textvariable=name_var, width=50).pack(
         fill="x", pady=(0, 10)
     )
@@ -6258,9 +6261,7 @@ def create_new_collection():
     meta_frame.pack(fill="x")
 
     ttk.Label(meta_frame, text="Версия:").pack(side="left")
-    version_var = tk.StringVar(value="1.20.1")
-
-
+    version_var = tk.StringVar(value=collection_data["minecraft_version"] if collection_data else "1.20.1")
 
     version_combo = ttk.Combobox(
         meta_frame,
@@ -6272,7 +6273,7 @@ def create_new_collection():
     version_combo.pack(side="left", padx=(5, 20))
 
     ttk.Label(meta_frame, text="Загрузчик:").pack(side="left")
-    loader_var = tk.StringVar(value="fabric")
+    loader_var = tk.StringVar(value=collection_data["loader"] if collection_data else "fabric")
 
     api = ModrinthAPI()
 
@@ -6448,8 +6449,8 @@ def create_new_collection():
 
                 # 3. Помечаем каждый мод: совместим или нет
                 for idx, mod in enumerate(mods):
-                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))  # noqa
-                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))  # noqa
+                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))
+                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))
 
                     # Проверяем совместимость
                     versions = api.get_mod_versions(
@@ -6467,16 +6468,16 @@ def create_new_collection():
                         mod["compatible_version"] = "❌ Нет версии"
                         mod["filename"] = "N/A"
 
-                collection_window.after(0, compatibility_window.destroy) # noqa
+                collection_window.after(0, compatibility_window.destroy)
 
                 # 4. Сортируем: совместимые — вверх
                 mods.sort(key=lambda m: (not m["compatible"], -m.get("downloads", 0)))
 
-                collection_window.after(0, lambda: display_modrinth_results(mods)) # noqa
+                collection_window.after(0, lambda: display_modrinth_results(mods))
 
             except Exception as e:
-                collection_window.after(0, progress_window.destroy) # noqa
-                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}")) # noqa
+                collection_window.after(0, progress_window.destroy)
+                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}"))
 
         threading.Thread(target=do_search, daemon=True).start()
 
@@ -6496,7 +6497,7 @@ def create_new_collection():
                 "",
                 "end",
                 values=(f"{mod['title']} ({version})", mod["author"], downloads, description, status),
-                tags=(mod["project_id"], mod["filename"])  # ✅ Только ID и имя файла
+                tags=(mod["project_id"], mod["filename"])
             )
 
             # Назначаем цвет отдельно
@@ -6585,7 +6586,197 @@ def create_new_collection():
     selected_scrollbar = ttk.Scrollbar(
         selected_frame, orient="vertical", command=selected_tree.yview
     )
-    selected_tree.configure(yscrollcommand=selected_scrollbar.set)
+    selected_tree.configure(yscrollcommand=selected_scrollbar.set)  # ✅ Правильно: на Treeview, до pack
+
+    selected_tree.pack(side="left", fill="both", expand=True)
+    selected_scrollbar.pack(side="right", fill="y")  # ✅ Упаковка
+
+    # === Добавляем моды из collection_data при редактировании ===
+    if collection_data:
+        for mod in collection_data["mods"]:
+            source = mod.get("source", "modrinth")
+            name = mod["name"]
+            filename = mod.get("correct_filename", mod["filename"]) if source == "modrinth" else mod["filename"]
+            tags = []
+
+            if source == "modrinth":
+                mod_id = mod["modrinth_id"]
+                tags = ("modrinth", mod_id, filename)
+            else:
+                tags = ("local", filename)
+
+            selected_tree.insert(
+                "", "end",
+                values=(source.capitalize(), name, filename),
+                tags=tags
+            )
+    # ❌ Удалено: .configure() после insert — это ошибка
+
+    # === Управление модами ===
+    selected_buttons = ttk.Frame(selected_frame)
+    selected_buttons.pack(fill="x", pady=(5, 0))
+
+    def add_selected_mods():
+        current_tab = notebook.index(notebook.select())
+        if current_tab == 0:  # Локальные моды
+            for item in local_mods_tree.selection():
+                values = local_mods_tree.item(item)["values"]
+                file = values[1]  # имя файла
+                name = values[0]
+
+                if not any(selected_tree.item(i)["values"][2] == file for i in selected_tree.get_children()):
+                    selected_tree.insert(
+                        "", "end",
+                        values=("Локальный", name, file),
+                        tags=("local", file)
+                    )
+        elif current_tab == 1:  # Modrinth
+            for item in modrinth_tree.selection():
+                values = modrinth_tree.item(item)["values"]
+                title = values[0].split(" (")[0]
+                tags = modrinth_tree.item(item)["tags"]
+                if len(tags) < 2:
+                    continue
+                mod_id = tags[0]
+                filename = tags[1]
+
+                if not any(selected_tree.item(i)["values"][2] == filename for i in selected_tree.get_children()):
+                    selected_tree.insert(
+                        "", "end",
+                        values=("Modrinth", title, filename),
+                        tags=("modrinth", mod_id, filename)
+                    )
+
+    def remove_selected_mods():
+        for item in selected_tree.selection():
+            selected_tree.delete(item)
+
+    def clear_all_mods():
+        if selected_tree.get_children() and messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
+            selected_tree.delete(*selected_tree.get_children())
+
+    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods, width=18).pack(side="left", padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Удалить выбранные", command=remove_selected_mods, width=18).pack(side="left", padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Очистить все", command=clear_all_mods, width=15).pack(side="left", padx=5)
+
+    # === Сохранение сборки ===
+    def create_collection():
+        name = name_var.get().strip()
+        if not name:
+            messagebox.showerror("Ошибка", "Введите название сборки!")
+            return
+
+        mods = []
+        failed_mods = []
+
+        progress_window = tk.Toplevel(collection_window)
+        set_window_icon(progress_window)
+        progress_window.title("Обработка модов")
+        progress_window.geometry("500x300")
+        progress_window.transient(collection_window)
+        progress_window.grab_set()
+
+        ttk.Label(progress_window, text="Получение информации о модах...", font=("Comfortaa", 12)).pack(pady=10)
+        progress = ttk.Progressbar(progress_window, orient="horizontal", mode="determinate")
+        progress.pack(fill="x", padx=20, pady=10)
+
+        status_var = tk.StringVar(value="Подготовка...")
+        status_label = ttk.Label(progress_window, textvariable=status_var)
+        status_label.pack()
+
+        log_text = tk.Text(progress_window, height=10, width=60)
+        log_text.pack(fill="both", expand=True, padx=20, pady=10)
+
+        def process_mods_thread():
+            total_mods = len(selected_tree.get_children())
+            for i, item in enumerate(selected_tree.get_children()):
+                values = selected_tree.item(item)["values"]
+                tags = selected_tree.item(item)["tags"]
+
+                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))
+                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))
+
+                mod_info = {"source": tags[0], "name": values[1], "filename": values[2]}
+
+                if tags[0] == "local":
+                    log_text.insert("end", f"🔍 Ищем на Modrinth: {values[1]}...\n")
+                    log_text.see("end")
+                    modrinth_info = find_mod_on_modrinth(api, values[1], version_var.get(), loader_var.get())
+                    if modrinth_info:
+                        mod_info.update({
+                            "source": "modrinth",
+                            "modrinth_id": modrinth_info["id"],
+                            "modrinth_slug": modrinth_info["slug"],
+                            "correct_filename": modrinth_info["filename"],
+                        })
+                        mods.append(mod_info)
+                        log_text.insert("end", f"✅ Найден: {modrinth_info['title']}\n")
+                    else:
+                        failed_mods.append(values[1])
+                        log_text.insert("end", f"❌ Не найден на Modrinth: {values[1]}\n")
+                elif tags[0] == "modrinth":
+                    mod_info["modrinth_id"] = tags[1]
+                    mods.append(mod_info)
+                    log_text.insert("end", f"✅ Modrinth мод: {values[1]}\n")
+
+                log_text.see("end")
+
+            progress_window.after(0, progress_window.destroy)
+            progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
+
+        def finalize_collection_creation(name, mods, failed_mods):
+            if not mods:
+                messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
+                return
+
+            collection_data = {
+                "name": name,
+                "minecraft_version": version_var.get(),
+                "loader": loader_var.get(),
+                "created_at": dt.now().isoformat(),
+                "mods": mods,
+                "mod_count": len(mods),
+            }
+
+            safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
+            filename = f"{safe_name}.json"
+            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+            filepath = os.path.join(collections_dir, filename)
+
+            os.makedirs(collections_dir, exist_ok=True)
+
+            # Удаляем старый файл, если редактируем и изменили имя
+            if original_filename and original_filename != filename:
+                old_path = os.path.join(collections_dir, original_filename)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+
+            try:
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(collection_data, f, indent=2, ensure_ascii=False)
+
+                if original_filename:
+                    messagebox.showinfo("Успех", f"Сборка '{name}' успешно обновлена!")
+                else:
+                    message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
+                    if failed_mods:
+                        message += f"\n• Пропущено: {len(failed_mods)}"
+                    messagebox.showinfo("Успех", message)
+
+                collection_window.destroy()
+                show_collection_manager()
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось сохранить сборку: {e}")
+
+        threading.Thread(target=process_mods_thread, daemon=True).start()
+
+    # === Кнопки сохранения ===
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill="x", pady=(10, 0))
+
+    ttk.Button(button_frame, text="✅ Сохранить", command=create_collection).pack(
+        side="left", padx=5
+    )
 
     selected_tree.pack(side="left", fill="both", expand=True)
     selected_scrollbar.pack(side="right", fill="y")
@@ -6693,9 +6884,6 @@ def create_new_collection():
         if selected_tree.get_children() and messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
             selected_tree.delete(*selected_tree.get_children())
 
-    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods, width=18).pack(side="left", padx=5)
-    ttk.Button(selected_buttons, text="🗑️ Удалить выбранные", command=remove_selected_mods, width=18).pack(side="left", padx=5)
-    ttk.Button(selected_buttons, text="🗑️ Очистить все", command=clear_all_mods, width=15).pack(side="left", padx=5)
 
     # === Создание сборки ===
     def create_collection():
@@ -6791,8 +6979,23 @@ def create_new_collection():
             os.makedirs(collections_dir, exist_ok=True)
 
             try:
-                with open(filepath, "w", encoding="utf-8") as f:
-                    json.dump(collection_data, f, indent=2, ensure_ascii=False)
+                try:
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        json.dump(collection_data, f, indent=2, ensure_ascii=False)
+
+                    # Если редактировали — сообщаем об успехе, не создаём новое
+                    if original_filename:
+                        messagebox.showinfo("Успех", f"Сборка '{name}' успешно обновлена!")
+                    else:
+                        message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
+                        if failed_mods:
+                            message += f"\n• Пропущено: {len(failed_mods)}"
+                        messagebox.showinfo("Успех", message)
+
+                    collection_window.destroy()
+                    show_collection_manager()  # Обновляем список
+                except Exception as e:
+                    messagebox.showerror("Ошибка", f"Не удалось сохранить сборку: {e}")
                 message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
                 if failed_mods:
                     message += f"\n• Пропущено: {len(failed_mods)}"
@@ -6808,6 +7011,11 @@ def create_new_collection():
     button_frame.pack(fill="x")
     ttk.Button(button_frame, text="✅ Создать сборку", command=create_collection).pack(side="left", padx=5)
     ttk.Button(button_frame, text="❌ Отмена", command=collection_window.destroy).pack(side="right", padx=5)
+
+
+
+
+
 
 def find_mod_on_modrinth(api, mod_name, minecraft_version, loader):
     """Улучшенный поиск модов на Modrinth"""
@@ -7117,7 +7325,7 @@ def show_collection_manager():
     manager_window = tk.Toplevel(win)
     set_window_icon(manager_window)
     manager_window.title("Менеджер сборок (Бета)")
-    manager_window.geometry("1000x500")
+    manager_window.geometry("1200x500")
     manager_window.transient(win)
     manager_window.grab_set()
 
@@ -7263,6 +7471,9 @@ def show_collection_manager():
     ttk.Button(button_frame, text="🗑️ Удалить", command=delete_collection).pack(
         side="left", padx=5
     )
+    ttk.Button(button_frame, text="✏️ Редактировать", command=lambda: (edit_collection(tree), manager_window.destroy())).pack(
+        side="left", padx=5
+    )
     ttk.Button(
         button_frame,
         text="➕ Новая сборка",
@@ -7272,7 +7483,25 @@ def show_collection_manager():
         side="right", padx=5
     )
 
+def edit_collection(tree):
+    """Открывает выбранную сборку для редактирования"""
+    selection = tree.selection()
+    if not selection:
+        messagebox.showwarning("Выбор", "Выберите сборку для редактирования")
+        return
 
+    filename = tree.item(selection[0])["tags"][0]
+    filepath = os.path.join(COLLECTIONS_CONFIG["collections_dir"], filename)
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть сборку: {e}")
+        return
+
+    # Передаём данные в create_new_collection
+    create_new_collection(collection_data=data, original_filename=filename)
 # Функция загрузки сборки в игру
 def load_collection_to_game(filename):
     filepath = os.path.join(COLLECTIONS_CONFIG["collections_dir"], filename)
