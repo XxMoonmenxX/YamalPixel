@@ -7941,6 +7941,7 @@ signal.signal(signal.SIGTERM, graceful_shutdown)  # Завершение про�
 
 
 
+
 # Добавь защиту от KeyboardInterrupt в mainloop
 def safe_mainloop():
     """Безопасный mainloop с обработкой прерываний"""
