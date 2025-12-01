@@ -4593,30 +4593,34 @@ def setup_custom_collection(collection_data):
         return False
 
 
-CURRENT_ACTIVE_COLLECTION = None  # Имя активной сборки
-MODS_BACKUP_DIR = None  # Путь к бэкапу модов
+CURRENT_ACTIVE_COLLECTION = None
+MODS_BACKUP_DIR = None
+COLLECTIONS_CACHE = {}  # Кеш загруженных сборок
 
 
 def setup_custom_collection_launch(collection_data):
-    """Настройка запуска кастомной сборки"""
-    global CURRENT_ACTIVE_COLLECTION, MODS_BACKUP_DIR
+    """Улучшенная настройка запуска кастомной сборки с кешированием"""
+    global CURRENT_ACTIVE_COLLECTION
 
     collection_name = collection_data['name']
 
-    # 1. Создаем бэкапную папку если её нет
-    MODS_BACKUP_DIR = os.path.join(CONFIG["minecraft_dir"], "mods_backup")
-    os.makedirs(MODS_BACKUP_DIR, exist_ok=True)
+    print(f"🎯 Настраиваем сборку: {collection_name}")
 
-    # 2. Если уже есть активная сборка - сохраняем её моды в бэкап
-    if CURRENT_ACTIVE_COLLECTION:
-        backup_current_mods(CURRENT_ACTIVE_COLLECTION)
+    # 1. Проверяем есть ли уже загруженная эта сборка
+    if CURRENT_ACTIVE_COLLECTION == collection_name:
+        print(f"✅ Сборка {collection_name} уже активна")
+        return True
 
-    # 3. Загружаем моды из новой сборки
-    load_collection_mods(collection_data)
+    # 2. Ищем существующий бэкап сборки
+    existing_backup = get_collection_backup_path(collection_name)
 
-    # 4. Обновляем текущую активную сборку
-    CURRENT_ACTIVE_COLLECTION = collection_name
-    return True
+    if existing_backup:
+        print(f"📂 Найден существующий бэкап: {os.path.basename(existing_backup)}")
+        return restore_from_backup(existing_backup, collection_name)
+
+    # 3. Если бэкапа нет - создаем его после загрузки модов
+    print(f"🔄 Бэкап не найден, загружаем моды...")
+    return download_and_cache_collection(collection_data)
 
 
 def backup_current_mods(collection_name):
@@ -4689,36 +4693,35 @@ def load_collection_mods(collection_data):
 
 
 def switch_to_vanilla_version(version_name):
-    """Переключение на ванильную версию"""
+    """Переключение на ванильную версию с использованием бэкапа"""
     global CURRENT_ACTIVE_COLLECTION
 
-    # Если была активна сборка - сохраняем её моды в бэкап
+    print(f"🔄 Переключаемся на версию: {version_name}")
+
+    # 1. Сохраняем текущие моды в бэкап (если есть активная сборка)
     if CURRENT_ACTIVE_COLLECTION:
-        backup_current_mods(CURRENT_ACTIVE_COLLECTION)
+        print(f"💾 Сохраняем текущую сборку: {CURRENT_ACTIVE_COLLECTION}")
+        backup_current_mods_for_collection(CURRENT_ACTIVE_COLLECTION)
 
-    # Очищаем папку модов
-    mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-    clear_mods_directory(mods_dir)
-
-    # Загружаем моды для ванильной версии (например, YamalPixel)
+    # 2. Ищем бэкап для ванильной версии
     if version_name == "YamalPixel":
-        # Используем существующую логику загрузки модов
-        check_and_download_missing_mods()
+        backup_path = get_vanilla_backup_path("YamalPixel")
 
-    CURRENT_ACTIVE_COLLECTION = None
+        if backup_path:
+            print(f"📂 Восстанавливаем YamalPixel из бэкапа")
+            restore_from_backup(backup_path, "YamalPixel")
+        else:
+            # Если бэкапа нет, загружаем моды стандартным способом
+            print(f"🔄 Бэкап YamalPixel не найден, загружаем моды...")
+            check_and_download_missing_mods()
+            # Создаем бэкап после загрузки
+            create_vanilla_backup("YamalPixel")
+    else:
+        # Для других версий просто очищаем папку модов
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+        clear_mods_directory(mods_dir)
 
-
-
-
-
-
-
-
-
-
-
-
-
+    CURRENT_ACTIVE_COLLECTION = version_name
 
 
 def start_game_launch():
@@ -7529,9 +7532,7 @@ def edit_collection(tree):
     create_new_collection(collection_data=data, original_filename=filename)
 # Функция загрузки сборки в игру
 def load_collection_to_game(filename):
-    """Загружает сборку в игру (для менеджера сборок)"""
-    global CURRENT_ACTIVE_COLLECTION
-
+    """Загружает сборку в игру с интеллектуальным кешированием"""
     filepath = os.path.join(COLLECTIONS_CONFIG["collections_dir"], filename)
 
     try:
@@ -7541,8 +7542,8 @@ def load_collection_to_game(filename):
         messagebox.showerror("Ошибка", f"Не удалось загрузить сборку: {e}")
         return
 
-    # Настраиваем кастомную сборку
-    if setup_custom_collection_launch(collection):
+    # Используем оптимизированную загрузку
+    if optimize_collection_loading(collection):
         messagebox.showinfo(
             "Успех",
             f"✅ Сборка '{collection['name']}' загружена!\n\n"
@@ -7554,6 +7555,8 @@ def load_collection_to_game(filename):
 
         # Обновляем селектор версий
         version_selector.refresh_versions()
+    else:
+        messagebox.showerror("Ошибка", "Не удалось загрузить сборку")
 
     # Создаем окно прогресса с логом
     progress_window = tk.Toplevel(win)
@@ -7719,7 +7722,7 @@ def initialize_collection_system():
 
 
 # Запускаем инициализацию после создания окна
-win.after(1000, initialize_collection_system)  # noqa
+
 def restore_previous_collection():
     """Восстанавливает предыдущую активную сборку"""
     global CURRENT_ACTIVE_COLLECTION
@@ -7939,9 +7942,6 @@ def graceful_shutdown(signum, frame):
 signal.signal(signal.SIGINT, graceful_shutdown)  # Ctrl+C
 signal.signal(signal.SIGTERM, graceful_shutdown)  # Завершение процесса
 
-
-
-
 # Добавь защиту от KeyboardInterrupt в mainloop
 def safe_mainloop():
     """Безопасный mainloop с обработкой прерываний"""
@@ -7958,12 +7958,343 @@ def safe_mainloop():
 win.after(100, lambda: setup_adaptive_background()) # noqa
 
 
-def apply_background_and_close(filename, window):
+def apply_background_and_close(filename, window): # noqa
     """Применяет фон и закрывает окно"""
     load_custom_background(filename)
     window.destroy()
     messagebox.showinfo("Успех", f"Фон {filename} применен!")
 
 
+def get_collection_backup_path(collection_name):
+    """Получает путь к бэкапу сборки"""
+    global MODS_BACKUP_DIR
+
+    if not MODS_BACKUP_DIR:
+        MODS_BACKUP_DIR = os.path.join(CONFIG["minecraft_dir"], "mods_backup")
+
+    # Ищем самый свежий бэкап для этой сборки
+    collections_backup_dir = os.path.join(MODS_BACKUP_DIR, "collections")
+    os.makedirs(collections_backup_dir, exist_ok=True)
+
+    # Ищем существующие бэкапы этой сборки
+    existing_backups = []
+
+    for file in os.listdir(collections_backup_dir):
+        if file.startswith(collection_name) and file.endswith(".zip"):
+            filepath = os.path.join(collections_backup_dir, file)
+            create_time = os.path.getctime(filepath)
+            existing_backups.append((create_time, filepath))
+
+    # Возвращаем самый свежий бэкап
+    if existing_backups:
+        existing_backups.sort(reverse=True)  # Сортируем по дате (новые первыми)
+        return existing_backups[0][1]
+
+    return None
+
+
+def backup_current_mods_for_collection(collection_name):
+    """Создает бэкап текущих модов перед переключением на сборку"""
+    try:
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+
+        if not os.path.exists(mods_dir) or not os.listdir(mods_dir):
+            print(f"⚠️ Папка модов пуста, пропускаем бэкап")
+            return None
+
+        # Создаем временный бэкап перед переключением
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_backup_dir = os.path.join(MODS_BACKUP_DIR, "temp")
+        os.makedirs(temp_backup_dir, exist_ok=True)
+
+        temp_backup_path = os.path.join(temp_backup_dir, f"temp_{timestamp}")
+
+        # Копируем только JAR файлы
+        copied_files = 0
+        os.makedirs(temp_backup_path, exist_ok=True)
+
+        for file in os.listdir(mods_dir):
+            if file.endswith(".jar"):
+                try:
+                    shutil.copy2(
+                        os.path.join(mods_dir, file),
+                        os.path.join(temp_backup_path, file)
+                    )
+                    copied_files += 1
+                except Exception as e:
+                    print(f"⚠️ Ошибка копирования {file}: {e}")
+
+        print(f"📦 Создан временный бэкап: {copied_files} файлов")
+        return temp_backup_path
+
+    except Exception as e:
+        print(f"❌ Ошибка создания временного бэкапа: {e}")
+        return None
+
+
+def restore_from_backup(backup_path, collection_name):
+    """Восстанавливает моды из бэкапа"""
+    try:
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+
+        # Очищаем папку модов
+        clear_mods_directory(mods_dir)
+
+        # Создаем временную папку для распаковки
+        temp_dir = os.path.join(MODS_BACKUP_DIR, "temp_extract")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # Распаковываем ZIP архив
+        with zipfile.ZipFile(backup_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+
+        # Копируем файлы в папку модов
+        restored_count = 0
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if file.endswith('.jar'):
+                    src_path = os.path.join(root, file)
+                    dst_path = os.path.join(mods_dir, file)
+                    shutil.copy2(src_path, dst_path)
+                    restored_count += 1
+
+        # Очищаем временную папку
+        shutil.rmtree(temp_dir)
+
+        print(f"✅ Восстановлено из бэкапа: {restored_count} модов")
+
+        # Обновляем активную сборку
+        global CURRENT_ACTIVE_COLLECTION
+        CURRENT_ACTIVE_COLLECTION = collection_name
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка восстановления из бэкапа: {e}")
+        return False
+
+
+def download_and_cache_collection(collection_data):
+    """Загружает и кеширует сборку"""
+    try:
+        collection_name = collection_data['name']
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+
+        # Создаем временную папку для загрузки
+        temp_download_dir = os.path.join(MODS_BACKUP_DIR, "temp_download", collection_name)
+        os.makedirs(temp_download_dir, exist_ok=True)
+
+        # Загружаем моды через API
+        api = ModrinthAPI()
+        success_count = 0
+
+        for mod in collection_data['mods']:
+            if mod['source'] == 'modrinth':
+                versions = api.get_mod_versions(
+                    mod_id=mod["modrinth_id"],
+                    minecraft_version=collection_data["minecraft_version"],
+                    loader=collection_data["loader"].lower()
+                )
+
+                if versions:
+                    latest_version = versions[0]
+                    if latest_version["files"]:
+                        file_info = latest_version["files"][0]
+                        filename = file_info["filename"]
+
+                        # Скачиваем во временную папку
+                        if api.download_mod(
+                                mod.get("modrinth_slug", mod["modrinth_id"]),
+                                latest_version["id"],
+                                filename,
+                                temp_download_dir
+                        ):
+                            success_count += 1
+
+        if success_count > 0:
+            # Очищаем папку модов и копируем из временной
+            clear_mods_directory(mods_dir)
+
+            for file in os.listdir(temp_download_dir):
+                if file.endswith('.jar'):
+                    shutil.copy2(
+                        os.path.join(temp_download_dir, file),
+                        os.path.join(mods_dir, file)
+                    )
+
+            # Создаем бэкап загруженной сборки
+            create_collection_backup(collection_name, temp_download_dir)
+
+            # Обновляем активную сборку
+            global CURRENT_ACTIVE_COLLECTION
+            CURRENT_ACTIVE_COLLECTION = collection_name
+
+            # Очищаем временную папку
+            shutil.rmtree(os.path.dirname(temp_download_dir))
+
+            print(f"✅ Загружено и закешировано: {success_count} модов")
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"❌ Ошибка загрузки и кеширования сборки: {e}")
+        return False
+
+
+def create_collection_backup(collection_name, source_dir):
+    """Создает ZIP бэкап сборки"""
+    try:
+        collections_backup_dir = os.path.join(MODS_BACKUP_DIR, "collections")
+        os.makedirs(collections_backup_dir, exist_ok=True)
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"{collection_name}_{timestamp}.zip"
+        backup_path = os.path.join(collections_backup_dir, backup_filename)
+
+        # Создаем ZIP архив
+        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(source_dir):
+                for file in files:
+                    if file.endswith('.jar'):
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, source_dir)
+                        zipf.write(file_path, arcname)
+
+        print(f"📦 Создан бэкап сборки: {backup_filename}")
+        return backup_path
+
+    except Exception as e:
+        print(f"❌ Ошибка создания бэкапа сборки: {e}")
+        return None
+
+
+def get_vanilla_backup_path(version_name):
+    """Получает путь к бэкапу ванильной версии"""
+    global MODS_BACKUP_DIR
+
+    if not MODS_BACKUP_DIR:
+        MODS_BACKUP_DIR = os.path.join(CONFIG["minecraft_dir"], "mods_backup")
+
+    vanilla_backup_dir = os.path.join(MODS_BACKUP_DIR, "vanilla")
+    os.makedirs(vanilla_backup_dir, exist_ok=True)
+
+    backup_filename = f"{version_name}.zip"
+    backup_path = os.path.join(vanilla_backup_dir, backup_filename)
+
+    return backup_path if os.path.exists(backup_path) else None
+
+
+def create_vanilla_backup(version_name):
+    """Создает бэкап ванильной версии"""
+    try:
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+
+        if not os.path.exists(mods_dir) or not os.listdir(mods_dir):
+            print(f"⚠️ Нет модов для создания бэкапа {version_name}")
+            return None
+
+        backup_path = get_vanilla_backup_path(version_name)
+
+        # Создаем ZIP архив
+        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(mods_dir):
+                for file in files:
+                    if file.endswith('.jar'):
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, mods_dir)
+                        zipf.write(file_path, arcname)
+
+        print(f"📦 Создан бэкап {version_name}: {os.path.basename(backup_path)}")
+        return backup_path
+
+    except Exception as e:
+        print(f"❌ Ошибка создания бэкапа {version_name}: {e}")
+        return None
+
+
+def optimize_collection_loading(collection_data):
+    """Интеллектуальная загрузка сборки с проверкой бэкапов"""
+    collection_name = collection_data['name']
+
+    # 1. Проверяем наличие бэкапа
+    backup_info = check_backup_exists(collection_name)
+
+    if backup_info["exists"]:
+        # Показываем пользователю информацию о бэкапе
+        response = messagebox.askyesno(
+            "Бэкап найден",
+            f"Для сборки '{collection_name}' найден бэкап:\n\n"
+            f"• Размер: {backup_info['size_mb']:.1f} MB\n"
+            f"• Модов: {backup_info['mod_count']}\n"
+            f"• Создан: {backup_info['created']}\n\n"
+            f"Восстановить из бэкапа? (быстрее)\n\n"
+            f"Или загрузить заново? (медленнее, но актуальнее)"
+        )
+
+        if response:
+            # Восстанавливаем из бэкапа
+            print(f"🔄 Восстанавливаем из бэкапа...")
+            return restore_from_backup(backup_info["path"], collection_name)
+        else:
+            # Загружаем заново
+            print(f"🔄 Загружаем заново...")
+            return download_and_cache_collection(collection_data)
+    else:
+        # Бэкапа нет, загружаем
+        print(f"🔄 Бэкап не найден, загружаем...")
+        return download_and_cache_collection(collection_data)
+
+
+def check_backup_exists(collection_name):
+    """Проверяет существует ли бэкап для сборки"""
+    backup_path = get_collection_backup_path(collection_name)
+
+    if backup_path and os.path.exists(backup_path):
+        backup_size = os.path.getsize(backup_path) / (1024 * 1024)  # Размер в MB
+        mod_count = get_mod_count_from_backup(backup_path)
+
+        print(f"✅ Бэкап найден: {os.path.basename(backup_path)}")
+        print(f"   Размер: {backup_size:.1f} MB")
+        print(f"   Модов: {mod_count}")
+
+        return {
+            "exists": True,
+            "path": backup_path,
+            "size_mb": backup_size,
+            "mod_count": mod_count,
+            "created": datetime.datetime.fromtimestamp(os.path.getctime(backup_path)).strftime("%Y-%m-%d %H:%M")
+        }
+
+    print(f"❌ Бэкап для {collection_name} не найден")
+    return {"exists": False}
+
+
+def get_mod_count_from_backup(backup_path):
+    """Подсчитывает количество модов в бэкапе"""
+    try:
+        with zipfile.ZipFile(backup_path, 'r') as zip_ref:
+            jar_files = [f for f in zip_ref.namelist() if f.endswith('.jar')]
+            return len(jar_files)
+    except:
+        return 0
+
+
+def setup_backup_maintenance():
+    """Настройка обслуживания бэкапов"""
+    global MODS_BACKUP_DIR
+
+    # Инициализируем папку бэкапов
+    MODS_BACKUP_DIR = os.path.join(CONFIG["minecraft_dir"], "mods_backup")
+    os.makedirs(MODS_BACKUP_DIR, exist_ok=True)
+
+    # Создаем подпапки
+    os.makedirs(os.path.join(MODS_BACKUP_DIR, "collections"), exist_ok=True)
+    os.makedirs(os.path.join(MODS_BACKUP_DIR, "vanilla"), exist_ok=True)
+    os.makedirs(os.path.join(MODS_BACKUP_DIR, "temp"), exist_ok=True)
+
+    print(f"✅ Папка бэкапов: {MODS_BACKUP_DIR}")
+
+win.after(2000, setup_backup_maintenance)  # Запускаем через 2 секунды после старта
 if __name__ == "__main__":
     safe_mainloop()
