@@ -2465,60 +2465,6 @@ img = ttk.Label(win)
 img.place(x=0, y=-1, relwidth=1, relheight=1)
 
 
-def setup_adaptive_background():
-    """Автоматический подбор фона под разрешение экрана"""
-    try:
-        screen_width = win.winfo_screenwidth()
-        screen_height = win.winfo_screenheight()
-
-        print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
-
-        # Прямое соответствие
-        bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
-
-        if bg_file:
-            print(f"✅ Найдено точное соответствие: {bg_file}")
-            load_custom_background(bg_file)
-        else:
-            # Используем стандартный
-            print("🔧 Используем стандартный фон")
-            load_default_background()
-
-    except Exception as e:
-        print(f"❌ Ошибка в setup_adaptive_background: {e}")
-        load_default_background()
-
-
-def load_custom_background(filename):
-    """Загружает кастомный фон"""
-    try:
-        bg_path = RESOURCE_DIR / filename
-        if bg_path.exists():
-            global bag, img
-            bag = tk.PhotoImage(file=str(bg_path))
-            img.configure(image=bag)
-            print(f"🎨 Успешно загружен фон: {filename}")
-        else:
-            print(f"⚠️ Фон {filename} не найден")
-            load_default_background()
-
-    except Exception as e:
-        print(f"❌ Ошибка загрузки фона {filename}: {e}")
-        load_default_background()
-
-
-def load_default_background():
-    """Загружает стандартный фон"""
-    try:
-        global bag, img
-        default_bg = RESOURCE_DIR / "logo.png"
-        if default_bg.exists():
-            bag = tk.PhotoImage(file=str(default_bg))
-            img.configure(image=bag)
-            print("🔧 Используем стандартный фон logo.png")
-    except Exception as e:
-        print(f"💥 Критическая ошибка загрузки фона: {e}")
-
 
 def create_background_selector():
     """Создает кнопку для ручного выбора фона"""
@@ -3628,15 +3574,6 @@ def create_progress_window():
     status_label.pack()
 
 
-
-
-def monitor_game_process(process):
-    """Мониторит процесс игры и разблокирует интерфейс при завершении"""
-    process.wait()
-    # Если процесс завершился, разблокируем интерфейс
-    win.after(0, lambda: set_launch_state(False))
-
-
 # ДОБАВЬ ЭТО ПРЯМО ПЕРЕД СОЗДАНИЕМ menu_bar:
 
 
@@ -3736,12 +3673,6 @@ def show_simple_background_selector():
         messagebox.showerror("Ошибка", "Не удалось открыть выбор фона")
 
 
-def apply_background_and_close(filename, window):
-    """Применяет фон и закрывает окно"""
-    load_custom_background(filename)
-    window.destroy()
-    messagebox.showinfo("Успех", f"Фон {filename} применен!")
-
 
 # А вот теперь создаем меню
 menu_bar = tk.Menu(win)
@@ -3789,78 +3720,6 @@ help_menu.add_separator()
 help_menu.add_command(label="Проверить обновления", command=lambda: check_for_updates_local(win))
 menu_bar.add_cascade(label="Справка", menu=help_menu)
 
-
-
-
-def setup_adaptive_background():
-    """Автоматический подбор фона под разрешение экрана"""
-
-    screen_width = win.winfo_screenwidth()
-    screen_height = win.winfo_screenheight()
-
-    print(f"🖥️ Обнаружено разрешение: {screen_width}x{screen_height}")
-
-    # Прямое соответствие
-    bg_file = RESOLUTION_MAP.get((screen_width, screen_height))
-
-    if bg_file:
-        print(f"✅ Найдено точное соответствие: {bg_file}")
-        load_custom_background(bg_file)
-    else:
-        # Ищем ближайшее по соотношению сторон
-        bg_file = find_closest_resolution(screen_width, screen_height)
-        print(f"🔄 Используем ближайшее: {bg_file}")
-        load_custom_background(bg_file)
-
-def find_closest_resolution(width, height):
-    """Находит ближайшее разрешение по соотношению сторон"""
-    aspect_ratio = width / height
-
-    # Ближайшие соотношения сторон
-
-
-    # Ищем с наименьшей разницей в соотношении
-    best_match = "logo1.png"  # дефолт
-    min_diff = float("inf")
-
-    for res, target_ratio in ratios.items():
-        diff = abs(aspect_ratio - target_ratio)
-        if diff < min_diff:
-            min_diff = diff
-            best_match = RESOLUTION_MAP[res]
-
-    return best_match
-
-
-def load_custom_background(filename):
-    """Загружает кастомный фон"""
-    try:
-        bg_path = RESOURCE_DIR / filename
-        if bg_path.exists():
-            global bag, img
-            bag = tk.PhotoImage(file=str(bg_path))
-            img.configure(image=bag)
-            print(f"🎨 Загружен фон: {filename}")
-        else:
-            print(f"⚠️ Фон {filename} не найден")
-            # Грузим стандартный как запасной вариант
-            load_default_background()
-    except Exception as e:
-        print(f"❌ Ошибка загрузки фона {filename}: {e}")
-        load_default_background()
-
-
-def load_default_background():
-    """Загружает стандартный фон"""
-    try:
-        global bag, img
-        default_bg = RESOURCE_DIR / "logo.png"
-        if default_bg.exists():
-            bag = tk.PhotoImage(file=str(default_bg))
-            img.configure(image=bag)
-            print("🔧 Используем стандартный фон")
-    except Exception as e:
-        print(f"💥 Критическая ошибка загрузки фона: {e}")
 
 
 def setup_adaptive_background():
@@ -3988,104 +3847,6 @@ def show_background_menu():
     # Показываем меню под курсором
     menu.tk_popup(win.winfo_pointerx(), win.winfo_pointery())
 
-
-def show_simple_background_selector():
-    """Простой и надежный выбор фона через отдельное окно"""
-    try:
-        selector_window = tk.Toplevel(win)
-        selector_window.title("Выбор фона для лаунчера")
-        selector_window.geometry("400x500")
-        selector_window.configure(bg="#2b2b2b")
-        selector_window.resizable(False, False)
-        selector_window.transient(win)
-        selector_window.grab_set()
-
-        # Центрируем окно
-        selector_window.update_idletasks()
-        x = (win.winfo_screenwidth() // 2) - (400 // 2)
-        y = (win.winfo_screenheight() // 2) - (500 // 2)
-        selector_window.geometry(f"400x500+{x}+{y}")
-
-        main_frame = ttk.Frame(selector_window, padding=20)
-        main_frame.pack(fill="both", expand=True)
-
-        # Заголовок
-        ttk.Label(
-            main_frame,
-            text="🎨 Выбор фона",
-            font=("Comfortaa", 16, "bold"),
-            foreground="white",
-            background="#2b2b2b",
-        ).pack(pady=(0, 20))
-
-        # Описание
-        ttk.Label(
-            main_frame,
-            text="Выберите фон для своего разрешения экрана:",
-            font=("Comfortaa", 10),
-            foreground="#cccccc",
-            background="#2b2b2b",
-        ).pack(pady=(0, 15))
-
-        # Создаем кнопки выбора
-        for name, filename in backgrounds:
-            btn_frame = ttk.Frame(main_frame)
-            btn_frame.pack(fill="x", pady=4)
-
-            btn = ModernButton(
-                btn_frame,
-                text=name,
-                width=320,
-                height=36,
-                gradient=("#4A5568", "#2D3748"),
-                command=lambda f=filename: apply_background_and_close(
-                    f, selector_window
-                ),
-                font_size=10,
-                corner_radius=8,
-            )
-            btn.pack(pady=2)
-
-        # Разделитель
-        separator = ttk.Separator(main_frame, orient="horizontal")
-        separator.pack(fill="x", pady=15)
-
-        # Кнопка автоопределения
-        auto_btn = ModernButton(
-            main_frame,
-            text="🔧 Автоопределение (рекомендуется)",
-            width=320,
-            height=36,
-            gradient=("#667eea", "#764ba2"),
-            command=lambda: (setup_adaptive_background(), selector_window.destroy()),
-            font_size=10,
-            corner_radius=8,
-        )
-        auto_btn.pack(pady=5)
-
-        # Кнопка закрытия
-        close_btn = ModernButton(
-            main_frame,
-            text="❌ Закрыть",
-            width=200,
-            height=32,
-            gradient=("#718096", "#4A5568"),
-            command=selector_window.destroy,
-            font_size=10,
-            corner_radius=6,
-        )
-        close_btn.pack(pady=10)
-
-    except Exception as e:
-        print(f"❌ Ошибка открытия селектора фонов: {e}")
-        messagebox.showerror("Ошибка", "Не удалось открыть выбор фона")
-
-
-def apply_background_and_close(filename, window):
-    """Применяет фон и закрывает окно"""
-    load_custom_background(filename)
-    window.destroy()
-    messagebox.showinfo("Успех", f"Фон {filename} применен!")
 
 
 # Функция для открытия настроек
@@ -5979,27 +5740,6 @@ def is_minecraft_process_running(process):
     except:
         return False
 
-
-def monitor_game_process(process):
-    """Мониторит процесс игры в фоне"""
-    try:
-        # Ждем завершения процесса
-        process.wait()
-
-        # Читаем вывод если есть
-        try:
-            stdout, stderr = process.communicate(timeout=1)
-            if stdout:
-                print(f"[MINECRAFT STDOUT] {stdout[:500]}...")
-            if stderr:
-                print(f"[MINECRAFT STDERR] {stderr[:500]}...")
-        except:
-            pass
-
-        print("[LAUNCHER] Процесс Minecraft завершен")
-
-    except Exception as e:
-        print(f"[LAUNCHER] Ошибка мониторинга: {e}")
 
 
 def update_log(message):
@@ -8199,25 +7939,6 @@ def graceful_shutdown(signum, frame):
 signal.signal(signal.SIGINT, graceful_shutdown)  # Ctrl+C
 signal.signal(signal.SIGTERM, graceful_shutdown)  # Завершение процесса
 
-
-
-def on_closing():
-    """При закрытии окна"""
-    print("💾 Сохраняем настройки и выходим...")
-    save_last_session()
-
-    # Останавливаем музыку
-    try:
-        mixer.music.stop()
-    except:
-        pass
-
-    win.destroy()
-    sys.exit(0)
-
-
-# Вешаем обработчик
-win.protocol("WM_DELETE_WINDOW", on_closing)
 
 
 # Добавь защиту от KeyboardInterrupt в mainloop
