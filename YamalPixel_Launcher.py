@@ -6509,6 +6509,7 @@ def create_new_collection(collection_data=None, original_filename=None):
     global current_sort_col, current_sort_reverse
     collection_window = tk.Toplevel(win)
     collection_window.title("Создать сборку" if not collection_data else "Редактировать сборку")
+    collection_window.resizable(True)
     set_window_icon(collection_window)
     collection_window.geometry("1200x1080")
     collection_window.transient(win)
