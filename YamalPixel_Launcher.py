@@ -4483,7 +4483,7 @@ def install_required_components(version_name):
             except Exception as e:
                 error_message = str(e)  # Сохраняем сообщение до вызова win.after
                 win.after(0, lambda: progress_window.destroy())
-                win.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {error_message}"))
+                #win.after(0, lambda: messagebox.showerror("Ошибка", f"Не удалось установить компоненты: {error_message}"))
 
         threading.Thread(target=install_thread, daemon=True).start()
 
