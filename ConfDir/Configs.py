@@ -762,3 +762,90 @@ version_configs = {
 QUILT_CONFIG = {
     "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
 }
+
+import json
+import os
+from datetime import datetime
+
+USER_COLLECTIONS_DIR = os.path.join(CONFIG["minecraft_dir"], "custom_collections")
+os.makedirs(USER_COLLECTIONS_DIR, exist_ok=True)
+
+
+def load_user_collections():
+    """Загружает все пользовательские сборки"""
+    collections = []
+
+    if not os.path.exists(USER_COLLECTIONS_DIR):
+        return collections
+
+    for filename in os.listdir(USER_COLLECTIONS_DIR):
+        if filename.endswith('.json'):
+            try:
+                filepath = os.path.join(USER_COLLECTIONS_DIR, filename)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                # Проверяем обязательные поля
+                if all(key in data for key in ['name', 'minecraft_version', 'loader']):
+                    collections.append({
+                        'name': data['name'],
+                        'filename': filename,
+                        'minecraft_version': data['minecraft_version'],
+                        'loader': data['loader'],
+                        'loader_version': data.get('loader_version'),
+                        'mods': data.get('mods', []),
+                        'mod_count': len(data.get('mods', [])),
+                        'created_at': data.get('created_at', datetime.now().isoformat()),
+                        'description': data.get('description', '')
+                    })
+            except Exception as e:
+                print(f"⚠️ Ошибка загрузки сборки {filename}: {e}")
+
+    return collections
+
+
+def save_user_collection(collection_data):
+    """Сохраняет пользовательскую сборку"""
+    try:
+        # Создаем безопасное имя файла
+        safe_name = "".join(c for c in collection_data['name'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_name = safe_name[:50]
+
+        filename = f"{safe_name}.json"
+        filepath = os.path.join(USER_COLLECTIONS_DIR, filename)
+
+        # Добавляем метаданные
+        collection_data['created_at'] = datetime.now().isoformat()
+        collection_data['updated_at'] = datetime.now().isoformat()
+
+        # Сохраняем файл
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(collection_data, f, indent=2, ensure_ascii=False)
+
+        return True, filename
+    except Exception as e:
+        return False, str(e)
+
+
+def delete_user_collection(collection_name):
+    """Удаляет пользовательскую сборку"""
+    try:
+        # Ищем файл по имени сборки
+        for filename in os.listdir(USER_COLLECTIONS_DIR):
+            if filename.endswith('.json'):
+                filepath = os.path.join(USER_COLLECTIONS_DIR, filename)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                if data.get('name') == collection_name:
+                    os.remove(filepath)
+                    return True
+
+        return False
+    except Exception as e:
+        print(f"❌ Ошибка удаления сборки: {e}")
+        return False
+
+COLLECTIONS_CONFIG = {
+    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections")
+}

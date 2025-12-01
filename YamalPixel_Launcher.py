@@ -4754,6 +4754,69 @@ def checker1_with_callback(completion_callback=None):
     threading.Thread(target=download_thread, daemon=True).start()
 
 
+def load_collection_data(collection_name):
+    """Загружает данные кастомной сборки"""
+    try:
+        from ConfDir.Configs import COLLECTIONS_CONFIG
+        import json
+        import os
+
+        collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+
+        for filename in os.listdir(collections_dir):
+            if filename.endswith('.json'):
+                filepath = os.path.join(collections_dir, filename)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                if data['name'] == collection_name:
+                    return data
+    except Exception as e:
+        print(f"❌ Ошибка загрузки сборки {collection_name}: {e}")
+
+    return None
+
+
+def setup_custom_collection(collection_data):
+    """Базовая настройка кастомных сборок"""
+    try:
+        collection_name = collection_data['name']
+
+        # Бэкап текущих модов перед установкой сборки
+        if collection_data.get('backup_before_install', True):
+            mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+            if os.path.exists(mods_dir):
+                backup_path = create_backup(mods_dir, f"before_{collection_name}")
+                if backup_path:
+                    print(f"📂 Создан бэкап перед установкой: {os.path.basename(backup_path)}")
+
+        # Настройка памяти для сборки
+        if 'recommended_memory' in collection_data:
+            recommended_mem = collection_data['recommended_memory']
+            current_mem = CONFIG.get("jvm_memory", "4G").replace("-Xmx", "")
+
+            if current_mem != recommended_mem:
+                print(f"💾 Устанавливаем память: {recommended_mem} (было: {current_mem})")
+                CONFIG["jvm_memory"] = f"-Xmx{recommended_mem}"
+
+        # Дополнительные параметры JVM
+        if 'extra_jvm_args' in collection_data:
+            extra_args = collection_data['extra_jvm_args']
+            print(f"⚡ Дополнительные параметры: {extra_args}")
+            # Можно добавить к стандартным аргументам при запуске
+
+        # Специальные инструкции
+        if 'instructions' in collection_data:
+            print(f"📝 Инструкции по сборке:")
+            for instruction in collection_data['instructions']:
+                print(f"   • {instruction}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка настройки сборки: {e}")
+        return False
+
 def start_game_launch():
     """Основной процесс запуска игры (вынесен из runn)"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
@@ -4892,6 +4955,22 @@ def start_game_launch():
             selected_version = version_selector.get()
             username_text = username.get().strip()
 
+            if selected_version.startswith("📦 "):
+                collection_name = selected_version[2:]
+                collection_data = load_collection_data(collection_name)
+
+                if collection_data:
+                    print(f"🎮 Запускаем кастомную сборку: {collection_name}")
+                    print(f"📊 Модов в сборке: {len(collection_data.get('mods', []))}")
+
+                    # Устанавливаем настройки из сборки
+                    minecraft_version = collection_data['minecraft_version']
+                    loader_type = collection_data['loader']
+
+                    # Можно добавить специальную логику для сборок
+                    if collection_data.get('requires_extra_setup'):
+                        setup_custom_collection(collection_data)
+
             # Валидация имени пользователя
             if not username_text or username_text == "Введите никнейм":
                 raise Exception("Введите корректное имя пользователя!")
@@ -4925,6 +5004,15 @@ def start_game_launch():
             # Шаг 2: Проверка и установка модлоадеров
             loader_type = is_modloader_needed(selected_version)
             minecraft_version = get_minecraft_version(selected_version)
+
+            if selected_version.startswith("📦 "):
+                # Получаем данные сборки
+                collection_data = load_collection_data(selected_version[2:])
+                if collection_data:
+                    # Устанавливаем настройки из сборки
+                    minecraft_version = collection_data['minecraft_version']
+                    loader_type = collection_data['loader']
+                    print(f"🎯 Используем кастомную сборку: {collection_data['name']}")
 
             if loader_type:
                 update_ui_status(f"Проверка {loader_type.capitalize()}", "Проверяем установку...")
@@ -5288,32 +5376,53 @@ def repair_single_version(version_name):
 
 
 def install_required_components_sync(version_name):
-    """Синхронная установка компонентов (без отдельного окна)"""
+    """Синхронная установка компонентов - ИСПРАВЛЕННАЯ ВЕРСИЯ для кастомных сборок"""
     try:
         print(f"🔍 Начинаем установку для: {version_name}")
 
-        if version_name not in version_configs:
-            raise ValueError(f"Версия {version_name} не найдена в конфигурациях")
+        # 1. ПРОВЕРЯЕМ: Это кастомная сборка (начинается с 📦)?
+        if version_name.startswith("📦 "):
+            # Загружаем данные сборки напрямую из JSON-файла
+            collection_name = version_name[2:]  # Убираем эмодзи
+            collection_data = load_collection_data(collection_name)
 
-        config = version_configs[version_name]
-        print(f"📋 Конфигурация: {config}")
+            if not collection_data:
+                raise Exception(f"Не удалось загрузить данные сборки: {collection_name}")
 
-        # Безопасная распаковка конфигурации
-        if len(config) == 2:
-            minecraft_version, loader_type = config
-            loader_version = None
-        elif len(config) == 3:
-            minecraft_version, loader_type, loader_version = config
+            print(f"🎯 Загружена сборка: {collection_data['name']}")
+
+            # Получаем настройки ИЗ СБОРКИ, а не из version_configs
+            minecraft_version = collection_data['minecraft_version']  # "1.21.1"
+            loader_type = collection_data['loader']  # "neoforge"
+            loader_version = collection_data.get('loader_version')
+
+            print(f"🎯 Версия Minecraft из сборки: {minecraft_version}")
+            print(f"🎯 Загрузчик из сборки: {loader_type}")
+
         else:
-            raise ValueError(
-                f"Неверная конфигурация для {version_name}: ожидалось 2 или 3 значения, получено {len(config)}")
+            # Это статическая версия - используем старую логику
+            if version_name not in version_configs:
+                raise ValueError(f"Версия {version_name} не найдена в конфигурациях")
+
+            config = version_configs[version_name]
+            print(f"📋 Конфигурация: {config}")
+
+            # Безопасная распаковка конфигурации
+            if len(config) == 2:
+                minecraft_version, loader_type = config
+                loader_version = None
+            elif len(config) == 3:
+                minecraft_version, loader_type, loader_version = config
+            else:
+                raise ValueError(
+                    f"Неверная конфигурация для {version_name}: ожидалось 2 или 3 значения, получено {len(config)}")
 
         print(f"🎯 Целевая версия Minecraft: {minecraft_version}")
         print(f"🎯 Тип лоадера: {loader_type}")
         print(f"🎯 Версия лоадера: {loader_version}")
 
-        # ПРЯМАЯ установка Minecraft - обходим safe_install_minecraft_version
-        print(f"📥 Устанавливаем Minecraft {minecraft_version} для {version_name}")
+        # 2. УСТАНАВЛИВАЕМ MINECRAFT
+        print(f"📥 Устанавливаем Minecraft {minecraft_version}")
 
         # Удаляем существующую версию если есть
         versions_dir = os.path.join(CONFIG["minecraft_dir"], "versions")
@@ -5336,7 +5445,7 @@ def install_required_components_sync(version_name):
         else:
             raise Exception(f"Minecraft {minecraft_version} не установилась!")
 
-        # Установка модлоадера (если требуется)
+        # 3. УСТАНАВЛИВАЕМ МОДЛОАДЕР (если требуется)
         if loader_type == "fabric" and loader_version:
             print(f"🧵 Устанавливаем Fabric {loader_version} для {minecraft_version}")
             minecraft_launcher_lib.fabric.install_fabric(
@@ -6141,7 +6250,14 @@ version_selector = ModernVersionSelector(
 )
 version_selector.place(relx=0.5, rely=0.4, anchor="c")  # noqa
 
+def refresh_versions_on_start():
+    try:
+        version_selector.refresh_versions()
+        print("✅ Версии обновлены при запуске")
+    except Exception as e:
+        print(f"⚠️ Не удалось обновить версии: {e}")
 
+win.after(1000, refresh_versions_on_start)  # Обновляем через 1 секунду
 # Функция выбора версии
 def select_version(event):
     selected_version = version_selector.get()
@@ -7422,6 +7538,14 @@ def show_collection_manager():
     def refresh_collections():
         status_var.set("Обновление...")
         load_collections()
+
+        # ОБНОВЛЯЕМ СЕЛЕКТОР ВЕРСИЙ!
+        try:
+            if 'version_selector' in globals():
+                version_selector.refresh_versions()
+                print("✅ Селектор версий обновлен!")
+        except Exception as e:
+            print(f"⚠️ Не удалось обновить селектор: {e}")
 
     def open_collections_folder():
         os.makedirs(COLLECTIONS_CONFIG["collections_dir"], exist_ok=True)

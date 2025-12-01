@@ -649,18 +649,26 @@ class ModernOnlineButton(ModernButton):
         super().__init__(*args, **kwargs)
 
 
+import tkinter as tk
+
+import tkinter as tk
+from tkinter import ttk
+
+import tkinter as tk
+from tkinter import ttk
+
+
 class ModernVersionSelector(tk.Canvas):
     def __init__(
-        self,
-        master=None,
-        width=300,
-        height=50,
-        gradient=("#667eea", "#764ba2"),
-        corner_radius=15,
-        versions_list=None,
-        **kwargs,
+            self,
+            master=None,
+            width=300,
+            height=50,
+            gradient=("#667eea", "#764ba2"),
+            corner_radius=15,
+            versions_list=None,
+            **kwargs,
     ):
-
         super().__init__(
             master, width=width, height=height, highlightthickness=0, **kwargs
         )
@@ -672,26 +680,66 @@ class ModernVersionSelector(tk.Canvas):
         self.gradient = gradient
         self.corner_radius = corner_radius
         self.is_open = False
+        self.master = master
 
-        self.versions = versions_list if versions_list else ["YamalPixel", "Minecraft 1.20.1 + Fabric"]
+        # Загружаем версии из файла Versions.py
+        self.versions = self.load_versions_from_file()
 
-        # Создаем скрытый комбобокс
-        self.combobox = ttk.Combobox(
-            master, values=self.versions, state="readonly", font=("Comfortaa", 11)
-        )
-        self.combobox.current(0)
-        self.combobox.configure(width=22, state="readonly")
-        self.combobox.place_forget()
+        # Если не удалось загрузить, используем переданный список или дефолтные
+        if not self.versions:
+            if versions_list:
+                self.versions = versions_list
+            else:
+                self.versions = ["YamalPixel", "Minecraft 1.20.1 + Fabric"]
+
+        # Создаем кастомный выпадающий список
+        self.dropdown_window = None
+        self.dropdown_frame = None
+        self.inner_frame = None  # Внутренний фрейм для элементов
+        self.canvas = None
+        self.scrollbar = None
+        self.item_height = 35
+        self.max_visible_items = 8
+        self.dropdown_height = self.item_height * self.max_visible_items
 
         # Текущее значение
-        self.current_value = tk.StringVar(value=self.versions[0])
+        if self.versions:
+            self.current_value = tk.StringVar(value=self.versions[0])
+        else:
+            self.current_value = tk.StringVar(value="YamalPixel")
 
         # Бинды
         self.bind("<Button-1>", self.toggle_dropdown)
-        self.combobox.bind("<<ComboboxSelected>>", self.on_select)
 
         # Начальная отрисовка
         self.draw_selector()
+
+    def load_versions_from_file(self):
+        """Загружает версии из файла Versions.py"""
+        try:
+            # Пробуем импортировать get_all_versions из Versions.py
+            from ConfDir.Versions import get_all_versions
+
+            # Получаем все версии (статические + пользовательские)
+            all_versions = get_all_versions()
+
+            print(f"✅ Загружено {len(all_versions)} версий из Versions.py")
+            return all_versions
+
+        except ImportError as e:
+            print(f"❌ Ошибка импорта Versions.py: {e}")
+            # Если не удалось импортировать, пробуем получить версии из version_configs
+            try:
+                from ConfDir.Versions import version_configs
+                versions = list(version_configs.keys())
+                print(f"✅ Загружено {len(versions)} версий из version_configs")
+                return versions
+            except:
+                print("❌ Не удалось загрузить версии из Versions.py")
+                return []
+        except Exception as e:
+            print(f"❌ Ошибка при загрузке версий: {e}")
+            return []
 
     def draw_selector(self):
         """Отрисовывает селектор версий"""
@@ -722,10 +770,10 @@ class ModernVersionSelector(tk.Canvas):
                 x1, 2, x2, self.height - 2, fill=color, outline="", tags="gradient"
             )
 
-        # Текст выбранной версии
+        # Текст выбранной версии (сокращаем если нужно)
         display_text = self.current_value.get()
-        if len(display_text) > 20:
-            display_text = display_text[:20] + "..."
+        if len(display_text) > 25:
+            display_text = display_text[:22] + "..."
 
         self.create_text(
             self.width // 2 - 10,
@@ -766,7 +814,20 @@ class ModernVersionSelector(tk.Canvas):
         self.create_polygon(points, fill="white", tags="arrow")
 
         # Иконка версии
-        icon_text = "🎮" if "YamalPixel" in self.current_value.get() else "⚙️"
+        current_val = self.current_value.get()
+        if current_val.startswith("📦"):
+            icon_text = "📦"  # Пользовательская сборка
+        elif "Fabric" in current_val:
+            icon_text = "🧵"
+        elif "Forge" in current_val:
+            icon_text = "🔨"
+        elif "Quilt" in current_val:
+            icon_text = "🛋️"
+        elif "NeoForge" in current_val:
+            icon_text = "⚡"
+        else:
+            icon_text = "🎮"  # Ванильная версия
+
         self.create_text(
             25,
             self.height // 2,
@@ -777,38 +838,317 @@ class ModernVersionSelector(tk.Canvas):
         )
 
     def toggle_dropdown(self, event):
-        """Открывает/закрывает выпадающий список"""
+        """Открывает/закрывает выпадающий список с прокруткой"""
         if not self.is_open:
-            self.combobox.place(
-                x=self.winfo_x(),
-                y=self.winfo_y() + self.height,
-                width=self.width,
-                height=200,
-            )
-            self.combobox.focus()
-            self.combobox.event_generate("<Button-1>")
+            self.show_dropdown()
         else:
             self.hide_dropdown()
 
         self.is_open = not self.is_open
         self.draw_selector()
 
-    def hide_dropdown(self):
-        """Скрывает выпадающий список"""
-        self.combobox.place_forget()
+    def show_dropdown(self):
+        """Показывает кастомный выпадающий список с прокруткой"""
+        # Создаем окно для выпадающего списка
+        self.dropdown_window = tk.Toplevel(self.master)
+        self.dropdown_window.overrideredirect(True)
+        self.dropdown_window.configure(bg="#3a3a3a", relief="solid", borderwidth=1)
 
-    def on_select(self, event):
-        """Обрабатывает выбор версии"""
-        selected = self.combobox.get()
-        self.current_value.set(selected)
-        self.is_open = False
+        # Позиционируем под селектором
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.height
+
+        # Высота окна зависит от количества элементов
+        item_count = len(self.versions)
+        window_height = min(item_count * self.item_height, self.dropdown_height) + 2
+
+        self.dropdown_window.geometry(f"{self.width}x{window_height}+{x}+{y}")
+
+        # Создаем Canvas для скроллинга
+        self.canvas = tk.Canvas(
+            self.dropdown_window,
+            bg="#3a3a3a",
+            highlightthickness=0,
+            width=self.width - 15,  # Оставляем место для скроллбара
+            height=window_height - 2
+        )
+        self.canvas.pack(side="left", fill="both", expand=True)
+
+        # Создаем фрейм для элементов ВНУТРИ canvas
+        self.inner_frame = tk.Frame(self.canvas, bg="#3a3a3a")
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw",
+                                                      width=self.width - 15)
+
+        # Добавляем элементы версий
+        self.create_dropdown_items()
+
+        # Обновляем размер внутреннего фрейма
+        self.inner_frame.update_idletasks()
+
+        # Настраиваем скроллинг
+        canvas_height = window_height - 2
+        frame_height = self.inner_frame.winfo_reqheight()
+
+        # Если контент больше высоты canvas, добавляем скроллбар
+        if frame_height > canvas_height:
+            # Добавляем скроллбар
+            self.scrollbar = tk.Scrollbar(
+                self.dropdown_window,
+                orient="vertical",
+                command=self.canvas.yview
+            )
+            self.scrollbar.pack(side="right", fill="y")
+
+            # Настраиваем canvas для скроллинга
+            self.canvas.configure(yscrollcommand=self.scrollbar.set)
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+            # Привязываем колесико мыши
+            self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+            self.canvas.bind_all("<Button-4>", self._on_mousewheel)
+            self.canvas.bind_all("<Button-5>", self._on_mousewheel)
+
+        # Привязываем события
+        self.dropdown_window.bind("<FocusOut>", self.on_dropdown_focus_out)
+        self.dropdown_window.bind("<Escape>", self.hide_dropdown)
+        self.master.bind("<Button-1>", self.on_master_click)
+
+        # Устанавливаем фокус
+        self.dropdown_window.focus_set()
+
+        # Прокручиваем к выбранному элементу
+        self.scroll_to_selected()
+
+    def _on_mousewheel(self, event):
+        """Обработка колесика мыши для скроллинга"""
+        if self.canvas and self.scrollbar:
+            if event.num == 5 or event.delta == -120:
+                self.canvas.yview_scroll(1, "units")
+            elif event.num == 4 or event.delta == 120:
+                self.canvas.yview_scroll(-1, "units")
+
+    def create_dropdown_items(self):
+        """Создает элементы в выпадающем списке"""
+        for idx, version in enumerate(self.versions):
+            # Создаем фрейм для элемента
+            item_frame = tk.Frame(
+                self.inner_frame,
+                bg="#3a3a3a",
+                height=self.item_height,
+                width=self.width - 15,
+                cursor="hand2"
+            )
+            item_frame.pack(fill="x", pady=0)
+            item_frame.pack_propagate(False)
+
+            # Добавляем иконку и текст
+            icon_frame = tk.Frame(item_frame, bg="#3a3a3a")
+            icon_frame.pack(side="left", padx=(10, 5))
+
+            # Определяем иконку для версии
+            if version.startswith("📦"):
+                icon_text = "📦"
+                icon_color = "#FF6B9D"  # Розовый для пользовательских сборок
+            elif "Fabric" in version:
+                icon_text = "🧵"
+                icon_color = "#00A0FF"  # Синий для Fabric
+            elif "Forge" in version:
+                icon_text = "🔨"
+                icon_color = "#F0A500"  # Оранжевый для Forge
+            elif "Quilt" in version:
+                icon_text = "🛋️"
+                icon_color = "#AA00FF"  # Фиолетовый для Quilt
+            elif "NeoForge" in version:
+                icon_text = "⚡"
+                icon_color = "#00FFAA"  # Зеленый для NeoForge
+            else:
+                icon_text = "🎮"
+                icon_color = "#4CAF50"  # Зеленый для ванильных версий
+
+            # Иконка
+            icon_label = tk.Label(
+                icon_frame,
+                text=icon_text,
+                bg="#3a3a3a",
+                fg=icon_color,
+                font=("Comfortaa", 12)
+            )
+            icon_label.pack()
+
+            # Текст версии
+            text_label = tk.Label(
+                item_frame,
+                text=version,
+                bg="#3a3a3a",
+                fg="white",
+                font=("Comfortaa", 11),
+                anchor="w",
+                padx=5,
+                cursor="hand2"
+            )
+            text_label.pack(side="left", fill="both", expand=True)
+
+            # Выделяем выбранный элемент
+            if version == self.current_value.get():
+                item_frame.configure(bg="#4a4a4a")
+                icon_frame.configure(bg="#4a4a4a")
+                icon_label.configure(bg="#4a4a4a")
+                text_label.configure(bg="#4a4a4a")
+
+            # Привязываем события
+            def make_lambda(v=version, f=item_frame, i=icon_frame, il=icon_label, tl=text_label):
+                return lambda e: self.on_item_click(v, f, i, il, tl)
+
+            item_frame.bind("<Enter>", lambda e, f=item_frame, i=icon_frame, il=icon_label, tl=text_label:
+            self.on_item_hover(f, i, il, tl, True))
+            item_frame.bind("<Leave>", lambda e, f=item_frame, i=icon_frame, il=icon_label, tl=text_label:
+            self.on_item_hover(f, i, il, tl, False))
+            item_frame.bind("<Button-1>", make_lambda())
+
+            text_label.bind("<Enter>", lambda e, f=item_frame, i=icon_frame, il=icon_label, tl=text_label:
+            self.on_item_hover(f, i, il, tl, True))
+            text_label.bind("<Leave>", lambda e, f=item_frame, i=icon_frame, il=icon_label, tl=text_label:
+            self.on_item_hover(f, i, il, tl, False))
+            text_label.bind("<Button-1>", make_lambda())
+
+            icon_label.bind("<Button-1>", make_lambda())
+
+    def scroll_to_selected(self):
+        """Прокручивает список к выбранному элементу"""
+        if not self.canvas or not self.inner_frame:
+            return
+
+        # Находим индекс выбранного элемента
+        try:
+            selected_index = self.versions.index(self.current_value.get())
+            # Вычисляем позицию для прокрутки
+            y_position = selected_index * self.item_height
+
+            # Рассчитываем видимую область
+            visible_height = self.dropdown_height
+            total_height = len(self.versions) * self.item_height
+
+            # Если элемент виден не полностью, прокручиваем
+            if y_position + self.item_height > visible_height:
+                scroll_position = (y_position - visible_height + self.item_height) / total_height
+                self.canvas.yview_moveto(scroll_position)
+        except (ValueError, IndexError):
+            pass
+
+    def on_item_hover(self, frame, icon_frame, icon_label, text_label, is_hover):
+        """Обработка наведения на элемент"""
+        if is_hover:
+            frame.configure(bg="#4a4a4a")
+            icon_frame.configure(bg="#4a4a4a")
+            icon_label.configure(bg="#4a4a4a")
+            text_label.configure(bg="#4a4a4a")
+        else:
+            # Возвращаем исходный цвет, если элемент не выбран
+            if text_label.cget("text") != self.current_value.get():
+                frame.configure(bg="#3a3a3a")
+                icon_frame.configure(bg="#3a3a3a")
+                icon_label.configure(bg="#3a3a3a")
+                text_label.configure(bg="#3a3a3a")
+
+    def on_item_click(self, version, frame, icon_frame, icon_label, text_label):
+        """Обработка клика по элементу"""
+        self.current_value.set(version)
         self.hide_dropdown()
+        self.is_open = False
         self.draw_selector()
+
+        # Генерируем событие выбора
+        self.event_generate("<<VersionSelected>>", data=version)
+
+        # Вызываем обработчик выбора версии
+        self.on_version_selected(version)
+
+    def on_dropdown_focus_out(self, event):
+        """Закрывает список при потере фокуса"""
+        # Ждем немного перед закрытием
+        self.after(150, self.check_focus)
+
+    def check_focus(self):
+        """Проверяет фокус и закрывает список если нужно"""
+        if self.dropdown_window and self.dropdown_window.winfo_exists():
+            try:
+                # Если окно потеряло фокус, закрываем его
+                if not self.dropdown_window.focus_displayof():
+                    self.hide_dropdown()
+            except:
+                self.hide_dropdown()
+
+    def on_master_click(self, event):
+        """Обработка клика вне выпадающего списка"""
+        if self.is_open and self.dropdown_window:
+            # Проверяем, был ли клик вне выпадающего окна
+            widget = event.widget
+            while widget:
+                if widget == self.dropdown_window:
+                    return
+                widget = widget.master
+
+            self.hide_dropdown()
+
+    def hide_dropdown(self, event=None):
+        """Скрывает выпадающий список"""
+        if self.dropdown_window and self.dropdown_window.winfo_exists():
+            # Отвязываем события мыши
+            if self.canvas:
+                try:
+                    self.canvas.unbind_all("<MouseWheel>")
+                    self.canvas.unbind_all("<Button-4>")
+                    self.canvas.unbind_all("<Button-5>")
+                except:
+                    pass
+
+            self.dropdown_window.destroy()
+            self.dropdown_window = None
+            self.dropdown_frame = None
+            self.inner_frame = None
+            self.canvas = None
+            self.scrollbar = None
+
+            # Убираем бинд на мастер
+            try:
+                self.master.unbind("<Button-1>")
+            except:
+                pass
+
+            self.is_open = False
+            self.draw_selector()
+
+    def on_version_selected(self, version):
+        """Обработчик выбора версии"""
+        try:
+            # Импортируем необходимые функции
+            from ConfDir.Versions import get_version_config, get_minecraft_version, is_modloader_needed
+
+            print(f"🎮 Выбрана версия: {version}")
+
+            # Получаем конфигурацию версии
+            config = get_version_config(version)
+            if config:
+                print(f"📋 Конфигурация: Minecraft {config[0]}, Loader: {config[1]}")
+
+            # Получаем версию Minecraft
+            mc_version = get_minecraft_version(version)
+            print(f"🟩 Версия Minecraft: {mc_version}")
+
+            # Проверяем нужен ли модлоадер
+            loader = is_modloader_needed(version)
+            if loader:
+                print(f"🛠️ Требуется модлоадер: {loader}")
+            else:
+                print("🎮 Ванильная версия (модлоадер не требуется)")
+
+        except Exception as e:
+            print(f"❌ Ошибка при обработке выбора версии: {e}")
 
     def hex_to_rgb(self, hex_color):
         """Конвертирует HEX в RGB"""
         hex_color = hex_color.lstrip("#")
-        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+        return tuple(int(hex_color[i: i + 2], 16) for i in (0, 2, 4))
 
     def rgb_to_hex(self, rgb):
         """Конвертирует RGB в HEX"""
@@ -817,3 +1157,33 @@ class ModernVersionSelector(tk.Canvas):
     def get(self):
         """Возвращает выбранное значение"""
         return self.current_value.get()
+
+    def set(self, version):
+        """Устанавливает выбранную версию"""
+        if version in self.versions:
+            self.current_value.set(version)
+            self.draw_selector()
+        else:
+            print(f"⚠️ Версия '{version}' не найдена в списке")
+
+    def refresh_versions(self):
+        """Обновляет список версий"""
+        old_versions = self.versions.copy()
+        self.versions = self.load_versions_from_file()
+
+        # Если список изменился, перерисовываем
+        if old_versions != self.versions:
+            print(f"🔄 Список версий обновлен: {len(self.versions)} версий")
+            # Если текущая версия больше не в списке, выбираем первую
+            if self.current_value.get() not in self.versions and self.versions:
+                self.current_value.set(self.versions[0])
+            self.draw_selector()
+            return True
+        return False
+
+    def destroy(self):
+        """Корректное уничтожение виджета"""
+        try:
+            self.hide_dropdown()
+        finally:
+            super().destroy()
