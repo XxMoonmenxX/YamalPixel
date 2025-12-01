@@ -540,6 +540,26 @@ essential_mods = [
             ]
 
 def get_minecraft_version(version_name):
+    if version_name.startswith("📦 "):
+        try:
+            # Пробуем получить информацию из JSON файла сборки
+            import json
+            import os
+
+            collection_name = version_name[2:]
+            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+
+            if os.path.exists(collections_dir):
+                for filename in os.listdir(collections_dir):
+                    if filename.endswith('.json'):
+                        filepath = os.path.join(collections_dir, filename)
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+
+                        if data.get('name') == collection_name:
+                            return data.get('minecraft_version', '1.21.1')
+        except:
+            pass
     """Получает версию Minecraft для выбранной версии"""
     version_map = {
         "YamalPixel": "1.20.1",

@@ -4763,18 +4763,32 @@ def load_collection_data(collection_name):
 
         collections_dir = COLLECTIONS_CONFIG["collections_dir"]
 
+        if not os.path.exists(collections_dir):
+            print(f"❌ Папка сборок не существует: {collections_dir}")
+            return None
+
         for filename in os.listdir(collections_dir):
             if filename.endswith('.json'):
                 filepath = os.path.join(collections_dir, filename)
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
 
-                if data['name'] == collection_name:
-                    return data
+                    # Проверяем имя сборки (с учетом эмодзи и без)
+                    if data.get('name') == collection_name or f"📦 {data.get('name')}" == collection_name:
+                        print(f"✅ Загружена сборка: {data['name']}")
+                        print(f"   Версия Minecraft: {data.get('minecraft_version')}")
+                        print(f"   Загрузчик: {data.get('loader')}")
+                        return data
+                except Exception as e:
+                    print(f"⚠️ Ошибка чтения файла {filename}: {e}")
+
+        print(f"❌ Сборка '{collection_name}' не найдена в {collections_dir}")
+        return None
+
     except Exception as e:
         print(f"❌ Ошибка загрузки сборки {collection_name}: {e}")
-
-    return None
+        return None
 
 
 def setup_custom_collection(collection_data):
@@ -4817,9 +4831,165 @@ def setup_custom_collection(collection_data):
         print(f"❌ Ошибка настройки сборки: {e}")
         return False
 
+
+CURRENT_ACTIVE_COLLECTION = None  # Имя активной сборки
+MODS_BACKUP_DIR = None  # Путь к бэкапу модов
+
+
+def setup_custom_collection_launch(collection_data):
+    """Настройка запуска кастомной сборки"""
+    global CURRENT_ACTIVE_COLLECTION, MODS_BACKUP_DIR
+
+    collection_name = collection_data['name']
+
+    # 1. Создаем бэкапную папку если её нет
+    MODS_BACKUP_DIR = os.path.join(CONFIG["minecraft_dir"], "mods_backup")
+    os.makedirs(MODS_BACKUP_DIR, exist_ok=True)
+
+    # 2. Если уже есть активная сборка - сохраняем её моды в бэкап
+    if CURRENT_ACTIVE_COLLECTION:
+        backup_current_mods(CURRENT_ACTIVE_COLLECTION)
+
+    # 3. Загружаем моды из новой сборки
+    load_collection_mods(collection_data)
+
+    # 4. Обновляем текущую активную сборку
+    CURRENT_ACTIVE_COLLECTION = collection_name
+    return True
+
+
+def backup_current_mods(collection_name):
+    """Сохраняет текущие моды в бэкап"""
+    try:
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+        backup_dir = os.path.join(MODS_BACKUP_DIR,
+                                  f"backup_{collection_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}")
+
+        if os.path.exists(mods_dir) and os.listdir(mods_dir):
+            # Копируем только JAR файлы
+            os.makedirs(backup_dir, exist_ok=True)
+
+            for file in os.listdir(mods_dir):
+                if file.endswith(".jar"):
+                    shutil.copy2(
+                        os.path.join(mods_dir, file),
+                        os.path.join(backup_dir, file)
+                    )
+
+            print(f"📦 Моды сохранены в бэкап: {backup_dir}")
+            return backup_dir
+    except Exception as e:
+        print(f"❌ Ошибка создания бэкапа: {e}")
+
+    return None
+
+
+def load_collection_mods(collection_data):
+    """Загружает моды из сборки в папку mods"""
+    try:
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+
+        # 1. Очищаем папку mods
+        clear_mods_directory(mods_dir)
+
+        # 2. Загружаем моды из сборки
+        api = ModrinthAPI()
+        success_count = 0
+
+        for mod in collection_data['mods']:
+            if mod['source'] == 'modrinth':
+                # Загружаем с Modrinth
+                versions = api.get_mod_versions(
+                    mod_id=mod["modrinth_id"],
+                    minecraft_version=collection_data["minecraft_version"],
+                    loader=collection_data["loader"].lower()
+                )
+
+                if versions:
+                    latest_version = versions[0]
+                    if latest_version["files"]:
+                        file_info = latest_version["files"][0]
+                        filename = file_info["filename"]
+
+                        # Скачиваем файл
+                        if api.download_mod(
+                                mod.get("modrinth_slug", mod["modrinth_id"]),
+                                latest_version["id"],
+                                filename,
+                                mods_dir
+                        ):
+                            success_count += 1
+
+        print(f"✅ Загружено {success_count} модов из сборки {collection_data['name']}")
+        return success_count
+    except Exception as e:
+        print(f"❌ Ошибка загрузки модов сборки: {e}")
+        return 0
+
+
+def switch_to_vanilla_version(version_name):
+    """Переключение на ванильную версию"""
+    global CURRENT_ACTIVE_COLLECTION
+
+    # Если была активна сборка - сохраняем её моды в бэкап
+    if CURRENT_ACTIVE_COLLECTION:
+        backup_current_mods(CURRENT_ACTIVE_COLLECTION)
+
+    # Очищаем папку модов
+    mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+    clear_mods_directory(mods_dir)
+
+    # Загружаем моды для ванильной версии (например, YamalPixel)
+    if version_name == "YamalPixel":
+        # Используем существующую логику загрузки модов
+        check_and_download_missing_mods()
+
+    CURRENT_ACTIVE_COLLECTION = None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def start_game_launch():
     """Основной процесс запуска игры (вынесен из runn)"""
-    global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
+    global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label, CURRENT_ACTIVE_COLLECTION
+    selected_version = version_selector.get()
+    try:
+
+
+        # Проверяем, является ли выбранная версия кастомной сборкой
+        if selected_version.startswith("📦 "):
+            collection_name = selected_version[2:]
+            collection_data = load_collection_data(collection_name)
+
+            if not collection_data:
+                messagebox.showerror("Ошибка", f"Не удалось загрузить сборку: {collection_name}")
+                return
+
+            # Настраиваем кастомную сборку
+            if not setup_custom_collection_launch(collection_data):
+                messagebox.showerror("Ошибка", "Не удалось настроить сборку")
+                return
+
+            # Устанавливаем настройки из сборки
+            CONFIG["version"] = collection_data["minecraft_version"]
+            CONFIG["loader_type"] = collection_data["loader"]
+
+        else:
+            # Переключаемся на ванильную версию
+            switch_to_vanilla_version(selected_version)
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Ошибка при настройке версии: {e}")
 
     # НЕМЕДЛЕННО блокируем интерфейс
     set_launch_state(True)
@@ -5183,13 +5353,18 @@ def start_game_launch():
 
             elif loader_type == "neoforge":
                 mc_ver = get_minecraft_version(selected_version)
-                neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(mc_ver)
-                if neoforge_versions:
+                # Получаем версии NeoForge
+                try:
+                    neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(mc_ver)
+                    if not neoforge_versions:
+                        raise Exception(f"Не найдены версии NeoForge для {mc_ver}")
                     latest = neoforge_versions[0]
                     launch_version = f"neoforge-{latest}"
                     update_ui_log(f"✅ Используем NeoForge: {latest}")
-                else:
-                    raise Exception(f"Не найдено версий NeoForge для {mc_ver}")
+                except Exception as e:
+                    # Запасной вариант
+                    launch_version = f"neoforge-{mc_ver}"
+                    update_ui_log(f"🔄 Используем NeoForge (запасной): {launch_version}")
 
             else:
                 launch_version = get_minecraft_version(selected_version)
@@ -5555,20 +5730,13 @@ def install_forge_sync(minecraft_version, minecraft_directory):
         return False
 
 
-
 def install_neoforge_sync(minecraft_version, minecraft_directory):
     """Синхронная установка NeoForge - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     try:
         print(f"🔧 Устанавливаем NeoForge для {minecraft_version}...")
 
-        # Получаем NeoForge лоадер через правильный API
-        neoforge_loader = get_mod_loader("neoforge")
-
-        # Получаем доступные версии NeoForge
-        neoforge_versions = neoforge_loader.get_loader_versions(
-            minecraft_version,
-            stable_only=True
-        )
+        # Прямой вызов API NeoForge вместо mod_loader
+        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
 
         if not neoforge_versions:
             raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
@@ -5578,10 +5746,10 @@ def install_neoforge_sync(minecraft_version, minecraft_directory):
         print(f"📦 Используем NeoForge {latest_neoforge}")
 
         # Устанавливаем NeoForge
-        neoforge_loader.install(
+        minecraft_launcher_lib.neoforge.install(
             minecraft_version=minecraft_version,
-            minecraft_directory=minecraft_directory,
-            loader_version=latest_neoforge
+            loader_version=latest_neoforge,
+            minecraft_directory=minecraft_directory
         )
 
         print(f"✅ NeoForge успешно установлен!")
@@ -7620,6 +7788,9 @@ def edit_collection(tree):
     create_new_collection(collection_data=data, original_filename=filename)
 # Функция загрузки сборки в игру
 def load_collection_to_game(filename):
+    """Загружает сборку в игру (для менеджера сборок)"""
+    global CURRENT_ACTIVE_COLLECTION
+
     filepath = os.path.join(COLLECTIONS_CONFIG["collections_dir"], filename)
 
     try:
@@ -7628,6 +7799,20 @@ def load_collection_to_game(filename):
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось загрузить сборку: {e}")
         return
+
+    # Настраиваем кастомную сборку
+    if setup_custom_collection_launch(collection):
+        messagebox.showinfo(
+            "Успех",
+            f"✅ Сборка '{collection['name']}' загружена!\n\n"
+            f"• Модов: {collection['mod_count']}\n"
+            f"• Версия: {collection['minecraft_version']}\n"
+            f"• Загрузчик: {collection['loader']}\n\n"
+            f"Теперь можно запустить игру!"
+        )
+
+        # Обновляем селектор версий
+        version_selector.refresh_versions()
 
     # Создаем окно прогресса с логом
     progress_window = tk.Toplevel(win)
@@ -7776,6 +7961,62 @@ def load_collection_to_game(filename):
         win.after(0, lambda: finish_loading(progress_window, collection, success_count, total_mods, backup_path))
 
     threading.Thread(target=download_thread, daemon=True).start()
+
+
+def initialize_collection_system():
+    """Инициализирует систему сборок при запуске"""
+    global MODS_BACKUP_DIR
+
+    # Создаем папку для бэкапов
+    MODS_BACKUP_DIR = os.path.join(CONFIG["minecraft_dir"], "mods_backup")
+    os.makedirs(MODS_BACKUP_DIR, exist_ok=True)
+
+    # Создаем папку для сборок
+    collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+    os.makedirs(collections_dir, exist_ok=True)
+
+
+
+# Запускаем инициализацию после создания окна
+win.after(1000, initialize_collection_system)  # noqa
+def restore_previous_collection():
+    """Восстанавливает предыдущую активную сборку"""
+    global CURRENT_ACTIVE_COLLECTION
+
+    if not CURRENT_ACTIVE_COLLECTION:
+        return
+
+    # Ищем последний бэкап этой сборки
+    backup_dir = os.path.join(MODS_BACKUP_DIR)
+    if not os.path.exists(backup_dir):
+        return
+
+    # Ищем папки бэкапов для этой сборки
+    backup_folders = []
+    for folder in os.listdir(backup_dir):
+        if folder.startswith(f"backup_{CURRENT_ACTIVE_COLLECTION}_"):
+            backup_folders.append(folder)
+
+    if backup_folders:
+        # Берем самый свежий бэкап
+        latest_backup = sorted(backup_folders)[-1]
+        backup_path = os.path.join(backup_dir, latest_backup)
+
+        # Восстанавливаем моды
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+        clear_mods_directory(mods_dir)
+
+        for file in os.listdir(backup_path):
+            if file.endswith(".jar"):
+                shutil.copy2(
+                    os.path.join(backup_path, file),
+                    os.path.join(mods_dir, file)
+                )
+
+        print(f"✅ Восстановлена сборка: {CURRENT_ACTIVE_COLLECTION}")
+        return True
+
+    return False
 
 # Добавляем в меню
 settings_menu.add_command(

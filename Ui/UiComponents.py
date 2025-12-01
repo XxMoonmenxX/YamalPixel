@@ -650,12 +650,9 @@ class ModernOnlineButton(ModernButton):
 
 
 import tkinter as tk
-
-import tkinter as tk
 from tkinter import ttk
-
-import tkinter as tk
-from tkinter import ttk
+import json
+import os
 
 
 class ModernVersionSelector(tk.Canvas):
@@ -695,7 +692,7 @@ class ModernVersionSelector(tk.Canvas):
         # Создаем кастомный выпадающий список
         self.dropdown_window = None
         self.dropdown_frame = None
-        self.inner_frame = None  # Внутренний фрейм для элементов
+        self.inner_frame = None
         self.canvas = None
         self.scrollbar = None
         self.item_height = 35
@@ -741,6 +738,189 @@ class ModernVersionSelector(tk.Canvas):
             print(f"❌ Ошибка при загрузке версий: {e}")
             return []
 
+    def get_collection_info(self, collection_name):
+        """Получает информацию о кастомной сборке из JSON файла"""
+        try:
+            # Убираем эмодзи из названия
+            clean_name = collection_name
+            if collection_name.startswith("📦 "):
+                clean_name = collection_name[2:]  # Убираем "📦 "
+
+            print(f"🔍 Поиск сборки: {clean_name}")
+
+            # Пытаемся импортировать путь к коллекциям
+            try:
+                from ConfDir.Configs import COLLECTIONS_CONFIG
+                collections_dir = COLLECTIONS_CONFIG.get("collections_dir", "collections")
+                print(f"📁 Директория коллекций: {collections_dir}")
+            except ImportError:
+                collections_dir = "collections"
+                print(f"⚠️ Не удалось импортировать COLLECTIONS_CONFIG, используем дефолт: {collections_dir}")
+
+            # Ищем файл сборки
+            collection_path = None
+            if os.path.exists(collections_dir):
+                for filename in os.listdir(collections_dir):
+                    if filename.endswith('.json'):
+                        filepath = os.path.join(collections_dir, filename)
+                        try:
+                            with open(filepath, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+
+                            if data.get('name') == clean_name:
+                                collection_path = filepath
+                                print(f"✅ Найден файл сборки: {filename}")
+                                break
+                        except Exception as e:
+                            print(f"⚠️ Ошибка чтения файла {filename}: {e}")
+
+            if collection_path and os.path.exists(collection_path):
+                with open(collection_path, 'r', encoding='utf-8') as f:
+                    collection_data = json.load(f)
+
+                # Извлекаем необходимую информацию
+                minecraft_version = collection_data.get('minecraft_version')
+                loader = collection_data.get('loader')
+
+                print(f"📊 Информация из JSON:")
+                print(f"   • Minecraft версия: {minecraft_version}")
+                print(f"   • Загрузчик: {loader}")
+                print(f"   • Название: {collection_data.get('name')}")
+
+                if not minecraft_version:
+                    print("⚠️ Не найдена версия Minecraft в JSON файле")
+                    return None, None, None
+
+                if not loader:
+                    print("⚠️ Не найден загрузчик в JSON файле")
+                    return minecraft_version, None, collection_path
+
+                return minecraft_version, loader, collection_path
+            else:
+                print(f"❌ Файл сборки '{clean_name}' не найден в {collections_dir}")
+                return None, None, None
+
+        except Exception as e:
+            print(f"❌ Ошибка при получении информации о сборке: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None, None
+
+    def on_version_selected(self, version):
+        """Обработчик выбора версии"""
+        try:
+            # Проверяем, является ли это кастомной сборкой
+            if version.startswith("📦"):
+                # Получаем информацию о сборке из JSON
+                minecraft_version, loader, collection_path = self.get_collection_info(version)
+
+                if minecraft_version:
+                    print(f"🎮 Выбрана кастомная сборка: {version[2:]}")
+                    print(f"🟩 Версия Minecraft: {minecraft_version}")
+                    print(f"🛠️ Загрузчик: {loader if loader else 'Не указан'}")
+                    print(f"📁 Путь к сборке: {collection_path}")
+
+                    # Генерируем событие с дополнительными данными
+                    self.event_generate("<<CustomCollectionSelected>>",
+                                        data={
+                                            'name': version[2:],  # Без эмодзи
+                                            'display_name': version,
+                                            'minecraft_version': minecraft_version,
+                                            'loader': loader,
+                                            'path': collection_path
+                                        })
+                else:
+                    print(f"⚠️ Не удалось получить информацию о сборке: {version}")
+            else:
+                # Статическая версия
+                print(f"🎮 Выбрана версия: {version}")
+
+                # Импортируем необходимые функции
+                try:
+                    from ConfDir.Versions import get_version_config, get_minecraft_version, is_modloader_needed
+
+                    # Получаем конфигурацию версии
+                    config = get_version_config(version)
+                    if config:
+                        print(f"📋 Конфигурация: Minecraft {config[0]}, Loader: {config[1]}")
+
+                    # Получаем версию Minecraft
+                    mc_version = get_minecraft_version(version)
+                    print(f"🟩 Версия Minecraft: {mc_version}")
+
+                    # Проверяем нужен ли модлоадер
+                    loader = is_modloader_needed(version)
+                    if loader:
+                        print(f"🛠️ Требуется модлоадер: {loader}")
+                    else:
+                        print("🎮 Ванильная версия (модлоадер не требуется)")
+
+                except ImportError as e:
+                    print(f"⚠️ Не удалось импортировать функции из Versions.py: {e}")
+
+            # Генерируем стандартное событие
+            self.event_generate("<<VersionSelected>>", data=version)
+
+        except Exception as e:
+            print(f"❌ Ошибка при обработке выбора версии: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def get_selected_version_info(self):
+        """Возвращает информацию о выбранной версии"""
+        selected = self.get()
+
+        if selected.startswith("📦"):
+            # Кастомная сборка
+            minecraft_version, loader, path = self.get_collection_info(selected)
+            return {
+                'type': 'custom',
+                'display_name': selected,
+                'name': selected[2:],  # Без эмодзи
+                'minecraft_version': minecraft_version,
+                'loader': loader,
+                'path': path
+            }
+        else:
+            # Статическая версия
+            try:
+                from ConfDir.Versions import get_minecraft_version, is_modloader_needed
+
+                return {
+                    'type': 'static',
+                    'display_name': selected,
+                    'name': selected,
+                    'minecraft_version': get_minecraft_version(selected),
+                    'loader': is_modloader_needed(selected)
+                }
+            except ImportError:
+                # Запасной вариант если не удалось импортировать
+                if "1.20.1" in selected:
+                    mc_version = "1.20.1"
+                elif "1.21" in selected:
+                    mc_version = "1.21.1"
+                else:
+                    mc_version = "1.20.1"  # Дефолт
+
+                loader = None
+                if "Fabric" in selected:
+                    loader = "fabric"
+                elif "Forge" in selected:
+                    loader = "forge"
+                elif "NeoForge" in selected:
+                    loader = "neoforge"
+                elif "Quilt" in selected:
+                    loader = "quilt"
+
+                return {
+                    'type': 'static',
+                    'display_name': selected,
+                    'name': selected,
+                    'minecraft_version': mc_version,
+                    'loader': loader
+                }
+
+    # Остальные методы остаются без изменений...
     def draw_selector(self):
         """Отрисовывает селектор версий"""
         self.delete("all")
@@ -849,6 +1029,9 @@ class ModernVersionSelector(tk.Canvas):
 
     def show_dropdown(self):
         """Показывает кастомный выпадающий список с прокруткой"""
+        # Обновляем список версий перед показом
+        self.refresh_versions()
+
         # Создаем окно для выпадающего списка
         self.dropdown_window = tk.Toplevel(self.master)
         self.dropdown_window.overrideredirect(True)
@@ -869,15 +1052,15 @@ class ModernVersionSelector(tk.Canvas):
             self.dropdown_window,
             bg="#3a3a3a",
             highlightthickness=0,
-            width=self.width - 15,  # Оставляем место для скроллбара
+            width=self.width - 15,
             height=window_height - 2
         )
         self.canvas.pack(side="left", fill="both", expand=True)
 
         # Создаем фрейм для элементов ВНУТРИ canvas
         self.inner_frame = tk.Frame(self.canvas, bg="#3a3a3a")
-        self.canvas_frame = self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw",
-                                                      width=self.width - 15)
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.inner_frame,
+                                                      anchor="nw", width=self.width - 15)
 
         # Добавляем элементы версий
         self.create_dropdown_items()
@@ -891,7 +1074,6 @@ class ModernVersionSelector(tk.Canvas):
 
         # Если контент больше высоты canvas, добавляем скроллбар
         if frame_height > canvas_height:
-            # Добавляем скроллбар
             self.scrollbar = tk.Scrollbar(
                 self.dropdown_window,
                 orient="vertical",
@@ -899,14 +1081,11 @@ class ModernVersionSelector(tk.Canvas):
             )
             self.scrollbar.pack(side="right", fill="y")
 
-            # Настраиваем canvas для скроллинга
             self.canvas.configure(yscrollcommand=self.scrollbar.set)
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
             # Привязываем колесико мыши
             self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-            self.canvas.bind_all("<Button-4>", self._on_mousewheel)
-            self.canvas.bind_all("<Button-5>", self._on_mousewheel)
 
         # Привязываем события
         self.dropdown_window.bind("<FocusOut>", self.on_dropdown_focus_out)
@@ -922,15 +1101,11 @@ class ModernVersionSelector(tk.Canvas):
     def _on_mousewheel(self, event):
         """Обработка колесика мыши для скроллинга"""
         if self.canvas and self.scrollbar:
-            if event.num == 5 or event.delta == -120:
-                self.canvas.yview_scroll(1, "units")
-            elif event.num == 4 or event.delta == 120:
-                self.canvas.yview_scroll(-1, "units")
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def create_dropdown_items(self):
         """Создает элементы в выпадающем списке"""
         for idx, version in enumerate(self.versions):
-            # Создаем фрейм для элемента
             item_frame = tk.Frame(
                 self.inner_frame,
                 bg="#3a3a3a",
@@ -941,31 +1116,29 @@ class ModernVersionSelector(tk.Canvas):
             item_frame.pack(fill="x", pady=0)
             item_frame.pack_propagate(False)
 
-            # Добавляем иконку и текст
+            # Иконка
             icon_frame = tk.Frame(item_frame, bg="#3a3a3a")
             icon_frame.pack(side="left", padx=(10, 5))
 
-            # Определяем иконку для версии
             if version.startswith("📦"):
                 icon_text = "📦"
-                icon_color = "#FF6B9D"  # Розовый для пользовательских сборок
+                icon_color = "#FF6B9D"
             elif "Fabric" in version:
                 icon_text = "🧵"
-                icon_color = "#00A0FF"  # Синий для Fabric
+                icon_color = "#00A0FF"
             elif "Forge" in version:
                 icon_text = "🔨"
-                icon_color = "#F0A500"  # Оранжевый для Forge
+                icon_color = "#F0A500"
             elif "Quilt" in version:
                 icon_text = "🛋️"
-                icon_color = "#AA00FF"  # Фиолетовый для Quilt
+                icon_color = "#AA00FF"
             elif "NeoForge" in version:
                 icon_text = "⚡"
-                icon_color = "#00FFAA"  # Зеленый для NeoForge
+                icon_color = "#00FFAA"
             else:
                 icon_text = "🎮"
-                icon_color = "#4CAF50"  # Зеленый для ванильных версий
+                icon_color = "#4CAF50"
 
-            # Иконка
             icon_label = tk.Label(
                 icon_frame,
                 text=icon_text,
@@ -975,7 +1148,7 @@ class ModernVersionSelector(tk.Canvas):
             )
             icon_label.pack()
 
-            # Текст версии
+            # Текст
             text_label = tk.Label(
                 item_frame,
                 text=version,
@@ -988,14 +1161,14 @@ class ModernVersionSelector(tk.Canvas):
             )
             text_label.pack(side="left", fill="both", expand=True)
 
-            # Выделяем выбранный элемент
+            # Выделение выбранного элемента
             if version == self.current_value.get():
                 item_frame.configure(bg="#4a4a4a")
                 icon_frame.configure(bg="#4a4a4a")
                 icon_label.configure(bg="#4a4a4a")
                 text_label.configure(bg="#4a4a4a")
 
-            # Привязываем события
+            # События
             def make_lambda(v=version, f=item_frame, i=icon_frame, il=icon_label, tl=text_label):
                 return lambda e: self.on_item_click(v, f, i, il, tl)
 
@@ -1018,17 +1191,12 @@ class ModernVersionSelector(tk.Canvas):
         if not self.canvas or not self.inner_frame:
             return
 
-        # Находим индекс выбранного элемента
         try:
             selected_index = self.versions.index(self.current_value.get())
-            # Вычисляем позицию для прокрутки
             y_position = selected_index * self.item_height
-
-            # Рассчитываем видимую область
             visible_height = self.dropdown_height
             total_height = len(self.versions) * self.item_height
 
-            # Если элемент виден не полностью, прокручиваем
             if y_position + self.item_height > visible_height:
                 scroll_position = (y_position - visible_height + self.item_height) / total_height
                 self.canvas.yview_moveto(scroll_position)
@@ -1043,7 +1211,6 @@ class ModernVersionSelector(tk.Canvas):
             icon_label.configure(bg="#4a4a4a")
             text_label.configure(bg="#4a4a4a")
         else:
-            # Возвращаем исходный цвет, если элемент не выбран
             if text_label.cget("text") != self.current_value.get():
                 frame.configure(bg="#3a3a3a")
                 icon_frame.configure(bg="#3a3a3a")
@@ -1056,23 +1223,16 @@ class ModernVersionSelector(tk.Canvas):
         self.hide_dropdown()
         self.is_open = False
         self.draw_selector()
-
-        # Генерируем событие выбора
-        self.event_generate("<<VersionSelected>>", data=version)
-
-        # Вызываем обработчик выбора версии
         self.on_version_selected(version)
 
     def on_dropdown_focus_out(self, event):
         """Закрывает список при потере фокуса"""
-        # Ждем немного перед закрытием
         self.after(150, self.check_focus)
 
     def check_focus(self):
         """Проверяет фокус и закрывает список если нужно"""
         if self.dropdown_window and self.dropdown_window.winfo_exists():
             try:
-                # Если окно потеряло фокус, закрываем его
                 if not self.dropdown_window.focus_displayof():
                     self.hide_dropdown()
             except:
@@ -1081,7 +1241,6 @@ class ModernVersionSelector(tk.Canvas):
     def on_master_click(self, event):
         """Обработка клика вне выпадающего списка"""
         if self.is_open and self.dropdown_window:
-            # Проверяем, был ли клик вне выпадающего окна
             widget = event.widget
             while widget:
                 if widget == self.dropdown_window:
@@ -1093,23 +1252,18 @@ class ModernVersionSelector(tk.Canvas):
     def hide_dropdown(self, event=None):
         """Скрывает выпадающий список"""
         if self.dropdown_window and self.dropdown_window.winfo_exists():
-            # Отвязываем события мыши
             if self.canvas:
                 try:
                     self.canvas.unbind_all("<MouseWheel>")
-                    self.canvas.unbind_all("<Button-4>")
-                    self.canvas.unbind_all("<Button-5>")
                 except:
                     pass
 
             self.dropdown_window.destroy()
             self.dropdown_window = None
-            self.dropdown_frame = None
             self.inner_frame = None
             self.canvas = None
             self.scrollbar = None
 
-            # Убираем бинд на мастер
             try:
                 self.master.unbind("<Button-1>")
             except:
@@ -1117,33 +1271,6 @@ class ModernVersionSelector(tk.Canvas):
 
             self.is_open = False
             self.draw_selector()
-
-    def on_version_selected(self, version):
-        """Обработчик выбора версии"""
-        try:
-            # Импортируем необходимые функции
-            from ConfDir.Versions import get_version_config, get_minecraft_version, is_modloader_needed
-
-            print(f"🎮 Выбрана версия: {version}")
-
-            # Получаем конфигурацию версии
-            config = get_version_config(version)
-            if config:
-                print(f"📋 Конфигурация: Minecraft {config[0]}, Loader: {config[1]}")
-
-            # Получаем версию Minecraft
-            mc_version = get_minecraft_version(version)
-            print(f"🟩 Версия Minecraft: {mc_version}")
-
-            # Проверяем нужен ли модлоадер
-            loader = is_modloader_needed(version)
-            if loader:
-                print(f"🛠️ Требуется модлоадер: {loader}")
-            else:
-                print("🎮 Ванильная версия (модлоадер не требуется)")
-
-        except Exception as e:
-            print(f"❌ Ошибка при обработке выбора версии: {e}")
 
     def hex_to_rgb(self, hex_color):
         """Конвертирует HEX в RGB"""
@@ -1171,10 +1298,8 @@ class ModernVersionSelector(tk.Canvas):
         old_versions = self.versions.copy()
         self.versions = self.load_versions_from_file()
 
-        # Если список изменился, перерисовываем
         if old_versions != self.versions:
             print(f"🔄 Список версий обновлен: {len(self.versions)} версий")
-            # Если текущая версия больше не в списке, выбираем первую
             if self.current_value.get() not in self.versions and self.versions:
                 self.current_value.set(self.versions[0])
             self.draw_selector()
