@@ -866,8 +866,12 @@ def delete_user_collection(collection_name):
         print(f"❌ Ошибка удаления сборки: {e}")
         return False
 
+
 COLLECTIONS_CONFIG = {
-    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections")
+    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),
+    "max_mods_per_collection": 200,
+    "supported_sources": ["modrinth", "curseforge", "local"],
+    "curseforge_proxy_url": "http://localhost:8000"
 }
 
 messages = [
@@ -985,3 +989,14 @@ messages = [
         "Готово! Наслаждайся... ой, синий экран...",
         "Сервак запущен, а ты - опущен",
     ]
+
+
+# CurseForge Proxy Configuration
+CURSEFORGE_CONFIG = {
+    "proxy_url": "http://90.151.59.120:8000",  # Убедитесь, что это правильный URL
+    "enabled": True,  # Должно быть True
+    "api_version": "v1",
+    "timeout": 10,
+    "max_retries": 3
+}
+

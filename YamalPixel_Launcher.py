@@ -38,7 +38,7 @@ from ConfDir.utils import (aggressive_clean_name, calculate_similarity,
 from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds
 
 from ConfDir.Configs import (CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods,
-                             get_minecraft_version, version_configs, messages)
+                             get_minecraft_version, version_configs, messages, CURSEFORGE_CONFIG)
 
 from ConfDir.Versions import (version_configs, fabric_supported_versions, neoforge_supported_versions,
                               versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions)
@@ -46,6 +46,7 @@ from ConfDir.Versions import (version_configs, fabric_supported_versions, neofor
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
 from Network.ModrinthLoader import ModrinthAPI
+from Network.CurseForgeLoader import CurseForgeAPI
 
 from Ui.UiComponents import (
     ModernButton,
@@ -56,6 +57,20 @@ from Ui.UiComponents import (
     ModernVersionSelector
 )
 import tempfile # Для временных файлов
+
+
+import logging # Для логирования
+
+# Настройка логгера
+logger = logging.getLogger("YamalPixel")
+handler = logging.StreamHandler()
+formatter = logging.Formatter(
+    '[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def fix_python314_dll_issue():
@@ -6134,13 +6149,37 @@ current_sort_reverse = False
 
 
 def create_new_collection(collection_data=None, original_filename=None):
-    """Создаёт окно для создания новой сборки модов"""
+    """Создаёт окно для создания новой сборки модов с поддержкой CurseForge"""
     global current_sort_col, current_sort_reverse
+
+    # Инициализируем API клиенты
+    from Network.ModrinthLoader import ModrinthAPI
+    from Network.CurseForgeLoader import CurseForgeAPI
+    from ConfDir.Configs import CURSEFORGE_CONFIG, COLLECTIONS_CONFIG
+
+    modrinth_api = ModrinthAPI()
+    curseforge_api = None
+
+    # Инициализируем CurseForge API если включено
+    if CURSEFORGE_CONFIG.get("enabled", False):
+        try:
+            proxy_url = CURSEFORGE_CONFIG.get("proxy_url", "http://localhost:8000")
+            curseforge_api = CurseForgeAPI(proxy_url)
+
+            # Пробуем подключиться
+            if not curseforge_api.test_connection():
+                logger.warning("⚠️ CurseForge прокси недоступен, отключаем CurseForge поддержку")
+                curseforge_api = None
+
+        except Exception as e:
+            print(f"⚠️ Ошибка инициализации CurseForge API: {e}")
+            curseforge_api = None
+
     collection_window = tk.Toplevel(win)
     collection_window.title("Создать сборку" if not collection_data else "Редактировать сборку")
     collection_window.resizable(True, True)
     set_window_icon(collection_window)
-    collection_window.geometry("1200x1080")
+    collection_window.geometry("1400x1000")
     collection_window.transient(win)
     collection_window.grab_set()
 
@@ -6163,6 +6202,7 @@ def create_new_collection(collection_data=None, original_filename=None):
         fill="x", pady=(0, 10)
     )
 
+    # Фрейм для метаданных
     meta_frame = ttk.Frame(settings_frame)
     meta_frame.pack(fill="x")
 
@@ -6181,12 +6221,15 @@ def create_new_collection(collection_data=None, original_filename=None):
     ttk.Label(meta_frame, text="Загрузчик:").pack(side="left")
     loader_var = tk.StringVar(value=collection_data["loader"] if collection_data else "fabric")
 
-    api = ModrinthAPI()
-
+    # Функция обновления загрузчиков
     def update_loaders(*args):
-        """Обновляет список загрузчиков при смене версии"""
         selected_version = version_var.get()
-        available_loaders = api.get_supported_loaders(selected_version)
+        available_loaders = modrinth_api.get_supported_loaders(selected_version)
+
+        # Добавляем CurseForge загрузчики если доступны
+        if curseforge_api and curseforge_api.test_connection():
+            curseforge_loaders = curseforge_api.get_supported_loaders(selected_version)
+            available_loaders = list(set(available_loaders + curseforge_loaders))
 
         loader_combo['values'] = available_loaders
         if loader_var.get() not in available_loaders and available_loaders:
@@ -6197,7 +6240,7 @@ def create_new_collection(collection_data=None, original_filename=None):
     loader_combo = ttk.Combobox(
         meta_frame,
         textvariable=loader_var,
-        values=api.get_supported_loaders(version_var.get()),
+        values=modrinth_api.get_supported_loaders(version_var.get()),
         state="readonly",
         width=12,
     )
@@ -6253,30 +6296,42 @@ def create_new_collection(collection_data=None, original_filename=None):
         mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
 
         if not os.path.exists(mods_dir):
+            ttk.Label(local_frame, text="Папка модов не существует", foreground="gray").pack()
             return
 
+        mod_files = []
         for file in os.listdir(mods_dir):
             if file.endswith(".jar"):
                 if search_query and search_query not in file.lower():
                     continue
+                mod_files.append(file)
 
-                file_path = os.path.join(mods_dir, file)
-                try:
-                    size = os.path.getsize(file_path) / 1024 / 1024
-                    name = " ".join(
-                        [
-                            word.capitalize()
-                            for word in file.replace(".jar", "")
-                            .replace("_", " ")
-                            .replace("-", " ")
-                            .split()
-                        ]
-                    )
-                    local_mods_tree.insert(
-                        "", "end", values=(name, file, f"{size:.1f} MB"), tags=(file,)
-                    )
-                except (OSError, FileNotFoundError) as e:
-                    print(f"⚠️ Не удалось прочитать файл {file}: {e}")
+        if not mod_files:
+            if search_query:
+                ttk.Label(local_frame, text=f"Не найдено модов по запросу: '{search_query}'",
+                          foreground="gray").pack()
+            else:
+                ttk.Label(local_frame, text="В папке нет .jar файлов", foreground="gray").pack()
+            return
+
+        for file in mod_files:
+            file_path = os.path.join(mods_dir, file)
+            try:
+                size = os.path.getsize(file_path) / 1024 / 1024
+                name = " ".join(
+                    [
+                        word.capitalize()
+                        for word in file.replace(".jar", "")
+                    .replace("_", " ")
+                    .replace("-", " ")
+                    .split()
+                    ]
+                )
+                local_mods_tree.insert(
+                    "", "end", values=(name, file, f"{size:.1f} MB"), tags=(file,)
+                )
+            except (OSError, FileNotFoundError) as e:
+                print(f"⚠️ Не удалось прочитать файл {file}: {e}")
 
     local_scrollbar = ttk.Scrollbar(
         local_tree_frame, orient="vertical", command=local_mods_tree.yview
@@ -6292,22 +6347,22 @@ def create_new_collection(collection_data=None, original_filename=None):
     modrinth_frame = ttk.Frame(notebook, padding=10)
     notebook.add(modrinth_frame, text="🌐 Modrinth")
 
-    search_frame = ttk.Frame(modrinth_frame)
-    search_frame.pack(fill="x", pady=(0, 10))
+    modrinth_search_frame = ttk.Frame(modrinth_frame)
+    modrinth_search_frame.pack(fill="x", pady=(0, 10))
 
-    ttk.Label(search_frame, text="Поиск модов:").pack(side="left")
-    search_var = tk.StringVar()
-    search_entry = ttk.Entry(search_frame, textvariable=search_var, width=30)
-    search_entry.pack(side="left", padx=(5, 10))
+    ttk.Label(modrinth_search_frame, text="Поиск модов:").pack(side="left")
+    modrinth_search_var = tk.StringVar()
+    modrinth_search_entry = ttk.Entry(
+        modrinth_search_frame, textvariable=modrinth_search_var, width=30
+    )
+    modrinth_search_entry.pack(side="left", padx=(5, 10))
 
     def search_modrinth():
-        """Поиск модов: сначала ищем, потом помечаем совместимость"""
-        query = search_var.get().strip()
+        query = modrinth_search_var.get().strip()
         if not query:
             messagebox.showwarning("Поиск", "Введите название мода")
             return
 
-        # Текущие настройки
         minecraft_version = version_var.get()
         loader_type = loader_var.get().lower()
 
@@ -6318,24 +6373,23 @@ def create_new_collection(collection_data=None, original_filename=None):
         progress_window.transient(collection_window)
         progress_window.grab_set()
 
-        ttk.Label(progress_window, text="🔍 Ищем моды...").pack(pady=10)
+        ttk.Label(progress_window, text="🔍 Ищем моды на Modrinth...").pack(pady=10)
         progress = ttk.Progressbar(progress_window, mode="indeterminate")
         progress.pack(pady=10)
         progress.start()
 
         def do_search():
             try:
-                # 1. Ищем до 30 модов
-                results = api.search_mods(query, limit=30)
+                results = modrinth_api.search_mods(query, limit=30)
                 collection_window.after(0, progress_window.destroy)
 
                 if not results or "hits" not in results:
-                    collection_window.after(0, lambda: messagebox.showinfo("Результат", "Ничего не найдено"))
+                    collection_window.after(0, lambda: messagebox.showinfo(
+                        "Результат", "Ничего не найдено"))
                     return
 
                 mods = results["hits"]
 
-                # 2. Прогресс-бар: анализ совместимости
                 compatibility_window = tk.Toplevel(collection_window)
                 set_window_icon(compatibility_window)
                 compatibility_window.title("Анализ совместимости")
@@ -6353,13 +6407,13 @@ def create_new_collection(collection_data=None, original_filename=None):
                 compat_status = tk.StringVar(value="Анализ 1 из ...")
                 ttk.Label(compatibility_window, textvariable=compat_status).pack(pady=5)
 
-                # 3. Помечаем каждый мод: совместим или нет
                 for idx, mod in enumerate(mods):
-                    collection_window.after(0, lambda i=idx + 1, t=len(mods): compat_status.set(f"Анализ {i} из {t}"))
-                    collection_window.after(0, lambda i=idx: compat_progress.config(value=i))
+                    collection_window.after(0, lambda i=idx + 1, t=len(mods):
+                    compat_status.set(f"Анализ {i} из {t}"))
+                    collection_window.after(0, lambda i=idx:
+                    compat_progress.config(value=i))
 
-                    # Проверяем совместимость
-                    versions = api.get_mod_versions(
+                    versions = modrinth_api.get_mod_versions(
                         mod_id=mod["project_id"],
                         minecraft_version=minecraft_version,
                         loader=loader_type
@@ -6375,20 +6429,17 @@ def create_new_collection(collection_data=None, original_filename=None):
                         mod["filename"] = "N/A"
 
                 collection_window.after(0, compatibility_window.destroy)
-
-                # 4. Сортируем: совместимые — вверх
-                mods.sort(key=lambda m: (not m["compatible"], -m.get("downloads", 0)))
-
+                mods.sort(key=lambda m: (not m.get("compatible"), -m.get("downloads", 0)))
                 collection_window.after(0, lambda: display_modrinth_results(mods))
 
             except Exception as e:
                 collection_window.after(0, progress_window.destroy)
-                collection_window.after(0, lambda: messagebox.showerror("Ошибка", f"Поиск не удался: {e}"))
+                collection_window.after(0, lambda: messagebox.showerror(
+                    "Ошибка", f"Поиск не удался: {e}"))
 
         threading.Thread(target=do_search, daemon=True).start()
 
     def display_modrinth_results(mods):
-        """Отображает моды с корректными tags"""
         modrinth_tree.delete(*modrinth_tree.get_children())
 
         for mod in mods:
@@ -6398,7 +6449,6 @@ def create_new_collection(collection_data=None, original_filename=None):
             description = mod.get("description", "")[:80] + "..." if len(mod.get("description", "")) > 80 else mod.get(
                 "description", "")
 
-            # Вставляем строку
             item_id = modrinth_tree.insert(
                 "",
                 "end",
@@ -6406,13 +6456,11 @@ def create_new_collection(collection_data=None, original_filename=None):
                 tags=(mod["project_id"], mod["filename"])
             )
 
-            # Назначаем цвет отдельно
             if mod.get("compatible"):
                 modrinth_tree.item(item_id, tags=(mod["project_id"], mod["filename"], "compatible"))
             else:
                 modrinth_tree.item(item_id, tags=(mod["project_id"], mod["filename"], "incompatible"))
 
-        # Конфигурируем цвета
         modrinth_tree.tag_configure("compatible", background="#0a3020", foreground="white")
         modrinth_tree.tag_configure("incompatible", background="#3a1010", foreground="#ffaaaa")
 
@@ -6440,7 +6488,7 @@ def create_new_collection(collection_data=None, original_filename=None):
             else:
                 modrinth_tree.heading(col, text=clean_text)
 
-    ttk.Button(search_frame, text="🔍 Поиск", command=search_modrinth).pack(
+    ttk.Button(modrinth_search_frame, text="🔍 Поиск", command=search_modrinth).pack(
         side="left", padx=(0, 10)
     )
 
@@ -6474,6 +6522,208 @@ def create_new_collection(collection_data=None, original_filename=None):
     modrinth_tree.pack(side="left", fill="both", expand=True)
     modrinth_scrollbar.pack(side="right", fill="y")
 
+    # --- CurseForge ---
+    curseforge_enabled = CURSEFORGE_CONFIG.get("enabled", False) and curseforge_api
+
+    curseforge_frame = ttk.Frame(notebook, padding=10)
+    notebook.add(curseforge_frame, text="⚡ CurseForge")
+
+    if not curseforge_enabled:
+        # Показываем сообщение если CurseForge отключен
+        unavailable_frame = ttk.Frame(curseforge_frame)
+        unavailable_frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            unavailable_frame,
+            text="⚡ CurseForge отключен",
+            font=("Comfortaa", 14, "bold"),
+            foreground="gray"
+        ).pack(pady=20)
+
+        ttk.Label(
+            unavailable_frame,
+            text="Для включения CurseForge проверьте:\n\n"
+                 "1. Прокси-сервер запущен\n"
+                 "2. CURSEFORGE_CONFIG['enabled'] = True\n"
+                 "3. Правильный proxy_url в настройках",
+            font=("Comfortaa", 10),
+            justify="center"
+        ).pack(pady=10)
+    else:
+        # Проверяем доступность прокси
+        proxy_available = curseforge_api.test_connection()
+
+        if not proxy_available:
+            unavailable_frame = ttk.Frame(curseforge_frame)
+            unavailable_frame.pack(fill="both", expand=True)
+
+            ttk.Label(
+                unavailable_frame,
+                text="⚠️ CurseForge недоступен",
+                font=("Comfortaa", 14, "bold"),
+                foreground="orange"
+            ).pack(pady=20)
+
+            ttk.Label(
+                unavailable_frame,
+                text=f"Прокси-сервер не отвечает:\n{CURSEFORGE_CONFIG['proxy_url']}\n\n"
+                     "Проверьте:\n"
+                     "• Запущен ли прокси-сервер\n"
+                     "• Правильный ли URL\n"
+                     "• Доступность сети",
+                font=("Comfortaa", 10),
+                justify="center"
+            ).pack(pady=10)
+
+            def check_proxy_again():
+                if curseforge_api.test_connection():
+                    messagebox.showinfo("Успех", "Прокси-сервер доступен!")
+                    # Закрываем и перезагружаем окно
+                    collection_window.destroy()
+                    create_new_collection(collection_data, original_filename)
+                else:
+                    messagebox.showerror("Ошибка", "Прокси-сервер всё ещё недоступен")
+
+            ttk.Button(
+                unavailable_frame,
+                text="🔄 Проверить снова",
+                command=check_proxy_again
+            ).pack(pady=20)
+        else:
+            # Если прокси доступен - показываем интерфейс
+            curseforge_search_frame = ttk.Frame(curseforge_frame)
+            curseforge_search_frame.pack(fill="x", pady=(0, 10))
+
+            ttk.Label(curseforge_search_frame, text="Поиск:").pack(side="left")
+            curseforge_search_var = tk.StringVar()
+            curseforge_search_entry = ttk.Entry(
+                curseforge_search_frame, textvariable=curseforge_search_var, width=30
+            )
+            curseforge_search_entry.pack(side="left", padx=(5, 10))
+
+            def search_curseforge():
+                query = curseforge_search_var.get().strip()
+                if not query:
+                    messagebox.showwarning("Поиск", "Введите название мода")
+                    return
+
+                selected_version = version_var.get()
+                loader_type = loader_var.get().lower()
+
+                progress_window = tk.Toplevel(collection_window)
+                set_window_icon(progress_window)
+                progress_window.title("Поиск на CurseForge")
+                progress_window.geometry("300x100")
+                progress_window.transient(collection_window)
+                progress_window.grab_set()
+
+                ttk.Label(progress_window, text="🔍 Ищем моды на CurseForge...").pack(pady=10)
+                progress = ttk.Progressbar(progress_window, mode="indeterminate")
+                progress.pack(pady=10)
+                progress.start()
+
+                def do_search():
+                    try:
+                        results = curseforge_api.search_mods(
+                            query=query,
+                            minecraft_version=selected_version,
+                            loader=loader_type,
+                            limit=30
+                        )
+
+                        collection_window.after(0, progress_window.destroy)
+
+                        if not results or not results.get("success"):
+                            error_msg = results.get("error", "Неизвестная ошибка")
+                            collection_window.after(0, lambda: messagebox.showinfo(
+                                "Результат", f"Не удалось выполнить поиск: {error_msg}"))
+                            return
+
+                        mods = results.get("data", [])
+
+                        if not mods:
+                            collection_window.after(0, lambda: messagebox.showinfo(
+                                "Результат", "Ничего не найдено на CurseForge"))
+                            return
+
+                        # Сортируем: совместимые — вверх
+                        mods.sort(key=lambda m: (not m.get('compatible', False),
+                                                 -m.get('downloads', 0)))
+
+                        collection_window.after(0, lambda: display_curseforge_results(mods))
+
+                    except Exception as e:
+                        collection_window.after(0, progress_window.destroy)
+                        collection_window.after(0, lambda: messagebox.showerror(
+                            "Ошибка", f"Поиск на CurseForge не удался: {e}"))
+
+                threading.Thread(target=do_search, daemon=True).start()
+
+            def display_curseforge_results(mods):
+                curseforge_tree.delete(*curseforge_tree.get_children())
+
+                for mod in mods:
+                    downloads = f"{mod.get('downloads', 0):,}"
+                    version = mod.get('compatible_version', '❌')
+                    status = "✅" if mod.get('compatible') else "❌"
+                    description = mod.get('description', '')[:80] + '...' if len(
+                        mod.get('description', '')) > 80 else mod.get('description', '')
+
+                    item_id = curseforge_tree.insert(
+                        "",
+                        "end",
+                        values=(f"{mod['title']} ({version})",
+                                mod.get('author', 'Unknown'),
+                                downloads,
+                                description,
+                                status),
+                        tags=(mod['project_id'], mod.get('filename', 'unknown.jar'))
+                    )
+
+                    if mod.get('compatible'):
+                        curseforge_tree.item(item_id,
+                                             tags=(mod['project_id'], mod.get('filename', 'unknown.jar'), "compatible"))
+                    else:
+                        curseforge_tree.item(item_id, tags=(mod['project_id'], mod.get('filename', 'unknown.jar'),
+                                                            "incompatible"))
+
+                curseforge_tree.tag_configure("compatible", background="#0a3020", foreground="white")
+                curseforge_tree.tag_configure("incompatible", background="#3a1010", foreground="#ffaaaa")
+
+            ttk.Button(curseforge_search_frame, text="🔍 Поиск", command=search_curseforge).pack(
+                side="left", padx=(0, 10)
+            )
+
+            curseforge_tree_frame = ttk.Frame(curseforge_frame)
+            curseforge_tree_frame.pack(fill="both", expand=True)
+
+            curseforge_tree = ttk.Treeview(
+                curseforge_tree_frame,
+                columns=("name", "author", "downloads", "description", "status"),
+                show="headings",
+                height=15,
+            )
+
+            curseforge_tree.heading("name", text="Название")
+            curseforge_tree.heading("author", text="Автор")
+            curseforge_tree.heading("downloads", text="Загрузки")
+            curseforge_tree.heading("description", text="Описание")
+            curseforge_tree.heading("status", text="Совместимость")
+
+            curseforge_tree.column("name", width=220)
+            curseforge_tree.column("author", width=120)
+            curseforge_tree.column("downloads", width=100)
+            curseforge_tree.column("description", width=200)
+            curseforge_tree.column("status", width=80)
+
+            curseforge_scrollbar = ttk.Scrollbar(
+                curseforge_tree_frame, orient="vertical", command=curseforge_tree.yview
+            )
+            curseforge_tree.configure(yscrollcommand=curseforge_scrollbar.set)
+
+            curseforge_tree.pack(side="left", fill="both", expand=True)
+            curseforge_scrollbar.pack(side="right", fill="y")
+
     # === Выбранные моды ===
     selected_frame = ttk.LabelFrame(main_frame, text="✅ Выбранные моды", padding=10)
     selected_frame.pack(fill="x", pady=(0, 20))
@@ -6492,12 +6742,12 @@ def create_new_collection(collection_data=None, original_filename=None):
     selected_scrollbar = ttk.Scrollbar(
         selected_frame, orient="vertical", command=selected_tree.yview
     )
-    selected_tree.configure(yscrollcommand=selected_scrollbar.set)  # ✅ Правильно: на Treeview, до pack
+    selected_tree.configure(yscrollcommand=selected_scrollbar.set)
 
     selected_tree.pack(side="left", fill="both", expand=True)
-    selected_scrollbar.pack(side="right", fill="y")  # ✅ Упаковка
+    selected_scrollbar.pack(side="right", fill="y")
 
-    # === Добавляем моды из collection_data при редактировании ===
+    # Добавляем моды из collection_data при редактировании
     if collection_data:
         for mod in collection_data["mods"]:
             source = mod.get("source", "modrinth")
@@ -6508,6 +6758,9 @@ def create_new_collection(collection_data=None, original_filename=None):
             if source == "modrinth":
                 mod_id = mod["modrinth_id"]
                 tags = ("modrinth", mod_id, filename)
+            elif source == "curseforge":
+                mod_id = mod["curseforge_id"]
+                tags = ("curseforge", mod_id, filename)
             else:
                 tags = ("local", filename)
 
@@ -6516,7 +6769,6 @@ def create_new_collection(collection_data=None, original_filename=None):
                 values=(source.capitalize(), name, filename),
                 tags=tags
             )
-    # ❌ Удалено: .configure() после insert — это ошибка
 
     # === Управление модами ===
     selected_buttons = ttk.Frame(selected_frame)
@@ -6524,6 +6776,7 @@ def create_new_collection(collection_data=None, original_filename=None):
 
     def add_selected_mods():
         current_tab = notebook.index(notebook.select())
+
         if current_tab == 0:  # Локальные моды
             for item in local_mods_tree.selection():
                 values = local_mods_tree.item(item)["values"]
@@ -6536,6 +6789,7 @@ def create_new_collection(collection_data=None, original_filename=None):
                         values=("Локальный", name, file),
                         tags=("local", file)
                     )
+
         elif current_tab == 1:  # Modrinth
             for item in modrinth_tree.selection():
                 values = modrinth_tree.item(item)["values"]
@@ -6546,11 +6800,30 @@ def create_new_collection(collection_data=None, original_filename=None):
                 mod_id = tags[0]
                 filename = tags[1]
 
-                if not any(selected_tree.item(i)["values"][2] == filename for i in selected_tree.get_children()):
+                if not any(selected_tree.item(i)["values"][1] == title for i in selected_tree.get_children()):
                     selected_tree.insert(
                         "", "end",
                         values=("Modrinth", title, filename),
                         tags=("modrinth", mod_id, filename)
+                    )
+
+        elif current_tab == 2 and curseforge_enabled:  # CurseForge
+            for item in curseforge_tree.selection():
+                values = curseforge_tree.item(item)["values"]
+                tags = curseforge_tree.item(item)["tags"]
+
+                if len(tags) < 2:
+                    continue
+
+                mod_id = tags[0]
+                filename = tags[1]
+                mod_title = values[0].split(" (")[0]
+
+                if not any(selected_tree.item(i)["values"][1] == mod_title for i in selected_tree.get_children()):
+                    selected_tree.insert(
+                        "", "end",
+                        values=("CurseForge", mod_title, filename),
+                        tags=("curseforge", mod_id, filename)
                     )
 
     def remove_selected_mods():
@@ -6561,8 +6834,10 @@ def create_new_collection(collection_data=None, original_filename=None):
         if selected_tree.get_children() and messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
             selected_tree.delete(*selected_tree.get_children())
 
-    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods, width=18).pack(side="left", padx=5)
-    ttk.Button(selected_buttons, text="🗑️ Удалить выбранные", command=remove_selected_mods, width=18).pack(side="left", padx=5)
+    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods, width=18).pack(side="left",
+                                                                                                        padx=5)
+    ttk.Button(selected_buttons, text="🗑️ Удалить выбранные", command=remove_selected_mods, width=18).pack(side="left",
+                                                                                                           padx=5)
     ttk.Button(selected_buttons, text="🗑️ Очистить все", command=clear_all_mods, width=15).pack(side="left", padx=5)
 
     # === Сохранение сборки ===
@@ -6578,11 +6853,13 @@ def create_new_collection(collection_data=None, original_filename=None):
         progress_window = tk.Toplevel(collection_window)
         set_window_icon(progress_window)
         progress_window.title("Обработка модов")
-        progress_window.geometry("500x300")
+        progress_window.geometry("500x400")
         progress_window.transient(collection_window)
         progress_window.grab_set()
 
-        ttk.Label(progress_window, text="Получение информации о модах...", font=("Comfortaa", 12)).pack(pady=10)
+        ttk.Label(progress_window, text="Получение информации о модах...",
+                  font=("Comfortaa", 12)).pack(pady=10)
+
         progress = ttk.Progressbar(progress_window, orient="horizontal", mode="determinate")
         progress.pack(fill="x", padx=20, pady=10)
 
@@ -6590,24 +6867,35 @@ def create_new_collection(collection_data=None, original_filename=None):
         status_label = ttk.Label(progress_window, textvariable=status_var)
         status_label.pack()
 
-        log_text = tk.Text(progress_window, height=10, width=60)
-        log_text.pack(fill="both", expand=True, padx=20, pady=10)
+        log_text = tk.Text(progress_window, height=15, width=60, font=("Consolas", 9))
+        log_scrollbar = ttk.Scrollbar(progress_window, orient="vertical", command=log_text.yview)
+        log_text.configure(yscrollcommand=log_scrollbar.set)
+
+        log_text.pack(side="left", fill="both", expand=True, padx=(20, 0), pady=10)
+        log_scrollbar.pack(side="right", fill="y", pady=10)
+
+        def log_message(message):
+            collection_window.after(0, lambda: log_text.insert("end", f"{message}\n"))
+            collection_window.after(0, lambda: log_text.see("end"))
 
         def process_mods_thread():
             total_mods = len(selected_tree.get_children())
+
             for i, item in enumerate(selected_tree.get_children()):
                 values = selected_tree.item(item)["values"]
                 tags = selected_tree.item(item)["tags"]
 
-                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))
-                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))
+                collection_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))
+                collection_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))
 
                 mod_info = {"source": tags[0], "name": values[1], "filename": values[2]}
 
                 if tags[0] == "local":
-                    log_text.insert("end", f"🔍 Ищем на Modrinth: {values[1]}...\n")
-                    log_text.see("end")
-                    modrinth_info = find_mod_on_modrinth(api, values[1], version_var.get(), loader_var.get())
+                    log_message(f"🔍 Ищем информацию для: {values[1]}...")
+
+                    # Пробуем найти на Modrinth
+                    modrinth_info = find_mod_on_modrinth(modrinth_api, values[1],
+                                                         version_var.get(), loader_var.get())
                     if modrinth_info:
                         mod_info.update({
                             "source": "modrinth",
@@ -6616,311 +6904,191 @@ def create_new_collection(collection_data=None, original_filename=None):
                             "correct_filename": modrinth_info["filename"],
                         })
                         mods.append(mod_info)
-                        log_text.insert("end", f"✅ Найден: {modrinth_info['title']}\n")
+                        log_message(f"✅ Найден на Modrinth: {modrinth_info['title']}")
+
+                    # Пробуем найти на CurseForge
+                    elif curseforge_enabled:
+                        log_message(f"🔍 Ищем на CurseForge: {values[1]}...")
+                        curseforge_info = find_mod_on_curseforge(curseforge_api, values[1],
+                                                                 version_var.get(), loader_var.get())
+                        if curseforge_info:
+                            mod_info.update({
+                                "source": "curseforge",
+                                "curseforge_id": curseforge_info["id"],
+                                "curseforge_slug": curseforge_info.get("slug", ""),
+                                "correct_filename": curseforge_info["filename"],
+                            })
+                            mods.append(mod_info)
+                            log_message(f"✅ Найден на CurseForge: {curseforge_info['name']}")
+                        else:
+                            failed_mods.append(values[1])
+                            log_message(f"❌ Не найден на Modrinth/CurseForge: {values[1]}")
                     else:
                         failed_mods.append(values[1])
-                        log_text.insert("end", f"❌ Не найден на Modrinth: {values[1]}\n")
+                        log_message(f"❌ Не найден на Modrinth: {values[1]}")
+
                 elif tags[0] == "modrinth":
                     mod_info["modrinth_id"] = tags[1]
                     mods.append(mod_info)
-                    log_text.insert("end", f"✅ Modrinth мод: {values[1]}\n")
+                    log_message(f"✅ Modrinth мод: {values[1]}")
+
+                elif tags[0] == "curseforge":
+                    mod_info["curseforge_id"] = tags[1]
+                    mod_info["curseforge_slug"] = tags[2] if len(tags) > 2 else ""
+                    mods.append(mod_info)
+                    log_message(f"✅ CurseForge мод: {values[1]}")
 
                 log_text.see("end")
 
-            progress_window.after(0, progress_window.destroy)
-            progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
-
-        def finalize_collection_creation(name, mods, failed_mods):
-            if not mods:
-                messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
-                return
-
-            collection_data = {
-                "name": name,
-                "minecraft_version": version_var.get(),
-                "loader": loader_var.get(),
-                "created_at": dt.now().isoformat(),
-                "mods": mods,
-                "mod_count": len(mods),
-            }
-
-            safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
-            filename = f"{safe_name}.json"
-            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
-            filepath = os.path.join(collections_dir, filename)
-
-            os.makedirs(collections_dir, exist_ok=True)
-
-            # Удаляем старый файл, если редактируем и изменили имя
-            if original_filename and original_filename != filename:
-                old_path = os.path.join(collections_dir, original_filename)
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-
-            try:
-                with open(filepath, "w", encoding="utf-8") as f:
-                    json.dump(collection_data, f, indent=2, ensure_ascii=False)
-
-                if original_filename:
-                    messagebox.showinfo("Успех", f"Сборка '{name}' успешно обновлена!")
-                else:
-                    message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
-                    if failed_mods:
-                        message += f"\n• Пропущено: {len(failed_mods)}"
-                    messagebox.showinfo("Успех", message)
-
-                collection_window.destroy()
-                show_collection_manager()
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить сборку: {e}")
+            collection_window.after(0, progress_window.destroy)
+            collection_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
 
         threading.Thread(target=process_mods_thread, daemon=True).start()
+
+    def finalize_collection_creation(name, mods, failed_mods):
+        if not mods:
+            messagebox.showerror("Ошибка", "Не удалось найти информацию ни об одном моде!")
+            return
+
+        if failed_mods:
+            result = messagebox.askyesno(
+                "Внимание",
+                f"Следующие моды не найдены и будут пропущены ({len(failed_mods)}):\n" +
+                "\n".join(failed_mods[:5]) +
+                ("\n..." if len(failed_mods) > 5 else "") +
+                "\n\nПродолжить создание сборки?"
+            )
+            if not result:
+                return
+
+        collection_data = {
+            "name": name,
+            "minecraft_version": version_var.get(),
+            "loader": loader_var.get(),
+            "created_at": datetime.datetime.now().isoformat(),
+            "mods": mods,
+            "mod_count": len(mods),
+        }
+
+        safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
+        filename = f"{safe_name}.json"
+        collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+        filepath = os.path.join(collections_dir, filename)
+
+        os.makedirs(collections_dir, exist_ok=True)
+
+        # Удаляем старый файл, если редактируем и изменили имя
+        if original_filename and original_filename != filename:
+            old_path = os.path.join(collections_dir, original_filename)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(collection_data, f, indent=2, ensure_ascii=False)
+
+            if original_filename:
+                messagebox.showinfo("Успех", f"Сборка '{name}' успешно обновлена!")
+            else:
+                message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
+                if failed_mods:
+                    message += f"\n• Пропущено: {len(failed_mods)}"
+                messagebox.showinfo("Успех", message)
+
+            collection_window.destroy()
+            show_collection_manager()
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить сборку: {e}")
+
+    def find_mod_on_curseforge(api, mod_name, minecraft_version, loader):
+        """Поиск мода на CurseForge"""
+        try:
+            results = api.search_mods(
+                query=mod_name,
+                minecraft_version=minecraft_version,
+                loader=loader,
+                limit=10
+            )
+
+            if results and results.get("success") and results.get("data"):
+                # Берем первый совместимый результат
+                for mod in results["data"]:
+                    if mod.get("compatible"):
+                        return {
+                            "id": mod["project_id"],
+                            "slug": mod.get("slug", ""),
+                            "name": mod["title"],
+                            "filename": mod.get("filename", f"{mod.get('slug', 'mod')}.jar")
+                        }
+        except Exception as e:
+            print(f"Ошибка поиска на CurseForge: {e}")
+
+        return None
 
     # === Кнопки сохранения ===
     button_frame = ttk.Frame(main_frame)
     button_frame.pack(fill="x", pady=(10, 0))
 
-    ttk.Button(button_frame, text="✅ Сохранить", command=create_collection).pack(
+    ttk.Button(button_frame, text="✅ Сохранить сборку", command=create_collection).pack(
         side="left", padx=5
     )
 
-    selected_tree.pack(side="left", fill="both", expand=True)
-    selected_scrollbar.pack(side="right", fill="y")
+    ttk.Button(button_frame, text="❌ Отмена", command=collection_window.destroy).pack(
+        side="right", padx=5
+    )
 
-    # === Управление модами ===
-    def on_mod_select(event):
-        selection = modrinth_tree.selection()
-        if not selection:
-            return
-
-        item = modrinth_tree.item(selection[0])
-        tags = item["tags"]
-        if not tags:
-            return
-
-        mod_id = tags[0]  # ✅ project_id
-        mod_title = item["values"][0].split(" (")[0]
-
-        if not hasattr(collection_window, "last_search_results"):
-            return
-
-        matching_mod = next((m for m in collection_window.last_search_results if m["title"] == mod_title), None)
-        if not matching_mod:
-            return
-
-        if matching_mod.get("compatible"):
-            return  # ✅ Не показываем, если совместим
-
-        # Теперь можно безопасно использовать mod_id
-        try:
-            # Получаем ВСЕ версии мода, чтобы показать пользователю
-            all_versions_response = api.session.get(
-                f"https://api.modrinth.com/v2/project/{mod_id}/version",
-                timeout=10
-            )
-            if not all_versions_response.ok:
-                messagebox.showwarning("Ошибка", "Не удалось загрузить данные о моде", parent=collection_window)
-                return
-
-            all_versions = all_versions_response.json()
-
-            # Собираем данные
-            game_versions = set()
-            loaders = set()
-            latest_version = None
-
-            for v in all_versions:
-                if v.get("game_versions"):
-                    game_versions.update(v["game_versions"])
-                if v.get("loaders"):
-                    loaders.update([l.lower() for l in v["loaders"]])
-                if not latest_version and v.get("version_number"):
-                    latest_version = v["version_number"]
-
-            game_versions = sorted(game_versions, key=lambda x: [int(p) if p.isdigit() else p for p in x.split(".")],
-                                   reverse=True)
-            loaders = sorted(loaders)
-
-            message = f"❌ Мод '{mod_title}' не совместим:\n\n"
-            message += f"• Версия: {version_var.get()}\n"
-            message += f"• Загрузчик: {loader_var.get()}\n\n"
-
-            if latest_version:
-                message += f"📦 Последняя версия: {latest_version}\n"
-            if game_versions:
-                message += f"🟢 Поддерживаемые MC: {', '.join(game_versions[:5])}...\n"
-            if loaders:
-                message += f"🔧 Поддерживаемые: {', '.join(loaders)}\n"
-
-            messagebox.showinfo("Совместимость", message, parent=collection_window)
-
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось загрузить данные:\n{e}", parent=collection_window)
-    selected_buttons = ttk.Frame(selected_frame)
-    selected_buttons.pack(fill="x", pady=(10, 0))
-    modrinth_tree.bind("<<TreeviewSelect>>", on_mod_select)
-
-    def add_selected_mods():
-
-        current_tab = notebook.index(notebook.select())
-        if current_tab == 1:  # Modrinth
-            for item in modrinth_tree.selection():
-                values = modrinth_tree.item(item)["values"]
-                tags = modrinth_tree.item(item)["tags"]  # → (project_id, filename)
-
-                if len(tags) < 2:
-                    continue
-
-                mod_id = tags[0]  # ✅ строка: project_id
-                filename = tags[1]  # ✅ строка: filename
-
-                mod_title = values[0].split(" (")[0]
-
-                if not any(selected_tree.item(i)["values"][1] == mod_title for i in selected_tree.get_children()):
-                    selected_tree.insert(
-                        "", "end",
-                        values=("Modrinth", mod_title, filename),
-                        tags=("modrinth", mod_id, filename)
-                    )
-    def remove_selected_mods():
-        for item in selected_tree.selection():
-            selected_tree.delete(item)
-
-    def clear_all_mods():
-        if selected_tree.get_children() and messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
-            selected_tree.delete(*selected_tree.get_children())
+    # Фокус на окно
+    collection_window.focus_force()
 
 
-    # === Создание сборки ===
-    def create_collection():
-        name = name_var.get().strip()
-        if not name:
-            messagebox.showerror("Ошибка", "Введите название сборки!")
-            return
+def handle_curseforge_mod(mod, collection, api, mods_dir, minecraft_version, loader_type, log_callback):
+    """Обработка мода с CurseForge"""
+    try:
+        log_callback(f"🔍 Получаем информацию о {mod['name']}...")
 
-        mods = []
-        failed_mods = []
+        # Получаем ID мода из данных
+        mod_id = mod.get("curseforge_id")
+        if not mod_id:
+            log_callback(f"❌ Нет curseforge_id для {mod['name']}")
+            return False
 
-        progress_window = tk.Toplevel(collection_window)
-        set_window_icon(progress_window)
-        progress_window.title("Обработка модов")
-        progress_window.geometry("500x300")
-        progress_window.transient(collection_window)
-        progress_window.grab_set()
+        versions = api.get_mod_versions(
+            mod_id=mod_id,
+            minecraft_version=minecraft_version,
+            loader=loader_type
+        )
 
-        ttk.Label(progress_window, text="Получение информации о модах...", font=("Comfortaa", 12)).pack(pady=10)
-        progress = ttk.Progressbar(progress_window, orient="horizontal", mode="determinate")
-        progress.pack(fill="x", padx=20, pady=10)
+        if not versions:
+            log_callback(f"❌ Не найдены версии для {mod['name']}")
+            return False
 
-        status_var = tk.StringVar(value="Подготовка...")
-        status_label = ttk.Label(progress_window, textvariable=status_var)
-        status_label.pack()
+        # Берем первую (последнюю) версию
+        version_info = versions[0]
+        version_id = version_info["id"]
+        filename = version_info.get("filename", f"{mod.get('curseforge_slug', 'mod')}.jar")
 
-        log_text = tk.Text(progress_window, height=10, width=60)
-        log_text.pack(fill="both", expand=True, padx=20, pady=10)
+        log_callback(f"📥 Скачиваем {filename}...")
+        log_callback(f"🆔 Version ID: {version_id}")
 
-        def process_mods_thread():
-            total_mods = len(selected_tree.get_children())
-            for i, item in enumerate(selected_tree.get_children()):
-                values = selected_tree.item(item)["values"]
-                tags = selected_tree.item(item)["tags"]
+        # Скачиваем через API
+        result = api.download_mod(
+            mod_id=mod_id,  # Используем mod_id вместо slug
+            version_id=version_id,
+            filename=filename,
+            destination_dir=mods_dir
+        )
 
-                progress_window.after(0, lambda idx=i: progress.config(value=(idx * 100) // total_mods))  # noqa
-                progress_window.after(0, lambda v=values: status_var.set(f"Обработка: {v[1]}"))  # noqa
+        if result:
+            log_callback(f"✅ Успешно скачан: {filename}")
+            return True
+        else:
+            log_callback(f"❌ Не удалось скачать: {filename}")
+            return False
 
-                mod_info = {"source": tags[0], "name": values[1], "filename": values[2]}
-
-                if tags[0] == "local":
-                    log_text.insert("end", f"🔍 Ищем на Modrinth: {values[1]}...\n")
-                    log_text.see("end")
-                    modrinth_info = find_mod_on_modrinth(api, values[1], version_var.get(), loader_var.get())
-                    if modrinth_info:
-                        mod_info.update({
-                            "source": "modrinth",
-                            "modrinth_id": modrinth_info["id"],
-                            "modrinth_slug": modrinth_info["slug"],
-                            "correct_filename": modrinth_info["filename"],
-                        })
-                        mods.append(mod_info)
-                        log_text.insert("end", f"✅ Найден: {modrinth_info['title']}\n")
-                    else:
-                        failed_mods.append(values[1])
-                        log_text.insert("end", f"❌ Не найден на Modrinth: {values[1]}\n")
-                elif tags[0] == "modrinth":
-                    mod_info["modrinth_id"] = tags[1]
-                    mods.append(mod_info)
-                    log_text.insert("end", f"✅ Modrinth мод: {values[1]}\n")
-
-                log_text.see("end")
-
-            progress_window.after(0, progress_window.destroy)
-            progress_window.after(0, lambda: finalize_collection_creation(name, mods, failed_mods))
-
-        def finalize_collection_creation(name, mods, failed_mods):
-            if not mods:
-                messagebox.showerror("Ошибка", "Не удалось найти ни одного мода на Modrinth!")
-                return
-
-            if failed_mods:
-                messagebox.showwarning(
-                    "Внимание",
-                    f"Следующие моды не найдены на Modrinth и будут пропущены:\n" + "\n".join(failed_mods),
-                )
-
-            collection_data = {
-                "name": name,
-                "minecraft_version": version_var.get(),
-                "loader": loader_var.get(),
-                "created_at": dt.now().isoformat(),
-                "mods": mods,
-                "mod_count": len(mods),
-            }
-
-            safe_name = "".join(c for c in name if c not in '/\\:*?"<>|')
-            filename = f"{safe_name}.json"
-            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
-            filepath = os.path.join(collections_dir, filename)
-
-            # ✅ Создаём папку, если её нет
-            os.makedirs(collections_dir, exist_ok=True)
-
-            try:
-                try:
-                    with open(filepath, "w", encoding="utf-8") as f:
-                        json.dump(collection_data, f, indent=2, ensure_ascii=False)
-
-                    # Если редактировали — сообщаем об успехе, не создаём новое
-                    if original_filename:
-                        messagebox.showinfo("Успех", f"Сборка '{name}' успешно обновлена!")
-                    else:
-                        message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
-                        if failed_mods:
-                            message += f"\n• Пропущено: {len(failed_mods)}"
-                        messagebox.showinfo("Успех", message)
-
-                    collection_window.destroy()
-                    show_collection_manager()  # Обновляем список
-                except Exception as e:
-                    messagebox.showerror("Ошибка", f"Не удалось сохранить сборку: {e}")
-                message = f"Сборка '{name}' создана!\n\n• Модов: {len(mods)}\n• Версия: {version_var.get()}\n• Загрузчик: {loader_var.get()}"
-                if failed_mods:
-                    message += f"\n• Пропущено: {len(failed_mods)}"
-                messagebox.showinfo("Успех", message)
-                collection_window.destroy()
-                show_collection_manager()
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось создать сборку: {e}")
-
-        threading.Thread(target=process_mods_thread, daemon=True).start()
-
-    button_frame = ttk.Frame(main_frame)
-    button_frame.pack(fill="x")
-    ttk.Button(button_frame, text="✅ Создать сборку", command=create_collection).pack(side="left", padx=5)
-    ttk.Button(button_frame, text="❌ Отмена", command=collection_window.destroy).pack(side="right", padx=5)
-
-
-
-
+    except Exception as e:
+        log_callback(f"💥 Ошибка {mod['name']}: {str(e)}")
+        return False
 
 
 def find_mod_on_modrinth(api, mod_name, minecraft_version, loader):
@@ -7231,7 +7399,7 @@ def show_collection_manager():
     manager_window = tk.Toplevel(win)
     set_window_icon(manager_window)
     manager_window.title("Менеджер сборок (Бета)")
-    manager_window.geometry("1200x500")
+    manager_window.geometry("1200x700")
     manager_window.transient(win)
     manager_window.grab_set()
 
@@ -7428,21 +7596,20 @@ def load_collection_to_game(filename):
         messagebox.showerror("Ошибка", f"Не удалось загрузить сборку: {e}")
         return
 
-    # Используем оптимизированную загрузку
+
+    # Проверяем оптимизацию ПЕРЕД созданием окна
     if optimize_collection_loading(collection):
+        # Если все моды уже есть - просто показываем сообщение
         messagebox.showinfo(
             "Успех",
-            f"✅ Сборка '{collection['name']}' загружена!\n\n"
-            f"• Модов: {collection['mod_count']}\n"
+            f"✅ Все моды сборки '{collection['name']}' уже установлены!\n\n"
             f"• Версия: {collection['minecraft_version']}\n"
-            f"• Загрузчик: {collection['loader']}\n\n"
+            f"• Загрузчик: {collection['loader']}\n"
             f"Теперь можно запустить игру!"
         )
+        return
 
-        # Обновляем селектор версий
-        version_selector.refresh_versions()
-    else:
-        messagebox.showerror("Ошибка", "Не удалось загрузить сборку")
+
 
     # Создаем окно прогресса с логом
     progress_window = tk.Toplevel(win)
@@ -7504,11 +7671,34 @@ def load_collection_to_game(filename):
 
     def download_thread():
         import concurrent.futures
+        from Network.ModrinthLoader import ModrinthAPI
+        from Network.CurseForgeLoader import CurseForgeAPI
+        from ConfDir.Configs import CURSEFORGE_CONFIG
+
         mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
         os.makedirs(mods_dir, exist_ok=True)
 
         log_message(f"📁 Папка модов: {mods_dir}")
         log_message(f"🔄 Начинаем загрузку {len(collection['mods'])} модов...")
+
+        # Инициализируем API
+        modrinth_api = ModrinthAPI()
+
+        # Инициализируем CurseForge API если включено
+        curseforge_api = None
+        if CURSEFORGE_CONFIG.get("enabled", False):
+            try:
+                proxy_url = CURSEFORGE_CONFIG.get("proxy_url", "http://localhost:8000")
+                curseforge_api = CurseForgeAPI(proxy_url)
+
+                if not curseforge_api.test_connection():
+                    log_message("⚠️ CurseForge прокси недоступен, пропускаем CurseForge моды")
+                    curseforge_api = None
+                else:
+                    log_message("✅ CurseForge API подключен")
+            except Exception as e:
+                log_message(f"⚠️ Ошибка CurseForge API: {e}")
+                curseforge_api = None
 
         # Бэкап и очистка
         backup_path = create_mods_backup(collection["name"])
@@ -7519,7 +7709,6 @@ def load_collection_to_game(filename):
         log_message(f"🗑️ Очищено модов: {cleared_count}")
 
         # Подготовка
-        api = ModrinthAPI()
         total_mods = len(collection["mods"])
         success_count = 0
 
@@ -7530,49 +7719,87 @@ def load_collection_to_game(filename):
         def download_single_mod(mod):
             nonlocal success_count
             try:
-                log_message(f"\n🔍 Мод: {mod['name']}")
+                source = mod.get("source", "modrinth")
+                log_message(f"\n🔍 Мод: {mod['name']} [{source.upper()}]")
 
-                if mod["source"] != "modrinth":
-                    log_message(f"   ⚠️  Источник не поддерживается: {mod['source']}")
+                if source == "modrinth":
+                    versions = modrinth_api.get_mod_versions(
+                        mod_id=mod["modrinth_id"],
+                        minecraft_version=collection["minecraft_version"],
+                        loader=collection["loader"].lower(),
+                    )
+
+                    if not versions:
+                        log_message("   ❌ Не найдены совместимые версии")
+                        return False
+
+                    latest_version = versions[0]
+                    version_id = latest_version["id"]
+                    project_slug = mod.get("modrinth_slug", mod["modrinth_id"])
+
+                    # Ищем JAR-файл
+                    target_file = next(
+                        (f for f in latest_version["files"] if f["filename"].endswith(".jar")),
+                        latest_version["files"][0] if latest_version["files"] else None
+                    )
+
+                    if not target_file:
+                        log_message("   ❌ Нет файла для скачивания")
+                        return False
+
+                    filename = target_file["filename"]
+                    filepath = os.path.join(mods_dir, filename)
+
+                    log_message(f"   ⬇️  {filename}")
+
+                    # Пробуем скачать через Modrinth
+                    if modrinth_api.download_mod(project_slug, version_id, filename, mods_dir):
+                        log_message(f"   ✅ Успешно: {filename}")
+                        return True
+                    else:
+                        log_message(f"   ❌ Ошибка скачивания: {filename}")
+                        return False
+
+
+                elif source == "curseforge" and curseforge_api:
+                    # ВАЖНО: Для CurseForge используем правильный метод!
+                    versions = curseforge_api.get_mod_versions(
+                        mod_id=str(mod["curseforge_id"]),
+                        minecraft_version=collection["minecraft_version"],
+                        loader=collection["loader"].lower()
+                    )
+
+                    if not versions:
+                        log_message("   ❌ Не найдены совместимые версии на CurseForge")
+                        return False
+
+                    # Берем первую (последнюю) версию
+                    version_info = versions[0]
+                    version_id = version_info["id"]
+                    filename = version_info.get("filename", f"{mod.get('curseforge_slug', 'mod')}.jar")
+
+                    log_message(f"   ⬇️  {filename}")
+                    log_message(f"   🆔 Version ID: {version_id}")
+
+                    # Скачиваем через CurseForge API
+                    result = curseforge_api.download_mod(
+                        mod_id=str(mod["curseforge_id"]),
+                        version_id=version_id,
+                        filename=filename,
+                        destination_dir=mods_dir
+                    )
+                    if result:
+                        log_message(f"   ✅ Успешно скачан: {filename}")
+                        return True
+                    else:
+                        log_message(f"   ❌ Не удалось скачать: {filename}")
+                        return False
+                elif source == "local":
+                    log_message("   ⚠️  Локальные моды не загружаются автоматически")
                     return False
-
-                versions = api.get_mod_versions(
-                    mod_id=mod["modrinth_id"],
-                    minecraft_version=collection["minecraft_version"],
-                    loader=collection["loader"].lower(),
-                )
-
-                if not versions:
-                    log_message("   ❌ Не найдены совместимые версии")
-                    return False
-
-                latest_version = versions[0]
-                version_id = latest_version["id"]
-                project_slug = mod.get("modrinth_slug", mod["modrinth_id"])
-
-                # Ищем JAR-файл
-                target_file = next(
-                    (f for f in latest_version["files"] if f["filename"].endswith(".jar")),
-                    latest_version["files"][0] if latest_version["files"] else None
-                )
-
-                if not target_file:
-                    log_message("   ❌ Нет файла для скачивания")
-                    return False
-
-                filename = target_file["filename"]
-                filepath = os.path.join(mods_dir, filename)
-
-                log_message(f"   ⬇️  {filename}")
-
-                # Пробуем скачать
-                if api.download_mod(project_slug, version_id, filename, mods_dir):
-                    log_message(f"   ✅ Успешно: {filename}")
-                    return True
                 else:
-                    log_message(f"   ❌ Ошибка: {filename}")
+                    log_message(f"   ⚠️  Неизвестный источник: {source}")
                     return False
-
             except Exception as e:
                 log_message(f"   💥 Ошибка: {e}")
                 return False
@@ -7775,27 +8002,65 @@ def handle_modrinth_mod(mod, collection, api, mods_dir, minecraft_version, loade
 
 
 def finish_loading(progress_window, collection, success_count, total_mods, backup_path):
-    """Завершение загрузки"""
-    progress_window.destroy()
+    """Завершает процесс загрузки и показывает результаты"""
+    if success_count > 0:
+        # Обновляем текущую активную сборку
+        global CURRENT_ACTIVE_COLLECTION
+        CURRENT_ACTIVE_COLLECTION = collection["name"]
 
-    message = (
-        f"Сборка '{collection['name']}' загружена!\n\n"
-        f"✅ Успешно: {success_count}/{total_mods} модов"
-    )
+        # Сохраняем информацию о текущей сборке
+        save_current_collection_info(collection, success_count, total_mods)
 
-    if backup_path:
-        message += f"\n\n📂 Бэкап создан: {os.path.basename(backup_path)}"
+        # Обновляем селектор версий (если есть)
+        update_version_selector()
 
-    if success_count < total_mods:
-        message += (
-            "\n\n⚠️ Некоторые моды не удалось загрузить. Проверьте лог для деталей."
+        # Закрываем окно и показываем сообщение
+        progress_window.destroy()
+
+        messagebox.showinfo(
+            "Успех",
+            f"✅ Сборка '{collection['name']}' загружена!\n\n"
+            f"• Успешно загружено: {success_count}/{total_mods} модов\n"
+            f"• Версия: {collection['minecraft_version']}\n"
+            f"• Загрузчик: {collection['loader']}\n\n"
+            f"Теперь можно запустить игру!"
+        )
+    else:
+        # Закрываем окно и показываем предупреждение
+        progress_window.destroy()
+
+        messagebox.showwarning(
+            "Предупреждение",
+            f"Не удалось загрузить ни одного мода из сборки '{collection['name']}'"
         )
 
-    messagebox.showinfo("Загрузка завершена", message)
+
+def save_current_collection_info(collection, success_count, total_mods):
+    """Сохраняет информацию о текущей активной сборке"""
+    info_file = os.path.join(CONFIG["minecraft_dir"], "current_collection.json")
+    try:
+        with open(info_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "name": collection["name"],
+                "minecraft_version": collection["minecraft_version"],
+                "loader": collection["loader"],
+                "loaded_at": datetime.datetime.now().isoformat(),
+                "mods_loaded": success_count,
+                "total_mods": total_mods
+            }, f, indent=2, ensure_ascii=False)
+        print(f"✅ Сохранена информация о текущей сборке: {collection['name']}")
+    except Exception as e:
+        print(f"❌ Ошибка сохранения информации о сборке: {e}")
 
 
-
-
+def update_version_selector():
+    """Обновляет селектор версий"""
+    try:
+        if 'version_selector' in globals():
+            version_selector.refresh_versions()
+            print("✅ Селектор версий обновлен")
+    except Exception as e:
+        print(f"⚠️ Не удалось обновить селектор: {e}")
 
 
 import signal
@@ -8103,37 +8368,49 @@ def create_vanilla_backup(version_name):
         return None
 
 
-def optimize_collection_loading(collection_data):
-    """Интеллектуальная загрузка сборки с проверкой бэкапов"""
-    collection_name = collection_data['name']
+def optimize_collection_loading(collection):
+    """Оптимизированная загрузка сборки"""
+    try:
+        # Проверяем, есть ли уже нужные моды
+        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+        if not os.path.exists(mods_dir):
+            os.makedirs(mods_dir, exist_ok=True)
 
-    # 1. Проверяем наличие бэкапа
-    backup_info = check_backup_exists(collection_name)
+        existing_mods = set(f for f in os.listdir(mods_dir) if f.endswith('.jar'))
+        needed_mods = set()
 
-    if backup_info["exists"]:
-        # Показываем пользователю информацию о бэкапе
-        response = messagebox.askyesno(
-            "Бэкап найден",
-            f"Для сборки '{collection_name}' найден бэкап:\n\n"
-            f"• Размер: {backup_info['size_mb']:.1f} MB\n"
-            f"• Модов: {backup_info['mod_count']}\n"
-            f"• Создан: {backup_info['created']}\n\n"
-            f"Восстановить из бэкапа? (быстрее)\n\n"
-            f"Или загрузить заново? (медленнее, но актуальнее)"
-        )
+        # Формируем список нужных модов
+        for mod in collection["mods"]:
+            filename = mod.get("filename") or mod.get("correct_filename")
+            if filename:
+                needed_mods.add(filename)
 
-        if response:
-            # Восстанавливаем из бэкапа
-            print(f"🔄 Восстанавливаем из бэкапа...")
-            return restore_from_backup(backup_info["path"], collection_name)
-        else:
-            # Загружаем заново
-            print(f"🔄 Загружаем заново...")
-            return download_and_cache_collection(collection_data)
-    else:
-        # Бэкапа нет, загружаем
-        print(f"🔄 Бэкап не найден, загружаем...")
-        return download_and_cache_collection(collection_data)
+        # Если все моды уже есть - пропускаем загрузку
+        if needed_mods.issubset(existing_mods):
+            logger.info(f"✅ Все моды сборки '{collection['name']}' уже установлены")
+
+            # Сохраняем информацию о текущей сборке
+            info_file = os.path.join(CONFIG["minecraft_dir"], "current_collection.json")
+            try:
+                with open(info_file, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "name": collection["name"],
+                        "minecraft_version": collection["minecraft_version"],
+                        "loader": collection["loader"],
+                        "loaded_at": datetime.datetime.now().isoformat()
+                    }, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"❌ Ошибка сохранения информации о сборке: {e}")
+
+            return True
+
+        # Иначе возвращаем False, чтобы вызывающая функция знала, что нужно загружать
+        logger.info(f"🔍 Не все моды установлены, требуется загрузка")
+        return False
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка оптимизации загрузки: {e}")
+        return False
 
 
 def check_backup_exists(collection_name):
