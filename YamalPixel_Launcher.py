@@ -43,6 +43,7 @@ from ConfDir.Configs import (CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, es
 from ConfDir.Versions import (version_configs, fabric_supported_versions, neoforge_supported_versions,
                               versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions,
                               get_all_versions)
+from ConfDir.Configs import set_window_icon
 
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
@@ -99,35 +100,10 @@ def fix_python314_dll_issue():
 fix_python314_dll_issue()
 
 
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    if hasattr(sys, '_MEIPASS'):
-        base_path = sys._MEIPASS
-    else:
-        base_path = Path.home() / "YamalPixelRes"
-    return os.path.join(base_path, relative_path)
 
 
-def set_window_icon(window):
-    """Set icon for all windows"""
-    try:
-        icon_path = resource_path("icon.ico")
 
-        # Дополнительная проверка для PyInstaller
-        if not os.path.exists(icon_path):
-            # Пробуем найти в домашней директории
-            home_icon_path = Path.home() / "YamalPixelRes" / "icon.ico"
-            if os.path.exists(home_icon_path):
-                icon_path = home_icon_path
-            else:
-                print(f"Icon not found: {icon_path}")
-                return
 
-        window.iconbitmap(icon_path)
-        print(f"Icon loaded from: {icon_path}")
-
-    except Exception as e:
-        print(f"Icon error: {e}")
 
 def old_repair_with_ui():
     """Полная версия починки с UI"""

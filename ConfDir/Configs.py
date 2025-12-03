@@ -1,5 +1,39 @@
 from pathlib import Path # Для работы с путями
 import os
+import sys
+
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = Path.home() / "YamalPixelRes"
+    return os.path.join(base_path, relative_path)
+
+
+def set_window_icon(window):
+    """Set icon for all windows"""
+    try:
+        icon_path = resource_path("icon.ico")
+
+        # Дополнительная проверка для PyInstaller
+        if not os.path.exists(icon_path):
+            # Пробуем найти в домашней директории
+            home_icon_path = Path.home() / "YamalPixelRes" / "icon.ico"
+            if os.path.exists(home_icon_path):
+                icon_path = home_icon_path
+            else:
+                print(f"Icon not found: {icon_path}")
+                return
+
+        window.iconbitmap(icon_path)
+        print(f"Icon loaded from: {icon_path}")
+
+    except Exception as e:
+        print(f"Icon error: {e}")
+
 
 # Конфигурация ресурсов
 RESOURCE_DIR = Path.home() / "YamalPixelRes"

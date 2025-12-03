@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox
 import threading
 from datetime import datetime
 import time
+from ConfDir.Configs import set_window_icon
 
 # Конфигурация сервера (замените на реальный адрес вашего сервера)
 COMMUNITY_SERVER_URL = "http://90.151.59.120:8000"  # Пример адреса
@@ -233,6 +234,7 @@ def show_community_collections(parent_window, version_selector_callback=None):
     community_window = tk.Toplevel(parent_window)
     community_window.title("📚 Сборки сообщества")
     community_window.geometry("1400x800")
+    set_window_icon(community_window)
     community_window.resizable(True, True)
 
     # Центрирование окна
@@ -479,6 +481,7 @@ def show_community_collections(parent_window, version_selector_callback=None):
         # Создать окно деталей
         details_window = tk.Toplevel(community_window)
         details_window.title("Детали сборки")
+        set_window_icon(details_window)
         details_window.geometry("800x700")  # Увеличили высоту для кнопок
 
         # Центрирование
@@ -851,6 +854,7 @@ def upload_collection_dialog(parent_window):
 
     upload_window = tk.Toplevel(parent_window)
     upload_window.title("📤 Загрузить сборку")
+    set_window_icon(upload_window)
     upload_window.geometry("600x500")
 
     # Центрирование
