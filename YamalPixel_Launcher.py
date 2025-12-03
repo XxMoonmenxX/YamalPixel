@@ -2691,7 +2691,7 @@ def create_manual_backup():
     if os.path.exists(versions_dir):
         # Если папка версий пустая, создаем тестовый файл
         if not os.listdir(versions_dir):
-            test_version = os.path.join(versions_dir, "version_info.txt")
+            test_version = os.path.join(versions_dir)
             with open(test_version, "w", encoding="utf-8") as f:
                 f.write("Автоматически созданная версия для бэкапа")
             print(f"✅ Создан тестовый файл версии: {test_version}")

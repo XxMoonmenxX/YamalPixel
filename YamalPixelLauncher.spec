@@ -12,7 +12,7 @@ a = Analysis(
     ],
     hiddenimports=[
         'asyncio',
-        'asyncio.windows_events', 
+        'asyncio.windows_events',
         'pygame._freetype',
         'pygame._window',
         'psutil._psutil_windows',
@@ -49,8 +49,7 @@ exe = EXE(
     a.scripts,
     a.binaries,
     a.datas,
-    a.zipfiles,
-    a.datas,
+    [],
     name='YamalPixelLauncher',
     debug=False,
     bootloader_ignore_signals=False,
@@ -58,11 +57,12 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,  # Важно: GUI-приложение
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon='icon.ico',
+    version='version_info.txt'  # ДОБАВЬТЕ ЭТУ СТРОЧКУ
 )
