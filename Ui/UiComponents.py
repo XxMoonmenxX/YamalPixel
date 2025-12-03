@@ -679,15 +679,11 @@ class ModernVersionSelector(tk.Canvas):
         self.is_open = False
         self.master = master
 
-        # Загружаем версии из файла Versions.py
-        self.versions = self.load_versions_from_file()
+        # Инициализируем список версий
+        self.all_versions = []
 
-        # Если не удалось загрузить, используем переданный список или дефолтные
-        if not self.versions:
-            if versions_list:
-                self.versions = versions_list
-            else:
-                self.versions = ["YamalPixel", "Minecraft 1.20.1 + Fabric"]
+        # Загружаем версии из файла Versions.py
+        self.load_all_versions()
 
         # Создаем кастомный выпадающий список
         self.dropdown_window = None
@@ -700,8 +696,8 @@ class ModernVersionSelector(tk.Canvas):
         self.dropdown_height = self.item_height * self.max_visible_items
 
         # Текущее значение
-        if self.versions:
-            self.current_value = tk.StringVar(value=self.versions[0])
+        if self.all_versions:
+            self.current_value = tk.StringVar(value=self.all_versions[0])
         else:
             self.current_value = tk.StringVar(value="YamalPixel")
 
@@ -711,32 +707,25 @@ class ModernVersionSelector(tk.Canvas):
         # Начальная отрисовка
         self.draw_selector()
 
-    def load_versions_from_file(self):
-        """Загружает версии из файла Versions.py"""
+    def load_all_versions(self):
+        """Загружает все версии: статические и пользовательские сборки"""
         try:
-            # Пробуем импортировать get_all_versions из Versions.py
+            # Используем функцию get_all_versions() из Versions.py
             from ConfDir.Versions import get_all_versions
-
-            # Получаем все версии (статические + пользовательские)
-            all_versions = get_all_versions()
-
-            print(f"✅ Загружено {len(all_versions)} версий из Versions.py")
-            return all_versions
+            self.all_versions = get_all_versions()
+            print(f"✅ Загружено {len(self.all_versions)} версий через get_all_versions()")
 
         except ImportError as e:
             print(f"❌ Ошибка импорта Versions.py: {e}")
-            # Если не удалось импортировать, пробуем получить версии из version_configs
-            try:
-                from ConfDir.Versions import version_configs
-                versions = list(version_configs.keys())
-                print(f"✅ Загружено {len(versions)} версий из version_configs")
-                return versions
-            except:
-                print("❌ Не удалось загрузить версии из Versions.py")
-                return []
+            # Запасной вариант
+            self.all_versions = ["YamalPixel", "Minecraft 1.20.1 + Fabric"]
+            print(f"📋 Используем дефолтные версии: {len(self.all_versions)}")
+
         except Exception as e:
-            print(f"❌ Ошибка при загрузке версий: {e}")
-            return []
+            print(f"❌ Ошибка при загрузке всех версий: {e}")
+            import traceback
+            traceback.print_exc()
+            self.all_versions = ["YamalPixel", "Minecraft 1.20.1 + Fabric"]
 
     def get_collection_info(self, collection_name):
         """Получает информацию о кастомной сборке из JSON файла"""
@@ -748,57 +737,36 @@ class ModernVersionSelector(tk.Canvas):
 
             print(f"🔍 Поиск сборки: {clean_name}")
 
-            # Пытаемся импортировать путь к коллекциям
+            # Ищем сборку в папке коллекций
             try:
                 from ConfDir.Configs import COLLECTIONS_CONFIG
-                collections_dir = COLLECTIONS_CONFIG.get("collections_dir", "collections")
-                print(f"📁 Директория коллекций: {collections_dir}")
+                collections_dir = COLLECTIONS_CONFIG["collections_dir"]
             except ImportError:
                 collections_dir = "collections"
-                print(f"⚠️ Не удалось импортировать COLLECTIONS_CONFIG, используем дефолт: {collections_dir}")
 
-            # Ищем файл сборки
-            collection_path = None
-            if os.path.exists(collections_dir):
-                for filename in os.listdir(collections_dir):
-                    if filename.endswith('.json'):
-                        filepath = os.path.join(collections_dir, filename)
-                        try:
-                            with open(filepath, 'r', encoding='utf-8') as f:
-                                data = json.load(f)
-
-                            if data.get('name') == clean_name:
-                                collection_path = filepath
-                                print(f"✅ Найден файл сборки: {filename}")
-                                break
-                        except Exception as e:
-                            print(f"⚠️ Ошибка чтения файла {filename}: {e}")
-
-            if collection_path and os.path.exists(collection_path):
-                with open(collection_path, 'r', encoding='utf-8') as f:
-                    collection_data = json.load(f)
-
-                # Извлекаем необходимую информацию
-                minecraft_version = collection_data.get('minecraft_version')
-                loader = collection_data.get('loader')
-
-                print(f"📊 Информация из JSON:")
-                print(f"   • Minecraft версия: {minecraft_version}")
-                print(f"   • Загрузчик: {loader}")
-                print(f"   • Название: {collection_data.get('name')}")
-
-                if not minecraft_version:
-                    print("⚠️ Не найдена версия Minecraft в JSON файле")
-                    return None, None, None
-
-                if not loader:
-                    print("⚠️ Не найден загрузчик в JSON файле")
-                    return minecraft_version, None, collection_path
-
-                return minecraft_version, loader, collection_path
-            else:
-                print(f"❌ Файл сборки '{clean_name}' не найден в {collections_dir}")
+            if not os.path.exists(collections_dir):
+                print(f"❌ Папка сборок не существует: {collections_dir}")
                 return None, None, None
+
+            for filename in os.listdir(collections_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(collections_dir, filename)
+                    try:
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+
+                        if data.get('name') == clean_name:
+                            print(f"✅ Найден файл сборки: {filename}")
+                            return (
+                                data.get('minecraft_version'),
+                                data.get('loader', 'fabric'),
+                                filepath
+                            )
+                    except Exception as e:
+                        print(f"⚠️ Ошибка чтения файла {filename}: {e}")
+
+            print(f"❌ Сборка '{clean_name}' не найдена")
+            return None, None, None
 
         except Exception as e:
             print(f"❌ Ошибка при получении информации о сборке: {e}")
@@ -920,7 +888,6 @@ class ModernVersionSelector(tk.Canvas):
                     'loader': loader
                 }
 
-    # Остальные методы остаются без изменений...
     def draw_selector(self):
         """Отрисовывает селектор версий"""
         self.delete("all")
@@ -1042,7 +1009,7 @@ class ModernVersionSelector(tk.Canvas):
         y = self.winfo_rooty() + self.height
 
         # Высота окна зависит от количества элементов
-        item_count = len(self.versions)
+        item_count = len(self.all_versions)
         window_height = min(item_count * self.item_height, self.dropdown_height) + 2
 
         self.dropdown_window.geometry(f"{self.width}x{window_height}+{x}+{y}")
@@ -1105,7 +1072,7 @@ class ModernVersionSelector(tk.Canvas):
 
     def create_dropdown_items(self):
         """Создает элементы в выпадающем списке"""
-        for idx, version in enumerate(self.versions):
+        for idx, version in enumerate(self.all_versions):
             item_frame = tk.Frame(
                 self.inner_frame,
                 bg="#3a3a3a",
@@ -1192,10 +1159,10 @@ class ModernVersionSelector(tk.Canvas):
             return
 
         try:
-            selected_index = self.versions.index(self.current_value.get())
+            selected_index = self.all_versions.index(self.current_value.get())
             y_position = selected_index * self.item_height
             visible_height = self.dropdown_height
-            total_height = len(self.versions) * self.item_height
+            total_height = len(self.all_versions) * self.item_height
 
             if y_position + self.item_height > visible_height:
                 scroll_position = (y_position - visible_height + self.item_height) / total_height
@@ -1287,7 +1254,7 @@ class ModernVersionSelector(tk.Canvas):
 
     def set(self, version):
         """Устанавливает выбранную версию"""
-        if version in self.versions:
+        if version in self.all_versions:
             self.current_value.set(version)
             self.draw_selector()
         else:
@@ -1295,16 +1262,45 @@ class ModernVersionSelector(tk.Canvas):
 
     def refresh_versions(self):
         """Обновляет список версий"""
-        old_versions = self.versions.copy()
-        self.versions = self.load_versions_from_file()
+        print("=" * 50)
+        print("🔄 НАЧАЛО ОБНОВЛЕНИЯ СПИСКА ВЕРСИЙ")
 
-        if old_versions != self.versions:
-            print(f"🔄 Список версий обновлен: {len(self.versions)} версий")
-            if self.current_value.get() not in self.versions and self.versions:
-                self.current_value.set(self.versions[0])
-            self.draw_selector()
-            return True
-        return False
+        # Сохраняем текущее выбранное значение
+        current_selection = self.current_value.get()
+        print(f"📌 Текущий выбор: {current_selection}")
+
+        # Сохраняем старый список
+        old_versions = self.all_versions.copy()
+
+        # Загружаем новые версии
+        try:
+            from ConfDir.Versions import get_all_versions
+            self.all_versions = get_all_versions()
+        except:
+            # Запасной вариант
+            self.all_versions = old_versions
+
+        print(f"📊 Было версий: {len(old_versions)} → Стало: {len(self.all_versions)}")
+
+        # Проверяем, осталось ли текущее выбранное значение в списке
+        if current_selection not in self.all_versions and self.all_versions:
+            # Если текущего значения больше нет, выбираем первое в списке
+            self.current_value.set(self.all_versions[0])
+            print(f"⚠️ Выбранная версия больше не доступна, выбрана: {self.all_versions[0]}")
+        elif current_selection in self.all_versions:
+            # Если значение осталось, восстанавливаем его
+            self.current_value.set(current_selection)
+            print(f"✅ Текущий выбор сохранен: {current_selection}")
+        else:
+            print(f"❌ Нет доступных версий!")
+
+        # Перерисовываем селектор
+        self.draw_selector()
+
+        print("✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО")
+        print("=" * 50)
+
+        return old_versions != self.all_versions
 
     def destroy(self):
         """Корректное уничтожение виджета"""

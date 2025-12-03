@@ -1,4 +1,4 @@
-CURRENT_VERSION = "0.8.301"
+CURRENT_VERSION = "0.8.4"
 
 version_configs = {
     "YamalPixel": ("1.20.1", "fabric", "0.17.2"),
@@ -261,7 +261,16 @@ def get_version_config(version_name):
 def get_all_versions():
     """Возвращает ВСЕ версии (статические + пользовательские)"""
     # Статические версии
-    all_versions = list(version_configs.keys())
+    all_versions = []
+
+    # Добавляем YamalPixel первым
+    if "YamalPixel" in version_configs:
+        all_versions.append("YamalPixel")
+
+    # Добавляем остальные статические версии
+    for version_name in version_configs.keys():
+        if version_name != "YamalPixel" and version_name not in all_versions:
+            all_versions.append(version_name)
 
     print(f"📋 Статических версий: {len(all_versions)}")
 
@@ -271,27 +280,38 @@ def get_all_versions():
         import json
         import os
 
-        collections_dir = COLLECTIONS_CONFIG["collections_dir"]
-        if os.path.exists(collections_dir):
-            for filename in os.listdir(collections_dir):
-                if filename.endswith('.json'):
-                    try:
-                        filepath = os.path.join(collections_dir, filename)
-                        with open(filepath, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
+        collections_dir = COLLECTIONS_CONFIG.get("collections_dir", "collections")
+        print(f"📁 Проверяем папку сборок: {collections_dir}")
 
+        if os.path.exists(collections_dir):
+            json_files = [f for f in os.listdir(collections_dir) if f.endswith('.json')]
+            print(f"📄 Найдено JSON файлов: {len(json_files)}")
+
+            for filename in json_files:
+                try:
+                    filepath = os.path.join(collections_dir, filename)
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+
+                    if 'name' in data:
                         collection_name = f"📦 {data['name']}"
                         if collection_name not in all_versions:
                             all_versions.append(collection_name)
                             print(f"   + Добавлена сборка: {collection_name}")
+                        else:
+                            print(f"   ⚠️ Сборка уже есть в списке: {collection_name}")
 
-                    except Exception as e:
-                        print(f"⚠️ Ошибка загрузки сборки {filename}: {e}")
+                except Exception as e:
+                    print(f"⚠️ Ошибка загрузки сборки {filename}: {e}")
+
+        else:
+            print(f"📁 Папка сборок не существует: {collections_dir}")
 
     except Exception as e:
         print(f"❌ Не удалось загрузить пользовательские сборки: {e}")
 
     print(f"📊 Всего версий: {len(all_versions)}")
+
     return all_versions
 
 

@@ -41,12 +41,14 @@ from ConfDir.Configs import (CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, es
                              get_minecraft_version, version_configs, messages, CURSEFORGE_CONFIG)
 
 from ConfDir.Versions import (version_configs, fabric_supported_versions, neoforge_supported_versions,
-                              versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions)
+                              versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions,
+                              get_all_versions)
 
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
 from Network.ModrinthLoader import ModrinthAPI
 from Network.CurseForgeLoader import CurseForgeAPI
+from Network.CommunityCollections import show_community_collections
 
 from Ui.UiComponents import (
     ModernButton,
@@ -2389,7 +2391,8 @@ def apply_session_settings(session):
             applied_count += 1
 
         # Восстанавливаем версию
-        if "version_selector" in globals() and session.get("version"):
+        if "version_selector" in globals():
+            win.after(500, version_selector.refresh_versions)
             try:
                 target_version = session["version"]
                 # Устанавливаем значение напрямую
@@ -6061,6 +6064,7 @@ version_selector = ModernVersionSelector(
     versions_list=versions,
 )
 version_selector.place(relx=0.5, rely=0.4, anchor="c")  # noqa
+win.after(2000, lambda: version_selector.refresh_versions())
 
 def refresh_versions_on_start():
     try:
@@ -6995,8 +6999,14 @@ def create_new_collection(collection_data=None, original_filename=None):
                     message += f"\n• Пропущено: {len(failed_mods)}"
                 messagebox.showinfo("Успех", message)
 
+            # ЗАКРЫВАЕМ окно сначала
             collection_window.destroy()
-            show_collection_manager()
+
+            # ПОТОМ обновляем селектор версий
+            win.after(100, lambda: update_version_selector_globally())
+
+            # И только потом показываем менеджер сборок
+            win.after(200, show_collection_manager)
 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось сохранить сборку: {e}")
@@ -7041,6 +7051,75 @@ def create_new_collection(collection_data=None, original_filename=None):
     # Фокус на окно
     collection_window.focus_force()
 
+
+def update_version_selector_globally():
+    """Глобальное обновление селектора версий"""
+    try:
+        if 'version_selector' in globals():
+            print("🔄 Обновление селектора версий...")
+            version_selector.refresh_versions()
+            print("✅ Селектор версий обновлен!")
+
+            # Также обновляем список в менеджере сборок если он открыт
+            update_collections_list()
+    except Exception as e:
+        print(f"❌ Ошибка обновления селектора версий: {e}")
+
+
+def update_collections_list():
+    """Обновляет список сборок в менеджере если он открыт"""
+    try:
+        # Проверяем есть ли открытое окно менеджера сборок
+        for widget in win.winfo_children():
+            if isinstance(widget, tk.Toplevel) and "Менеджер сборок" in widget.title():
+                # Ищем tree виджет внутри окна
+                for child in widget.winfo_children():
+                    if isinstance(child, ttk.Frame):
+                        for grandchild in child.winfo_children():
+                            if hasattr(grandchild, 'winfo_children'):
+                                for great_grandchild in grandchild.winfo_children():
+                                    if isinstance(great_grandchild, ttk.Treeview):
+                                        # Обновляем список
+                                        load_collections_into_tree(great_grandchild, widget)
+                                        return
+    except:
+        pass
+
+
+def load_collections_into_tree(tree, window):
+    """Загружает сборки в Treeview"""
+    collections_dir = COLLECTIONS_CONFIG["collections_dir"]
+
+    if not os.path.exists(collections_dir):
+        return
+
+    tree.delete(*tree.get_children())
+
+    for filename in os.listdir(collections_dir):
+        if filename.endswith('.json'):
+            filepath = os.path.join(collections_dir, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                # Добавляем в tree
+                created_date = datetime.datetime.fromtimestamp(os.path.getctime(filepath))
+                created = created_date.strftime("%d.%m.%Y")
+
+                tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        f"📦 {data['name']}",
+                        data.get('minecraft_version', 'Unknown'),
+                        data.get('loader', 'Unknown'),
+                        len(data.get('mods', [])),
+                        created,
+                    ),
+                    tags=(filename,),
+                )
+            except:
+                pass
 
 def handle_curseforge_mod(mod, collection, api, mods_dir, minecraft_version, loader_type, log_callback):
     """Обработка мода с CurseForge"""
@@ -7399,7 +7478,7 @@ def show_collection_manager():
     manager_window = tk.Toplevel(win)
     set_window_icon(manager_window)
     manager_window.title("Менеджер сборок (Бета)")
-    manager_window.geometry("1200x700")
+    manager_window.geometry("1400x700")
     manager_window.transient(win)
     manager_window.grab_set()
 
@@ -7459,40 +7538,89 @@ def show_collection_manager():
                     with open(filepath, "r", encoding="utf-8") as f:
                         data = json.load(f)
 
-                    # Проверяем структуру данных
-                    if all(
-                            field in data
-                            for field in [
-                                "name",
-                                "minecraft_version",
-                                "loader",
-                                "mod_count",
-                                "created_at",
-                            ]
-                    ):
-                        created = datetime.datetime.fromisoformat(
-                            data["created_at"]
-                        ).strftime("%d.%m.%Y")
+                    # Проверяем структуру данных - обновленная проверка
+                    required_fields = ["name", "minecraft_version", "loader"]
+
+                    if all(field in data for field in required_fields):
+                        # Получаем дату создания (разные источники могут использовать разные поля)
+                        created_date = None
+                        date_fields = ["created_at", "imported_date", "upload_date", "date_created"]
+
+                        for date_field in date_fields:
+                            if date_field in data:
+                                try:
+                                    # Обработка разных форматов даты
+                                    date_str = data[date_field]
+                                    if "T" in date_str:
+                                        # ISO формат: 2025-12-03T18:10:07.899064
+                                        created_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                    else:
+                                        # Другие форматы
+                                        created_date = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                                    break
+                                except:
+                                    continue
+
+                        # Если дата не найдена, используем текущую
+                        if created_date is None:
+                            created_date = datetime.datetime.fromtimestamp(os.path.getctime(filepath))
+
+                        # Форматируем дату
+                        created = created_date.strftime("%d.%m.%Y")
+
+                        # Получаем количество модов
+                        mod_count = data.get("mod_count", len(data.get("mods", [])))
+
+                        # Получаем загрузчик (может быть пустым)
+                        loader = data.get("loader", "Unknown")
+                        if not loader:
+                            loader = "Unknown"
+
+                        # Получаем версию
+                        version = data.get("minecraft_version", "Unknown")
+
+                        # Добавляем метку источника
+                        source = data.get("source", "local")
+                        if source == "community":
+                            name_prefix = "🌐 "
+                        elif source == "modrinth":
+                            name_prefix = "📦 "
+                        elif source == "curseforge":
+                            name_prefix = "⚡ "
+                        else:
+                            name_prefix = "💾 "
+
+                        name = data.get("name", file)
+
+                        # Добавляем в список
                         tree.insert(
                             "",
                             "end",
                             values=(
-                                data["name"],
-                                data["minecraft_version"],
-                                data["loader"],
-                                data["mod_count"],
+                                f"{name_prefix}{name}",
+                                version,
+                                loader,
+                                mod_count,
                                 created,
                             ),
                             tags=(file,),
                         )
-                    else:
-                        print(f"Неполные данные в файле {file}")
 
+                        print(f"✅ Загружена сборка: {name} (модов: {mod_count}, источник: {source})")
+
+                    else:
+                        print(f"⚠️ Неполные данные в файле {file}")
+                        print(f"   Найденные поля: {list(data.keys())}")
+                        print(f"   Отсутствуют: {[f for f in required_fields if f not in data]}")
+
+                except json.JSONDecodeError as e:
+                    print(f"❌ Ошибка JSON в файле {file}: {e}")
                 except Exception as e:
-                    print(f"Ошибка загрузки {file}: {e}")
+                    print(f"❌ Ошибка загрузки {file}: {e}", exc_info=True)
 
         except Exception as e:
             status_var.set(f"Ошибка: {e}")
+            print(f"❌ Общая ошибка загрузки сборок: {e}", exc_info=True)
 
     tree.pack(fill="both", expand=True)
     load_collections()
@@ -7536,10 +7664,25 @@ def show_collection_manager():
             if messagebox.askyesno("Подтверждение", "Удалить сборку?"):
                 try:
                     os.remove(filepath)
-                    load_collections()
+                    load_collections()  # Обновляем список в менеджере
+                    win.after(500, update_version_selector_globally)  # Обновляем селектор
                     messagebox.showinfo("Успех", "Сборка удалена")
                 except Exception as e:
                     messagebox.showerror("Ошибка", f"Не удалось удалить: {e}")
+        if "version_selector" in globals():
+            win.after(500, version_selector.refresh_versions)
+
+    def show_community_wrapper():
+        manager_window.destroy()
+        from Network.CommunityCollections import show_community_collections
+        show_community_collections(win, lambda: show_collection_manager())
+
+    ttk.Button(
+        button_frame,
+        text="🌐 Сборки сообщества",
+        command=show_community_wrapper,
+        width=18
+    ).pack(side="left", padx=5)
 
     ttk.Button(button_frame, text="🔄 Обновить", command=refresh_collections).pack(
         side="left", padx=5
@@ -7559,11 +7702,10 @@ def show_collection_manager():
     ttk.Button(
         button_frame,
         text="➕ Новая сборка",
-        command=lambda: (manager_window.destroy(), create_new_collection()),
+        command=lambda: (manager_window.destroy(),
+                         win.after(100, lambda: create_new_collection())),
     ).pack(side="right", padx=5)
-    ttk.Button(button_frame, text="❌ Закрыть", command=manager_window.destroy).pack(
-        side="right", padx=5
-    )
+
 
 def edit_collection(tree):
     """Открывает выбранную сборку для редактирования"""
@@ -7582,8 +7724,13 @@ def edit_collection(tree):
         messagebox.showerror("Ошибка", f"Не удалось открыть сборку: {e}")
         return
 
-    # Передаём данные в create_new_collection
-    create_new_collection(collection_data=data, original_filename=filename)
+    # Закрываем менеджер и открываем редактор
+    for widget in win.winfo_children():
+        if isinstance(widget, tk.Toplevel) and "Менеджер сборок" in widget.title():
+            widget.destroy()
+            break
+
+    win.after(100, lambda: create_new_collection(collection_data=data, original_filename=filename))
 # Функция загрузки сборки в игру
 def load_collection_to_game(filename):
     """Загружает сборку в игру с интеллектуальным кешированием"""
@@ -7833,6 +7980,21 @@ def initialize_collection_system():
     os.makedirs(collections_dir, exist_ok=True)
 
 
+def refresh_version_selector():
+    """Обновляет селектор версий"""
+    try:
+        if 'version_selector' in globals():
+            print("🔄 Принудительное обновление селектора версий...")
+            version_selector.refresh_versions()
+
+            # Также обновляем при запуске
+            win.after(1000, lambda: version_selector.refresh_versions())
+    except Exception as e:
+        print(f"❌ Ошибка обновления селектора: {e}")
+
+
+# Вызовите при запуске
+win.after(500, refresh_version_selector)
 
 # Запускаем инициализацию после создания окна
 
