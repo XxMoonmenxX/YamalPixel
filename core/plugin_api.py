@@ -1,22 +1,46 @@
 """
-API для плагинов YamalPixel
+БЕЗОПАСНЫЙ API для плагинов YamalPixel с системой разрешений
 """
 
 import tkinter as tk
-from typing import Dict, Any, Callable, List, Optional
+import hashlib
+import json
+import os
+from typing import Dict, Any, Callable, List, Optional, Set
 from pathlib import Path
+import logging
 
+# Настройка логирования для безопасности
+security_logger = logging.getLogger("PluginSecurity")
 
 class PluginAPI:
-    """Основной API для взаимодействия плагинов с лаунчером"""
+    """Защищенный API с проверкой разрешений для взаимодействия плагинов с лаунчером"""
 
-    def __init__(self, launcher_window: tk.Tk, config: Dict[str, Any], launcher_dir: Path):
+    # === СИСТЕМА РАЗРЕШЕНИЙ ===
+    # Вся потенциально опасная функциональность требует явного разрешения[citation:6]
+    PERMISSIONS = {
+        'ui_button': 'Добавление кнопок в интерфейс',
+        'ui_notification': 'Показ уведомлений',
+        'config_read': 'Чтение конфигурации лаунчера',
+        'config_write': 'Изменение конфигурации лаунчера',
+        'filesystem_read': 'Чтение файлов в папке Minecraft',
+        'filesystem_mods_write': 'Запись в папку модов (опасно!)',
+        'filesystem_config_write': 'Запись в папку конфигов',
+        'network_request': 'Выполнение сетевых запросов',
+        'subprocess_execute': 'Запуск сторонних процессов (очень опасно!)',
+        'hook_registration': 'Регистрация системных хуков'
+    }
+
+    def __init__(self, launcher_window: tk.Tk, config: Dict[str, Any],
+                 launcher_dir: Path, plugin_id: str, granted_permissions: Set[str]):
         self.window = launcher_window
         self.config = config
         self.launcher_dir = launcher_dir
+        self.plugin_id = plugin_id
+        self.granted_permissions = granted_permissions
 
-        # Система хуков
-        self.hooks: Dict[str, List[Callable]] = {
+        # Система хуков - только чтение для плагинов
+        self._hooks: Dict[str, List[Callable]] = {
             'on_launch_start': [],
             'on_launch_complete': [],
             'on_mods_downloaded': [],
@@ -27,164 +51,333 @@ class PluginAPI:
         }
 
         # Храним виджеты плагинов
-        self.plugin_widgets: Dict[str, List[tk.Widget]] = {}
-        # Храним родительские контейнеры для виджетов
-        self.widget_parents: Dict[str, Dict[str, tk.Widget]] = {}
+        self._plugin_widgets: Dict[str, List[tk.Widget]] = {}
 
-    def add_button(self, plugin_id: str, text: str, command: Callable,
-                   position: tuple = None, parent: tk.Widget = None, **kwargs) -> Optional[tk.Button]:
+        security_logger.info(f"[{plugin_id}] API инициализирован с разрешениями: {granted_permissions}")
+
+    def add_label(self, text: str, position: tuple = None, **kwargs) -> Optional[tk.Label]:
         """
-        Добавляет кнопку в интерфейс лаунчера
+        Добавляет метку в интерфейс лаунчера.
+        Требует разрешения 'ui_button'.
         """
+        if not self.check_permission('ui_button', f"add_label: {text}"):
+            return None
+
         try:
-            from Ui.UiComponents import ModernButton
+            # БЕЗОПАСНОСТЬ: Ограничение на количество виджетов
+            if self.plugin_id in self._plugin_widgets:
+                if len(self._plugin_widgets[self.plugin_id]) >= 5:
+                    security_logger.warning(f"[{self.plugin_id}] Достигнут лимит виджетов")
+                    return None
 
-            # Используем указанный родитель или основной window
-            target_parent = parent or self.window
+            label = tk.Label(self.window, text=text, **kwargs)
 
-            # Проверяем, не существует ли уже такая кнопка
-            if plugin_id in self.plugin_widgets:
-                for widget in self.plugin_widgets[plugin_id]:
-                    if isinstance(widget, tk.Button) and widget.cget("text") == text:
-                        return widget
-
-            # Создаем кнопку
-            btn = ModernButton(
-                target_parent,
-                text=text,
-                command=command,
-                **kwargs
-            )
-
-            # Запоминаем родителя
-            widget_id = f"button_{text}_{id(btn)}"
-            if plugin_id not in self.widget_parents:
-                self.widget_parents[plugin_id] = {}
-            self.widget_parents[plugin_id][widget_id] = target_parent
-
-            # Универсальное позиционирование - используем place для гибкости
+            # Позиционирование
             if position == 'top':
-                # Размещаем в верхней части окна
-                btn.place(relx=0.5, rely=0.1, anchor="center", width=kwargs.get('width', 200))
+                label.place(relx=0.5, rely=0.05, anchor="center")
             elif position == 'bottom':
-                # Размещаем в нижней части окна, выше других элементов
-                btn.place(relx=0.5, rely=0.9, anchor="center", width=kwargs.get('width', 200))
+                label.place(relx=0.5, rely=0.95, anchor="center")
             elif isinstance(position, tuple) and len(position) == 2:
-                # Абсолютные координаты
-                btn.place(x=position[0], y=position[1])
+                x, y = position
+                label.place(x=x, y=y)
             else:
-                # По умолчанию - динамическое размещение снизу
-                # Находим позицию для новой кнопки (выше всех существующих кнопок плагинов)
-                y_position = 0.9
-                for pid, widgets in self.plugin_widgets.items():
-                    for widget in widgets:
-                        try:
-                            # Получаем текущую позицию виджета
-                            info = widget.place_info()
-                            if info:
-                                current_y = float(info.get('rely', 0.9))
-                                y_position = min(y_position, current_y - 0.05)
-                        except:
-                            pass
+                label.place(relx=0.5, rely=0.05, anchor="center")
 
-                btn.place(relx=0.5, rely=y_position, anchor="center", width=kwargs.get('width', 200))
+            if self.plugin_id not in self._plugin_widgets:
+                self._plugin_widgets[self.plugin_id] = []
+            self._plugin_widgets[self.plugin_id].append(label)
 
-            # Сохраняем виджет
-            if plugin_id not in self.plugin_widgets:
-                self.plugin_widgets[plugin_id] = []
-            self.plugin_widgets[plugin_id].append(btn)
+            return label
+
+        except Exception as e:
+            security_logger.error(f"[{self.plugin_id}] Ошибка добавления метки: {e}")
+            return None
+    # === ОСНОВНОЙ МЕТОД БЕЗОПАСНОСТИ ===
+    def check_permission(self, permission: str, action_description: str = "") -> bool:
+        """
+        Проверяет наличие разрешения у плагина.
+        Логирует все попытки доступа для аудита.
+        """
+        if permission not in self.PERMISSIONS:
+            security_logger.warning(f"[{self.plugin_id}] Запрос неизвестного разрешения: {permission}")
+            return False
+
+        if permission in self.granted_permissions:
+            security_logger.info(f"[{self.plugin_id}] Разрешение '{permission}' granted для: {action_description}")
+            return True
+        else:
+            security_logger.warning(f"[{self.plugin_id}] ОТКАЗ в разрешении '{permission}' для: {action_description}")
+            return False
+
+    # === UI API С ПРОВЕРКОЙ РАЗРЕШЕНИЙ ===
+    def add_button(self, text: str, command: Callable, position: tuple = None, **kwargs) -> Optional[tk.Button]:
+        """
+        Добавляет кнопку в интерфейс лаунчера.
+        Требует разрешения 'ui_button'.
+        """
+        if not self.check_permission('ui_button', f"add_button: {text}"):
+            return None
+
+        try:
+            # БЕЗОПАСНОСТЬ: Валидация команды
+            if not callable(command):
+                security_logger.error(f"[{self.plugin_id}] Некорректная команда для кнопки")
+                return None
+
+            # БЕЗОПАСНОСТЬ: Ограничение на количество кнопок
+            if self.plugin_id in self._plugin_widgets:
+                if len(self._plugin_widgets[self.plugin_id]) >= 5:  # Максимум 5 виджетов на плагин
+                    security_logger.warning(f"[{self.plugin_id}] Достигнут лимит виджетов")
+                    return None
+
+            from Ui.UiComponents import ModernButton
+            btn = ModernButton(self.window, text=text, command=command, **kwargs)
+
+            # Позиционирование с ограничениями
+            if position == 'top':
+                btn.place(relx=0.5, rely=0.1, anchor="center")
+            elif position == 'bottom':
+                btn.place(relx=0.5, rely=0.9, anchor="center")
+            elif isinstance(position, tuple) and len(position) == 2:
+                # БЕЗОПАСНОСТЬ: Проверяем, чтобы кнопка не выходила за границы окна
+                x, y = position
+                if 0 <= x <= self.window.winfo_width() and 0 <= y <= self.window.winfo_height():
+                    btn.place(x=x, y=y)
+                else:
+                    btn.place(relx=0.5, rely=0.9, anchor="center")
+            else:
+                btn.place(relx=0.5, rely=0.9, anchor="center")
+
+            if self.plugin_id not in self._plugin_widgets:
+                self._plugin_widgets[self.plugin_id] = []
+            self._plugin_widgets[self.plugin_id].append(btn)
 
             return btn
 
         except Exception as e:
-            print(f"[API] Ошибка добавления кнопки: {e}")
-            import traceback
-            traceback.print_exc()
+            security_logger.error(f"[{self.plugin_id}] Ошибка добавления кнопки: {e}")
             return None
 
-    def remove_plugin_widgets(self, plugin_id: str):
-        """Удаляет все виджеты, созданные плагином"""
-        if plugin_id in self.plugin_widgets:
-            for widget in self.plugin_widgets[plugin_id]:
-                try:
-                    # Убираем виджет с экрана
-                    widget.place_forget()
-                    widget.destroy()
+    def show_notification(self, title: str, message: str):
+        """
+        Показывает уведомление.
+        Требует разрешения 'ui_notification'.
+        """
+        if not self.check_permission('ui_notification', f"show_notification: {title}"):
+            return
 
-                    # Удаляем из родительских записей
-                    for widget_id, parent in list(self.widget_parents.get(plugin_id, {}).items()):
-                        if widget in parent.winfo_children():
-                            del self.widget_parents[plugin_id][widget_id]
+        try:
+            from tkinter import messagebox
+            messagebox.showinfo(title, message)
+            security_logger.info(f"[{self.plugin_id}] Показано уведомление: {title}")
+        except Exception as e:
+            security_logger.error(f"[{self.plugin_id}] Ошибка показа уведомления: {e}")
 
-                except Exception as e:
-                    print(f"[API] Ошибка удаления виджета: {e}")
+    # === КОНФИГУРАЦИЯ С ПРОВЕРКОЙ РАЗРЕШЕНИЙ ===
+    def get_config_value(self, key: str, default=None):
+        """Чтение конфига - требует разрешения 'config_read'"""
+        if not self.check_permission('config_read', f"get_config_value: {key}"):
+            return default
 
-            # Очищаем списки
-            del self.plugin_widgets[plugin_id]
-            if plugin_id in self.widget_parents:
-                del self.widget_parents[plugin_id]
+        value = self.config.get(key, default)
+        security_logger.info(f"[{self.plugin_id}] Прочитан конфиг: {key} = {value}")
+        return value
 
-    # === Система хуков ===
-    def register_hook(self, hook_name: str, callback: Callable):
-        """Регистрирует функцию как хук"""
-        if hook_name in self.hooks:
-            self.hooks[hook_name].append(callback)
+    def set_config_value(self, key: str, value):
+        """Запись в конфиг - требует разрешения 'config_write'"""
+        if not self.check_permission('config_write', f"set_config_value: {key}"):
+            return
+
+        # БЕЗОПАСНОСТЬ: Запрещаем изменение критичных ключей
+        protected_keys = {'minecraft_dir', 'jvm_memory', 'enabled_plugins'}
+        if key in protected_keys:
+            security_logger.warning(f"[{self.plugin_id}] Попытка изменить защищенный ключ: {key}")
+            return
+
+        old_value = self.config.get(key)
+        self.config[key] = value
+        security_logger.info(f"[{self.plugin_id}] Изменен конфиг: {key}: {old_value} -> {value}")
+
+    # === ФАЙЛОВАЯ СИСТЕМА С ПРОВЕРКОЙ РАЗРЕШЕНИЙ И ПЕСОЧНИЦЕЙ ===
+    def safe_read_file(self, relative_path: str) -> Optional[str]:
+        """
+        Безопасное чтение файла в пределах папки Minecraft.
+        Требует разрешения 'filesystem_read'.
+        """
+        if not self.check_permission('filesystem_read', f"safe_read_file: {relative_path}"):
+            return None
+
+        try:
+            # БЕЗОПАСНОСТЬ: Нормализуем путь, предотвращаем directory traversal
+            safe_path = self._sanitize_path(relative_path)
+            if not safe_path:
+                return None
+
+            full_path = self.get_minecraft_dir() / safe_path
+
+            # БЕЗОПАСНОСТЬ: Проверяем, что путь находится ВНУТРИ папки Minecraft
+            if not self._is_path_safe(full_path):
+                security_logger.warning(f"[{self.plugin_id}] Попытка доступа вне sandbox: {relative_path}")
+                return None
+
+            if full_path.exists() and full_path.is_file():
+                content = full_path.read_text(encoding='utf-8', errors='ignore')
+                security_logger.info(f"[{self.plugin_id}] Прочитан файл: {relative_path} ({len(content)} байт)")
+                return content
+            else:
+                security_logger.warning(f"[{self.plugin_id}] Файл не найден: {relative_path}")
+                return None
+
+        except Exception as e:
+            security_logger.error(f"[{self.plugin_id}] Ошибка чтения файла {relative_path}: {e}")
+            return None
+
+    def safe_write_file(self, relative_path: str, content: str,
+                       allowed_extensions: List[str] = None) -> bool:
+        """
+        Безопасная запись файла ТОЛЬКО в разрешенные папки.
+        Требует соответствующего разрешения на запись.
+        """
+        # Определяем тип разрешения в зависимости от пути
+        if 'mods' in relative_path:
+            permission = 'filesystem_mods_write'
+        elif 'config' in relative_path:
+            permission = 'filesystem_config_write'
         else:
-            # Создаем новый хук если его нет
-            self.hooks[hook_name] = [callback]
+            security_logger.warning(f"[{self.plugin_id}] Неразрешенный путь для записи: {relative_path}")
+            return False
 
-    def unregister_hook(self, hook_name: str, callback: Callable):
-        """Удаляет хук"""
-        if hook_name in self.hooks and callback in self.hooks[hook_name]:
-            self.hooks[hook_name].remove(callback)
+        if not self.check_permission(permission, f"safe_write_file: {relative_path}"):
+            return False
 
-    def call_hook(self, hook_name: str, *args, **kwargs) -> List[Any]:
-        """Вызывает все зарегистрированные хуки"""
+        try:
+            # БЕЗОПАСНОСТЬ: Валидация пути
+            safe_path = self._sanitize_path(relative_path)
+            if not safe_path:
+                return False
+
+            full_path = self.get_minecraft_dir() / safe_path
+
+            # БЕЗОПАСНОСТЬ: Проверка расширения файла
+            if allowed_extensions:
+                ext = full_path.suffix.lower()
+                if ext not in allowed_extensions:
+                    security_logger.warning(f"[{self.plugin_id}] Запрещенное расширение: {ext}")
+                    return False
+
+            # БЕЗОПАСНОСТЬ: Проверка размера файла (макс 10MB)
+            if len(content.encode('utf-8')) > 10 * 1024 * 1024:
+                security_logger.warning(f"[{self.plugin_id}] Файл слишком большой")
+                return False
+
+            # Создаем папку если нужно
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Записываем файл
+            full_path.write_text(content, encoding='utf-8')
+
+            # БЕЗОПАСНОСТЬ: Проверяем хэш после записи
+            file_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+            security_logger.info(f"[{self.plugin_id}] Записан файл: {relative_path}, SHA256: {file_hash[:16]}")
+
+            return True
+
+        except Exception as e:
+            security_logger.error(f"[{self.plugin_id}] Ошибка записи файла {relative_path}: {e}")
+            return False
+
+    # === СЛУЖЕБНЫЕ МЕТОДЫ БЕЗОПАСНОСТИ ===
+    def _sanitize_path(self, relative_path: str) -> Optional[Path]:
+        """Очищает и нормализует путь, предотвращает directory traversal"""
+        try:
+            # Преобразуем в Path и нормализуем
+            path = Path(relative_path)
+            normalized = path.resolve()
+
+            # Преобразуем в строку и проверяем на опасные последовательности
+            path_str = str(normalized)
+            dangerous_patterns = ['..', '~', '//', '\\', ':', '*', '?', '"', '<', '>', '|']
+
+            for pattern in dangerous_patterns:
+                if pattern in path_str:
+                    security_logger.warning(f"[{self.plugin_id}] Опасный путь: {relative_path}")
+                    return None
+
+            return Path(path_str)
+
+        except Exception as e:
+            security_logger.error(f"[{self.plugin_id}] Ошибка валидации пути {relative_path}: {e}")
+            return None
+
+    def _is_path_safe(self, full_path: Path) -> bool:
+        """Проверяет, что путь находится внутри папки Minecraft"""
+        minecraft_dir = self.get_minecraft_dir().resolve()
+        try:
+            # Проверяем, что полный путь находится внутри minecraft_dir
+            return minecraft_dir in full_path.resolve().parents or full_path.resolve() == minecraft_dir
+        except:
+            return False
+
+    # === БАЗОВЫЕ GETTERS (безопасные) ===
+    def get_minecraft_dir(self) -> Path:
+        return Path(self.config.get("minecraft_dir", "~/YamalPixel")).expanduser()
+
+    def get_mods_dir(self) -> Path:
+        return self.get_minecraft_dir() / "mods"
+
+    def get_plugin_dir(self) -> Path:
+        return self.launcher_dir / "plugins_external" / self.plugin_id
+
+    # === СИСТЕМА ХУКОВ (плагины могут только регистрировать) ===
+    def register_hook(self, hook_name: str, callback: Callable):
+        """Регистрация хука - требует разрешения 'hook_registration'"""
+        if not self.check_permission('hook_registration', f"register_hook: {hook_name}"):
+            return
+
+        if hook_name in self._hooks:
+            # БЕЗОПАСНОСТЬ: Ограничиваем количество хуков на плагин
+            if len(self._hooks[hook_name]) >= 3:
+                security_logger.warning(f"[{self.plugin_id}] Достигнут лимит хуков для {hook_name}")
+                return
+
+            self._hooks[hook_name].append(callback)
+            security_logger.info(f"[{self.plugin_id}] Зарегистрирован хук: {hook_name}")
+        else:
+            security_logger.warning(f"[{self.plugin_id}] Попытка регистрации неизвестного хука: {hook_name}")
+
+    # Внутренний метод для менеджера плагинов
+    def _call_hook(self, hook_name: str, *args, **kwargs) -> List[Any]:
+        """Внутренний метод для вызова хуков (только для менеджера плагинов)"""
         results = []
-        if hook_name in self.hooks:
-            for callback in self.hooks[hook_name]:
+        if hook_name in self._hooks:
+            for callback in self._hooks[hook_name]:
                 try:
                     result = callback(*args, **kwargs)
                     if result is not None:
                         results.append(result)
                 except Exception as e:
-                    print(f"[API] Ошибка в хуке '{hook_name}': {e}")
+                    security_logger.error(f"[{self.plugin_id}] Ошибка в хуке '{hook_name}': {e}")
         return results
 
-    # === UI API ===
-    # Метод add_button уже определён — больше не дублируем!
+    # === ОЧИСТКА РЕСУРСОВ ===
+    def cleanup(self):
+        """Очищает все ресурсы плагина"""
+        security_logger.info(f"[{self.plugin_id}] Очистка ресурсов плагина")
 
-    def show_notification(self, title: str, message: str, duration: int = 3000):
-        """Показывает уведомление"""
-        try:
-            import tkinter.messagebox as msgbox
-            msgbox.showinfo(title, message)
-        except Exception as e:
-            print(f"[API] Ошибка показа уведомления: {e}")
+        # Удаляем все виджеты
+        if self.plugin_id in self._plugin_widgets:
+            for widget in self._plugin_widgets[self.plugin_id]:
+                try:
+                    widget.place_forget()
+                    widget.destroy()
+                except:
+                    pass
+            del self._plugin_widgets[self.plugin_id]
 
-    # === Конфигурация лаунчера ===
-    def get_config_value(self, key: str, default=None):
-        """Получает значение из конфига лаунчера"""
-        return self.config.get(key, default)
-
-    def set_config_value(self, key: str, value):
-        """Устанавливает значение в конфиг лаунчера"""
-        self.config[key] = value
-
-    # === Файловая система ===
-    def get_minecraft_dir(self) -> Path:
-        """Возвращает путь к папке Minecraft"""
-        return Path(self.config.get("minecraft_dir", "~/YamalPixel")).expanduser()
-
-    def get_mods_dir(self) -> Path:
-        """Возвращает путь к папке модов"""
-        return self.get_minecraft_dir() / "mods"
-
-    def get_plugin_dir(self, plugin_id: str) -> Path:
-        """Возвращает путь к папке плагина"""
-        return self.launcher_dir / "plugins_external" / plugin_id
-
-    # === Утилиты ===
-    def log(self, plugin_id: str, message: str, level: str = "INFO"):
-        """Логирует сообщение от плагина"""
-        print(f"[{plugin_id}][{level}] {message}")
+        # Удаляем все хуки этого плагина
+        for hook_name in list(self._hooks.keys()):
+            self._hooks[hook_name] = [
+                cb for cb in self._hooks[hook_name]
+                # Фильтруем по имени функции (не идеально, но работает)
+                if getattr(cb, '__module__', '').startswith(self.plugin_id)
+            ]

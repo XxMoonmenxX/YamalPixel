@@ -1,15 +1,16 @@
 """
-Базовый класс для всех плагинов YamalPixel
+БЕЗОПАСНЫЙ базовый класс для плагинов YamalPixel
 """
 
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Set
 from abc import ABC, abstractmethod
+import hashlib
 
 
 class PluginBase(ABC):
-    """Абстрактный базовый класс плагина"""
+    """Безопасный базовый класс плагина с проверкой разрешений"""
 
     def __init__(self):
         self.id: str = ""
@@ -17,12 +18,13 @@ class PluginBase(ABC):
         self.version: str = ""
         self.author: str = ""
         self.description: str = ""
-        self.api_version: str = "1.0"
+        self.api_version: str = "1.1"  # Обновленная версия API
         self.enabled: bool = False
+        self.permissions: Set[str] = set()  # Разрешения этого плагина[citation:6]
 
         self.plugin_dir: Optional[Path] = None
         self.manifest: Dict[str, Any] = {}
-        self.api: Optional[Any] = None  # PluginAPI будет установлен позже
+        self.api: Optional[Any] = None  # Безопасный PluginAPI
 
     @abstractmethod
     def on_enable(self):
@@ -35,12 +37,11 @@ class PluginBase(ABC):
         pass
 
     def set_api(self, api):
-        """Устанавливает API для плагина"""
-        print(f"[{self.name}] API установлен")  # Для отладки
+        """Устанавливает защищенный API для плагина"""
         self.api = api
 
     def get_config_path(self) -> Path:
-        """Возвращает путь к конфигу плагина"""
+        """Возвращает путь к конфигу плагина (в его собственной папке)"""
         if self.plugin_dir:
             return self.plugin_dir / "config.json"
         raise RuntimeError("Plugin directory not set")
@@ -53,14 +54,13 @@ class PluginBase(ABC):
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[{self.name}] Ошибка загрузки конфига: {e}")
 
-        # Возвращаем конфиг по умолчанию
         return default_config or {}
 
     def save_config(self, config: Dict):
-        """Сохраняет конфигурацию плагина"""
+        """Сохраняет конфигурацию плагина (только свою)"""
         config_path = self.get_config_path()
 
         try:
@@ -71,9 +71,9 @@ class PluginBase(ABC):
 
 
 class PluginManifest:
-    """Класс для работы с манифестом плагина"""
+    """Класс для работы с манифестом плагина с проверкой безопасности"""
 
-    REQUIRED_FIELDS = ['name', 'id', 'version', 'api_version']
+    REQUIRED_FIELDS = ['name', 'id', 'version', 'api_version', 'permissions']  # Добавлено permissions!
 
     def __init__(self, manifest_path: Path):
         self.path = manifest_path
@@ -91,47 +91,58 @@ class PluginManifest:
             raise ValueError(f"Не удалось загрузить манифест: {e}")
 
     def validate(self) -> bool:
-        """Проверяет валидность манифеста - УЛУЧШЕННАЯ ВЕРСИЯ"""
+        """Проверяет валидность манифеста с фокусом на безопасности"""
         try:
-            # Проверяем наличие всех обязательных полей
+            # 1. Проверяем наличие всех обязательных полей
             for field in self.REQUIRED_FIELDS:
                 if field not in self.data:
-                    print(f"[PluginManifest] Отсутствует поле: {field}")
+                    print(f"[PluginManifest] Отсутствует обязательное поле: {field}")
                     return False
 
-            # Проверяем тип полей
-            name = self.data.get('name')
-            plugin_id = self.data.get('id')
-            version = self.data.get('version')
-
-            if not isinstance(name, str):
-                print(f"[PluginManifest] Поле 'name' не строка: {type(name)}")
-                return False
-
+            # 2. Валидация ID плагина
+            plugin_id = self.data['id']
             if not isinstance(plugin_id, str):
-                print(f"[PluginManifest] Поле 'id' не строка: {type(plugin_id)}")
                 return False
-
-            if not isinstance(version, str):
-                print(f"[PluginManifest] Поле 'version' не строка: {type(version)}")
-                return False
-
-            # Проверяем что ID не пустой
             if not plugin_id.strip():
-                print("[PluginManifest] ID плагина пустой")
                 return False
-
-            # Проверяем формат ID (только латинские буквы, цифры, - и _)
+            # Только латинские буквы, цифры, - и _
             if not all(c.isalnum() or c in '-_' for c in plugin_id):
-                print(f"[PluginManifest] ID содержит недопустимые символы: {plugin_id}")
+                return False
+            if len(plugin_id) > 50:
                 return False
 
-            # Проверяем что версия не пустая
-            if not version.strip():
-                print("[PluginManifest] Версия плагина пустая")
+            # 3. Валидация разрешений[citation:6]
+            permissions = self.data.get('permissions', [])
+            if not isinstance(permissions, list):
                 return False
 
-            print(f"[PluginManifest] Манифест валиден: {name} ({plugin_id}) v{version}")
+            # Допустимые разрешения (должны совпадать с PluginAPI.PERMISSIONS)
+            valid_permissions = {
+                'ui_button', 'ui_notification', 'config_read', 'config_write',
+                'filesystem_read', 'filesystem_mods_write', 'filesystem_config_write',
+                'hook_registration'
+            }
+
+            for perm in permissions:
+                if perm not in valid_permissions:
+                    print(f"[PluginManifest] Неизвестное разрешение: {perm}")
+                    return False
+
+            # 4. Валидация версии API
+            api_version = self.data['api_version']
+            if not isinstance(api_version, str):
+                return False
+            # Поддерживаем только версию 1.1 (с системой разрешений)
+            if api_version != "1.1":
+                print(f"[PluginManifest] Неподдерживаемая версия API: {api_version}")
+                return False
+
+            # 5. Валидация автора (опционально)
+            author = self.data.get('author', '')
+            if author and len(author) > 100:
+                return False
+
+            print(f"[PluginManifest] Манифест валиден: {self.data['name']}")
             return True
 
         except Exception as e:
@@ -141,3 +152,11 @@ class PluginManifest:
     def get(self, key: str, default=None):
         """Получает значение из манифеста"""
         return self.data.get(key, default)
+
+    def calculate_hash(self) -> str:
+        """Вычисляет хэш манифеста для проверки целостности"""
+        try:
+            content = json.dumps(self.data, sort_keys=True, ensure_ascii=False)
+            return hashlib.sha256(content.encode('utf-8')).hexdigest()
+        except:
+            return ""

@@ -3802,8 +3802,8 @@ def runn():
             return
 
         selected_version = version_selector.get()
-        if plugin_manager and plugin_manager.api:
-            plugin_manager.api.call_hook('on_launch_start', selected_version, username_text)
+        if plugin_manager:
+            plugin_manager.call_hook('on_launch_start', selected_version, username_text)
 
         def start_game_launch_wrapper():
             """Обертка для запуска игры после подготовки"""
@@ -5909,7 +5909,7 @@ def create_new_collection(collection_data=None, original_filename=None):
 
     # Инициализируем API клиенты
     from Network.ModrinthLoader import ModrinthAPI
-    from Network.CurseForgeLoader import CurseForgeAPI
+    from Network.CurseForgeLoader import CurseForgeAPI # соединение через прокси с CurseForge API
     from ConfDir.Configs import CURSEFORGE_CONFIG, COLLECTIONS_CONFIG
 
     modrinth_api = ModrinthAPI()

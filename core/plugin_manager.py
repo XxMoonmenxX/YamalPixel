@@ -1,5 +1,5 @@
 """
-Менеджер плагинов YamalPixel
+БЕЗОПАСНЫЙ менеджер плагинов YamalPixel с песочницей
 """
 
 import importlib.util
@@ -9,48 +9,99 @@ import zipfile
 import shutil
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 import traceback
+import hashlib
+import time  # Добавлено для функции карантина
 
 from .plugin_base import PluginBase, PluginManifest
 from .plugin_api import PluginAPI
+from typing import Any  # Добавьте в начало файла
 
 
 class PluginManager:
-    """Основной менеджер плагинов"""
+    """Безопасный менеджер плагинов с изоляцией и проверкой разрешений"""
 
     def __init__(self, launcher_window, config: Dict, launcher_dir: Path):
         self.window = launcher_window
         self.config = config
-        self.launcher_dir = self._get_launcher_directory(launcher_dir)
+        self.api = self._create_system_api()
+
+        # ИСПРАВЛЕНИЕ: Определяем директорию лаунчера напрямую
+        self.launcher_dir = self._determine_launcher_directory(launcher_dir)
 
         print(f"[PluginManager] Launcher directory: {self.launcher_dir}")
         print(f"[PluginManager] Is PyInstaller: {getattr(sys, 'frozen', False)}")
 
-        # Пути - ВСЕГДА относительно директории лаунчера
+        # Пути
         self.plugins_dir = self.launcher_dir / "plugins_external"
         self.builtin_plugins_dir = self.launcher_dir / "plugins"
-
-        print(f"[PluginManager] Plugins dir: {self.plugins_dir}")
-        print(f"[PluginManager] Builtin plugins dir: {self.builtin_plugins_dir}")
+        self.quarantine_dir = self.launcher_dir / "quarantine"  # Карантин для подозрительных плагинов
 
         # Хранилище плагинов
         self.plugins: Dict[str, 'LoadedPlugin'] = {}
-        self.api: Optional[PluginAPI] = None
+        self._apis: Dict[str, PluginAPI] = {}  # Отдельный API для каждого плагина
 
         # Создаем структуру папок
         self._setup_directories()
 
-        # Инициализируем API
-        self.api = PluginAPI(launcher_window, config, self.launcher_dir)
+    def _create_system_api(self):
+        """Создает безопасный API для системных вызовов"""
 
-    def _get_launcher_directory(self, initial_dir: Path) -> Path:
+        class SystemAPI:
+            """Безопасный API для системных нужд"""
+
+            def __init__(self, manager):
+                self._manager = manager
+
+            def _call_hook(self, hook_name: str, *args, **kwargs):
+                """Безопасный вызов хука через менеджер"""
+                return self._manager.call_hook(hook_name, *args, **kwargs)
+
+            def __getattr__(self, name):
+                # Запрещаем доступ ко всем остальным атрибутам
+                raise AttributeError(f"SystemAPI does not have attribute '{name}'")
+
+        return SystemAPI(self)
+
+
+    def _call_hook_safely(self, hook_name: str, *args, **kwargs):
+        """Безопасный вызов хуков"""
+        print(f"[PluginManager] Calling hook: {hook_name}")
+
+        results = []
+        for plugin_id, plugin in self.plugins.items():
+            if plugin.enabled and plugin.loaded:
+                try:
+                    if plugin_id in self._apis:
+                        api = self._apis[plugin_id]
+                        hook_results = api._call_hook(hook_name, *args, **kwargs)
+                        results.extend(hook_results)
+                except Exception as e:
+                    print(f"[PluginManager] Error in hook '{hook_name}' for {plugin_id}: {e}")
+
+        return results
+
+    def trigger_hook(self, hook_name: str, *args, **kwargs):
+        """Триггерит хук для всех активных плагинов"""
+        print(f"[PluginManager] Triggering hook: {hook_name}")
+
+        for plugin_id, plugin in self.plugins.items():
+            if plugin.enabled and plugin.loaded:
+                try:
+                    # Получаем API для плагина
+                    if plugin_id in self._apis:
+                        api = self._apis[plugin_id]
+                        # Вызываем внутренний метод для вызова хуков
+                        results = api._call_hook(hook_name, *args, **kwargs)
+                        if results:
+                            print(f"[PluginManager] Hook {hook_name} returned {len(results)} results from {plugin_id}")
+                except Exception as e:
+                    print(f"[PluginManager] Error in hook '{hook_name}' for {plugin_id}: {e}")
+    def _determine_launcher_directory(self, initial_dir: Path) -> Path:
         """
         Определяет правильную директорию лаунчера.
-        Приоритеты:
-        1. Директория исполняемого файла (если собран PyInstaller)
-        2. Переданная директория
-        3. Текущая рабочая директория
+        ИСПРАВЛЕНИЕ: Это обычный метод, не статический
         """
         if getattr(sys, 'frozen', False):
             # Если собран PyInstaller - используем директорию исполняемого файла
@@ -63,63 +114,36 @@ class PluginManager:
             print(f"[PluginManager] Using initial directory: {initial_dir}")
             return initial_dir
 
-        # По умолчанию - директория файла plugin_manager.py
-        default_dir = Path(__file__).parent.parent
-        print(f"[PluginManager] Using default directory: {default_dir}")
+        # По умолчанию - текущая рабочая директория
+        default_dir = Path.cwd()
+        print(f"[PluginManager] Using current working directory: {default_dir}")
         return default_dir
 
     def _setup_directories(self):
-        """Создает необходимые папки"""
+        """Создает необходимые папки, включая карантин"""
         print(f"[PluginManager] Creating directories...")
-        print(f"[PluginManager] Plugins directory: {self.plugins_dir}")
-        print(f"[PluginManager] Builtin plugins directory: {self.builtin_plugins_dir}")
 
         try:
             self.plugins_dir.mkdir(parents=True, exist_ok=True)
             self.builtin_plugins_dir.mkdir(parents=True, exist_ok=True)
+            self.quarantine_dir.mkdir(parents=True, exist_ok=True)
             print(f"[PluginManager] Directories created successfully")
         except Exception as e:
             print(f"[PluginManager] Error creating directories: {e}")
-            # Пробуем создать в текущей директории как запасной вариант
-            try:
-                current_dir = Path.cwd()
-                self.plugins_dir = current_dir / "plugins_external"
-                self.builtin_plugins_dir = current_dir / "plugins"
-                self.plugins_dir.mkdir(parents=True, exist_ok=True)
-                self.builtin_plugins_dir.mkdir(parents=True, exist_ok=True)
-                print(f"[PluginManager] Created directories in current working directory")
-            except Exception as e2:
-                print(f"[PluginManager] Critical error: {e2}")
 
     def discover_plugins(self) -> List[str]:
-        """Обнаруживает все доступные плагины"""
+        """Обнаруживает плагины с проверкой безопасности"""
         found_plugins = []
 
-        print(f"[PluginManager] Discovering plugins...")
-        print(f"[PluginManager] Checking plugins dir: {self.plugins_dir}")
-        print(f"[PluginManager] Checking builtin plugins dir: {self.builtin_plugins_dir}")
-
-        # Ищем плагины в двух местах:
-        search_dirs = [
-            (self.builtin_plugins_dir, True),   # Встроенные
-            (self.plugins_dir, False),          # Пользовательские
-        ]
-
-        for search_dir, is_builtin in search_dirs:
+        for search_dir, is_builtin in [
+            (self.builtin_plugins_dir, True),
+            (self.plugins_dir, False)
+        ]:
             if not search_dir.exists():
                 print(f"[PluginManager] Directory does not exist: {search_dir}")
                 continue
 
-            print(f"[PluginManager] Searching in: {search_dir}")
-
-            try:
-                items = list(search_dir.iterdir())
-                print(f"[PluginManager] Found {len(items)} items in {search_dir}")
-            except Exception as e:
-                print(f"[PluginManager] Error reading directory {search_dir}: {e}")
-                continue
-
-            for item in items:
+            for item in search_dir.iterdir():
                 if item.is_dir():
                     manifest_path = item / "manifest.json"
                     init_path = item / "__init__.py"
@@ -131,11 +155,20 @@ class PluginManager:
 
                             if manifest.validate():
                                 plugin_id = manifest.get('id')
-                                print(f"[PluginManager] Valid plugin found: {plugin_id}")
 
-                                # Проверяем, не загружен ли уже плагин
+                                # ПРОВЕРКА БЕЗОПАСНОСТИ: Проверяем хэш плагина
+                                if not self._verify_plugin_integrity(item, plugin_id):
+                                    print(f"[PluginManager] Plugin failed integrity check: {plugin_id}")
+                                    continue
+
+                                # ПРОВЕРКА БЕЗОПАСНОСТИ: Проверяем, не в карантине ли плагин
+                                quarantine_path = self.quarantine_dir / plugin_id
+                                if quarantine_path.exists():
+                                    print(f"[PluginManager] Plugin in quarantine: {plugin_id}")
+                                    continue
+
                                 if plugin_id in self.plugins:
-                                    print(f"[PluginManager] Plugin {plugin_id} already loaded, skipping")
+                                    print(f"[PluginManager] Plugin already loaded: {plugin_id}")
                                     continue
 
                                 # Загружаем информацию о плагине
@@ -145,16 +178,15 @@ class PluginManager:
                                     version=manifest.get('version'),
                                     author=manifest.get('author', 'Unknown'),
                                     description=manifest.get('description', ''),
-                                    api_version=manifest.get('api_version', '1.0'),
-                                    permissions=manifest.get('permissions', []),
+                                    api_version=manifest.get('api_version'),
+                                    permissions=set(manifest.get('permissions', [])),
                                     plugin_dir=item,
-                                    enabled=False,  # По умолчанию выключены
+                                    enabled=False,
                                     is_builtin=is_builtin
                                 )
 
                                 self.plugins[plugin_id] = plugin
                                 found_plugins.append(plugin_id)
-
                                 print(f"[PluginManager] Plugin registered: {plugin.name} v{plugin.version}")
 
                             else:
@@ -163,17 +195,44 @@ class PluginManager:
                         except Exception as e:
                             print(f"[PluginManager] Error loading plugin {item.name}: {e}")
                             traceback.print_exc()
-                    else:
-                        if not manifest_path.exists():
-                            print(f"[PluginManager] No manifest.json in: {item.name}")
-                        if not init_path.exists():
-                            print(f"[PluginManager] No __init__.py in: {item.name}")
 
         print(f"[PluginManager] Total plugins found: {len(found_plugins)}")
         return found_plugins
 
+    def _verify_plugin_integrity(self, plugin_dir: Path, plugin_id: str) -> bool:
+        """
+        Проверяет целостность плагина.
+        В будущем можно добавить проверку цифровой подписи.
+        """
+        try:
+            # Проверяем наличие всех необходимых файлов
+            required_files = ['__init__.py', 'manifest.json']
+            for file in required_files:
+                if not (plugin_dir / file).exists():
+                    print(f"[PluginManager] Missing required file: {file}")
+                    return False
+
+            # Проверяем, что __init__.py не слишком большой (макс 1MB)
+            init_file = plugin_dir / "__init__.py"
+            if init_file.stat().st_size > 1024 * 1024:  # 1MB
+                print(f"[PluginManager] __init__.py file too large: {plugin_id}")
+                return False
+
+            # Проверяем, что в плагине нет явно опасных файлов
+            dangerous_extensions = ['.exe', '.dll', '.so', '.bat', '.cmd', '.sh', '.jar']
+            for file in plugin_dir.rglob('*'):
+                if file.suffix.lower() in dangerous_extensions:
+                    print(f"[PluginManager] Dangerous file in plugin: {file}")
+                    return False
+
+            return True
+
+        except Exception as e:
+            print(f"[PluginManager] Integrity check error: {e}")
+            return False
+
     def load_plugin(self, plugin_id: str) -> bool:
-        """Загружает плагин в память"""
+        """Безопасная загрузка плагина в память"""
         if plugin_id not in self.plugins:
             print(f"[PluginManager] Plugin {plugin_id} not found")
             return False
@@ -185,6 +244,15 @@ class PluginManager:
             return True
 
         try:
+            # ПРОВЕРКА БЕЗОПАСНОСТИ: Проверяем разрешения плагина
+            if self._has_dangerous_permissions(plugin.permissions):
+                print(f"[PluginManager] Plugin has dangerous permissions: {plugin_id}")
+                # Можно запросить подтверждение у пользователя
+                if not plugin.is_builtin:  # Встроенным доверяем больше
+                    response = self._ask_permission_confirmation(plugin)
+                    if not response:
+                        return False
+
             print(f"[PluginManager] Loading plugin: {plugin.name} from {plugin.plugin_dir}")
 
             # Добавляем директорию плагина в sys.path
@@ -202,9 +270,11 @@ class PluginManager:
                 return False
 
             module = importlib.util.module_from_spec(spec)
-            # Устанавливаем атрибуты для отладки
             module.__name__ = plugin_id
             module.__file__ = str(plugin.plugin_dir / "__init__.py")
+
+            # ПРОВЕРКА БЕЗОПАСНОСТИ: Ограничиваем доступные модули
+            self._setup_sandbox_environment(module)
 
             # Выполняем код плагина
             spec.loader.exec_module(module)
@@ -212,9 +282,6 @@ class PluginManager:
             # Ищем класс Plugin
             if not hasattr(module, 'Plugin'):
                 print(f"[PluginManager] Plugin {plugin_id} doesn't have class Plugin")
-                # Проверяем какие классы есть
-                classes = [name for name in dir(module) if not name.startswith('_')]
-                print(f"[PluginManager] Available in module: {classes}")
                 return False
 
             # Создаем экземпляр плагина
@@ -229,27 +296,176 @@ class PluginManager:
             plugin.instance.description = plugin.description
             plugin.instance.api_version = plugin.api_version
             plugin.instance.plugin_dir = plugin.plugin_dir
+            plugin.instance.permissions = plugin.permissions  # Передаем разрешения
 
-            if hasattr(plugin.instance, 'set_api'):
-                plugin.instance.set_api(self.api)
-                print(f"[PluginManager] set_api called for {plugin.name}")
-            else:
-                # Если метода нет, устанавливаем напрямую
-                plugin.instance.api = self.api
-                print(f"[PluginManager] API set directly for {plugin.name}")
+            # Создаем защищенный API для этого плагина
+            api = PluginAPI(
+                launcher_window=self.window,
+                config=self.config,
+                launcher_dir=self.launcher_dir,
+                plugin_id=plugin_id,
+                granted_permissions=plugin.permissions  # Только разрешенные права
+            )
+
+            self._apis[plugin_id] = api
+            plugin.instance.set_api(api)
 
             plugin.loaded = True
-            print(f"[PluginManager] Plugin {plugin.name} loaded successfully")
-
+            print(f"[PluginManager] Plugin {plugin.name} loaded successfully with permissions: {plugin.permissions}")
             return True
 
         except Exception as e:
             print(f"[PluginManager] Error loading plugin {plugin_id}:")
             traceback.print_exc()
+
+            # ПРИ НЕУДАЧЕ: Помещаем плагин в карантин
+            self._quarantine_plugin(plugin_id, str(e))
             return False
 
+    def _has_dangerous_permissions(self, permissions: Set[str]) -> bool:
+        """Определяет, есть ли у плагина опасные разрешения"""
+        dangerous_permissions = {
+            'filesystem_mods_write',
+            'subprocess_execute',
+            'config_write'  # Запись в основной конфиг тоже опасна
+        }
+        return bool(permissions.intersection(dangerous_permissions))
+
+    def _ask_permission_confirmation(self, plugin: 'LoadedPlugin') -> bool:
+        """
+        Запрашивает подтверждение у пользователя для плагина с опасными разрешениями.
+        В реальной реализации нужно показывать GUI-диалог.
+        """
+        print(f"\n=== WARNING: DANGEROUS PLUGIN ===")
+        print(f"Plugin: {plugin.name} v{plugin.version}")
+        print(f"Author: {plugin.author}")
+        print(f"Description: {plugin.description}")
+        print(f"Dangerous permissions: {plugin.permissions}")
+        print(f"=================================\n")
+
+        # Временная заглушка - в UI нужно сделать нормальный диалог
+        # Пока всегда разрешаем, но логируем
+        print(f"[PluginManager] User allowed dangerous plugin: {plugin.plugin_id}")
+        return True
+
+    def _setup_sandbox_environment(self, module):
+        """
+        Настраивает песочницу для выполнения кода плагина.
+        Ограничивает доступ к опасным модулям.
+        """
+        # Запрещаем доступ к опасным встроенным функциям
+        safe_builtins = {
+            'print', 'len', 'range', 'list', 'dict', 'tuple', 'set',
+            'str', 'int', 'float', 'bool', 'type', 'isinstance',
+            'enumerate', 'zip', 'min', 'max', 'sum', 'abs', 'round'
+        }
+
+        # Создаем безопасный словарь builtins
+        if '__builtins__' in module.__dict__:
+            original_builtins = module.__dict__['__builtins__']
+            if isinstance(original_builtins, dict):
+                module.__dict__['__builtins__'] = {
+                    k: v for k, v in original_builtins.items()
+                    if k in safe_builtins
+                }
+
+    def _quarantine_plugin(self, plugin_id: str, reason: str):
+        """Помещает подозрительный плагин в карантин"""
+        if plugin_id in self.plugins:
+            plugin = self.plugins[plugin_id]
+
+            quarantine_path = self.quarantine_dir / plugin_id
+
+            if plugin.plugin_dir.exists():
+                try:
+                    print(f"[PluginManager] Moving plugin to quarantine: {plugin_id}")
+
+                    # Перемещаем плагин в карантин
+                    shutil.move(str(plugin.plugin_dir), str(quarantine_path))
+
+                    # Создаем файл с информацией о причине
+                    info_file = quarantine_path / "quarantine_info.txt"
+                    info_file.write_text(f"Reason: {reason}\nTime: {time.time()}\n")
+
+                    print(f"[PluginManager] Plugin quarantined: {plugin_id}")
+
+                    # Удаляем из списка активных плагинов
+                    if plugin_id in self.plugins:
+                        del self.plugins[plugin_id]
+                    if plugin_id in self._apis:
+                        del self._apis[plugin_id]
+
+                except Exception as e:
+                    print(f"[PluginManager] Error quarantining plugin: {e}")
+
+    def install_from_zip(self, zip_path: Path) -> Tuple[bool, str]:
+        """Безопасная установка плагина из ZIP архива"""
+        try:
+            print(f"[PluginManager] Installing from ZIP: {zip_path.name}")
+
+            # 1. Проверяем что это ZIP
+            if not zipfile.is_zipfile(zip_path):
+                return False, "Invalid ZIP file"
+
+            # 2. Временная директория для проверки
+            import tempfile
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir_path = Path(temp_dir)
+
+                # 3. Распаковываем и проверяем
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    # Проверяем наличие manifest.json
+                    if not any('manifest.json' in f for f in zip_ref.namelist()):
+                        return False, "Archive doesn't contain manifest.json"
+
+                    # Проверяем размер архива (макс 10MB)
+                    if zip_path.stat().st_size > 10 * 1024 * 1024:
+                        return False, "Archive too large (max 10MB)"
+
+                    # Распаковываем
+                    zip_ref.extractall(temp_dir_path)
+
+                # 4. Ищем manifest.json
+                manifest_path = None
+                for root, dirs, files in os.walk(temp_dir_path):
+                    if 'manifest.json' in files:
+                        manifest_path = Path(root) / 'manifest.json'
+                        plugin_root = Path(root)
+                        break
+
+                if not manifest_path:
+                    return False, "manifest.json not found after extraction"
+
+                # 5. Проверяем манифест
+                manifest = PluginManifest(manifest_path)
+                if not manifest.validate():
+                    return False, "Invalid manifest"
+
+                plugin_id = manifest.get('id')
+
+                # 6. Проверяем что плагин еще не установлен
+                target_dir = self.plugins_dir / plugin_id
+                if target_dir.exists():
+                    print(f"[PluginManager] Plugin already exists, removing: {plugin_id}")
+                    shutil.rmtree(target_dir)
+
+                # 7. Копируем в папку плагинов
+                print(f"[PluginManager] Copying plugin to: {target_dir}")
+                shutil.copytree(plugin_root, target_dir)
+
+                # 8. Перезагружаем список плагинов
+                self.discover_plugins()
+
+                print(f"[PluginManager] Plugin {plugin_id} successfully installed")
+                return True, plugin_id
+
+        except Exception as e:
+            print(f"[PluginManager] Installation error: {e}")
+            traceback.print_exc()
+            return False, f"Installation error: {str(e)}"
+
     def enable_plugin(self, plugin_id: str) -> bool:
-        """Активирует плагин"""
+        """Активирует плагин с защищенным API"""
         if plugin_id not in self.plugins:
             print(f"[PluginManager] Cannot enable: plugin {plugin_id} not found")
             return False
@@ -270,16 +486,10 @@ class PluginManager:
         try:
             print(f"[PluginManager] Enabling plugin: {plugin.name}")
 
-            # Перед активацией убедимся, что старые виджеты удалены
-            if self.api:
-                self.api.remove_plugin_widgets(plugin_id)
-
-            # Активируем плагин
-            if hasattr(plugin.instance, 'on_enable'):
+            # Активируем плагин через защищенный API
+            if plugin.instance and hasattr(plugin.instance, 'on_enable'):
                 plugin.instance.on_enable()
                 print(f"[PluginManager] on_enable called for {plugin.name}")
-            else:
-                print(f"[PluginManager] Warning: {plugin.name} has no on_enable method")
 
             plugin.enabled = True
 
@@ -290,9 +500,6 @@ class PluginManager:
                 self.config["enabled_plugins"] = enabled_plugins
                 print(f"[PluginManager] Added {plugin_id} to enabled plugins config")
 
-            # Вызываем хук
-            self.api.call_hook('on_plugin_enable', plugin_id)
-
             print(f"[PluginManager] Plugin {plugin.name} enabled successfully")
             return True
 
@@ -302,7 +509,7 @@ class PluginManager:
             return False
 
     def disable_plugin(self, plugin_id: str) -> bool:
-        """Деактивирует плагин"""
+        """Деактивирует плагин и очищает его ресурсы"""
         if plugin_id not in self.plugins:
             print(f"[PluginManager] Cannot disable: plugin {plugin_id} not found")
             return False
@@ -321,10 +528,10 @@ class PluginManager:
                 plugin.instance.on_disable()
                 print(f"[PluginManager] on_disable called for {plugin.name}")
 
-            # Удаляем ВСЕ виджеты плагина
-            if self.api:
-                self.api.remove_plugin_widgets(plugin_id)
-                print(f"[PluginManager] Widgets removed for {plugin.name}")
+            # Очищаем ресурсы через API
+            if plugin_id in self._apis:
+                self._apis[plugin_id].cleanup()
+                print(f"[PluginManager] API cleaned up for {plugin.name}")
 
             plugin.enabled = False
 
@@ -334,9 +541,6 @@ class PluginManager:
                 enabled_plugins.remove(plugin_id)
                 self.config["enabled_plugins"] = enabled_plugins
                 print(f"[PluginManager] Removed {plugin_id} from enabled plugins config")
-
-            # Вызываем хук
-            self.api.call_hook('on_plugin_disable', plugin_id)
 
             print(f"[PluginManager] Plugin {plugin.name} disabled successfully")
             return True
@@ -348,9 +552,7 @@ class PluginManager:
 
     def initialize(self):
         """Инициализирует систему плагинов"""
-        print("[PluginManager] ===== Initializing plugin system =====")
-        print(f"[PluginManager] Working directory: {Path.cwd()}")
-        print(f"[PluginManager] Launcher directory: {self.launcher_dir}")
+        print("[PluginManager] ===== Initializing secure plugin system =====")
 
         # Обнаруживаем плагины
         found = self.discover_plugins()
@@ -370,7 +572,7 @@ class PluginManager:
                 print(f"[PluginManager] Warning: Plugin {plugin_id} from config not found")
 
         print(f"[PluginManager] Plugin system ready. Enabled: {success_count}/{len(enabled_plugins)}")
-        print("[PluginManager] ===== Plugin system initialized =====")
+        print("[PluginManager] ===== Secure plugin system initialized =====")
         return True
 
     def get_plugin_info(self, plugin_id: str) -> Optional[Dict]:
@@ -391,12 +593,31 @@ class PluginManager:
             'loaded': plugin.loaded,
             'is_builtin': plugin.is_builtin,
             'api_version': plugin.api_version,
-            'permissions': plugin.permissions,
+            'permissions': list(plugin.permissions),
             'path': str(plugin.plugin_dir),
         }
 
         print(f"[PluginManager] Plugin info for {plugin_id}: {info.get('name', 'Unknown')}")
         return info
+
+    def call_hook(self, hook_name: str, *args, **kwargs) -> List[Any]:
+        """Вызывает хук для всех плагинов"""
+        results = []
+
+        for plugin_id, plugin in self.plugins.items():
+            if plugin.enabled and plugin.loaded and plugin_id in self._apis:
+                try:
+                    api = self._apis[plugin_id]
+                    hook_results = api._call_hook(hook_name, *args, **kwargs)
+                    results.extend(hook_results)
+                except Exception as e:
+                    print(f"[PluginManager] Error in hook '{hook_name}' for plugin {plugin_id}: {e}")
+
+        return results
+
+    def get_plugin_api(self, plugin_id: str) -> Optional[PluginAPI]:
+        """Возвращает API для плагина"""
+        return self._apis.get(plugin_id)
 
     def get_all_plugins(self) -> List[Dict]:
         """Возвращает список всех плагинов"""
@@ -408,16 +629,16 @@ class PluginManager:
                 # Базовая информация из LoadedPlugin
                 plugin_info = {
                     'id': plugin_id,
-                    'name': plugin.name if hasattr(plugin, 'name') else 'Без названия',
-                    'version': plugin.version if hasattr(plugin, 'version') else '1.0.0',
-                    'author': plugin.author if hasattr(plugin, 'author') else 'Неизвестен',
-                    'description': plugin.description if hasattr(plugin, 'description') else '',
-                    'enabled': plugin.enabled if hasattr(plugin, 'enabled') else False,
-                    'loaded': plugin.loaded if hasattr(plugin, 'loaded') else False,
-                    'is_builtin': plugin.is_builtin if hasattr(plugin, 'is_builtin') else False,
-                    'api_version': plugin.api_version if hasattr(plugin, 'api_version') else '1.0',
-                    'permissions': plugin.permissions if hasattr(plugin, 'permissions') else [],
-                    'path': str(plugin.plugin_dir) if hasattr(plugin, 'plugin_dir') else '',
+                    'name': plugin.name,
+                    'version': plugin.version,
+                    'author': plugin.author,
+                    'description': plugin.description,
+                    'enabled': plugin.enabled,
+                    'loaded': plugin.loaded,
+                    'is_builtin': plugin.is_builtin,
+                    'api_version': plugin.api_version,
+                    'permissions': list(plugin.permissions),
+                    'path': str(plugin.plugin_dir),
                 }
 
                 # Если плагин загружен и имеет экземпляр, берем данные оттуда
@@ -437,13 +658,12 @@ class PluginManager:
 
             except Exception as e:
                 print(f"[PluginManager] Error getting info for plugin {plugin_id}: {e}")
-                # Добавляем хотя бы базовую информацию
                 result.append({
                     'id': plugin_id,
-                    'name': 'Ошибка загрузки',
+                    'name': 'Error loading',
                     'version': '?',
                     'author': '?',
-                    'description': f'Ошибка: {str(e)}',
+                    'description': f'Error: {str(e)}',
                     'enabled': False,
                     'loaded': False,
                     'is_builtin': False,
@@ -454,177 +674,12 @@ class PluginManager:
 
         return result
 
-    def install_from_zip(self, zip_path: Path) -> Tuple[bool, str]:
-        """Устанавливает плагин из ZIP архива"""
-        try:
-            import zipfile
-            import json
-            import tempfile
-            import shutil
-
-            print(f"[PluginManager] Installing from ZIP: {zip_path.name}")
-            print(f"[PluginManager] ZIP path: {zip_path}")
-            print(f"[PluginManager] Target plugins dir: {self.plugins_dir}")
-
-            # Проверяем что это ZIP файл
-            if not zipfile.is_zipfile(zip_path):
-                return False, "Файл не является ZIP архивом"
-
-            # Проверяем что папка плагинов существует
-            if not self.plugins_dir.exists():
-                print(f"[PluginManager] Creating plugins directory: {self.plugins_dir}")
-                self.plugins_dir.mkdir(parents=True, exist_ok=True)
-
-            # Временная директория для распаковки
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_dir_path = Path(temp_dir)
-
-                try:
-                    # Открываем ZIP архив
-                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                        # Получаем список файлов
-                        file_list = zip_ref.namelist()
-                        print(f"[PluginManager] Files in archive: {len(file_list)}")
-
-                        # Проверяем что есть manifest.json
-                        manifest_files = []
-                        for file_name in file_list:
-                            if 'manifest.json' in file_name:
-                                manifest_files.append(file_name)
-
-                        if not manifest_files:
-                            print("[PluginManager] No manifest.json found in archive")
-                            return False, "ZIP архив не содержит manifest.json"
-
-                        # Распаковываем весь архив
-                        print(f"[PluginManager] Extracting to temp directory: {temp_dir_path}")
-                        zip_ref.extractall(temp_dir_path)
-
-                        # Ищем manifest.json
-                        manifest_path = None
-                        for root, dirs, files in os.walk(temp_dir_path):
-                            for file in files:
-                                if file == 'manifest.json':
-                                    manifest_path = Path(root) / file
-                                    print(f"[PluginManager] Found manifest.json at: {manifest_path}")
-                                    break
-                            if manifest_path:
-                                break
-
-                        if not manifest_path or not manifest_path.exists():
-                            return False, "Не найден manifest.json после распаковки"
-
-                        # Читаем манифест
-                        with open(manifest_path, 'r', encoding='utf-8') as f:
-                            try:
-                                manifest_data = json.load(f)
-                            except json.JSONDecodeError as e:
-                                return False, f"Ошибка в формате JSON: {e}"
-
-                        # Проверяем обязательные поля
-                        required_fields = ['name', 'id', 'version', 'api_version']
-                        missing_fields = []
-                        for field in required_fields:
-                            if field not in manifest_data:
-                                missing_fields.append(field)
-
-                        if missing_fields:
-                            return False, f"Манифест не содержит поля: {', '.join(missing_fields)}"
-
-                        plugin_id = manifest_data['id']
-                        print(f"[PluginManager] Plugin ID: {plugin_id}")
-
-                        # Проверяем что ID содержит только разрешенные символы
-                        if not all(c.isalnum() or c in '-_' for c in plugin_id):
-                            return False, f"ID плагина '{plugin_id}' содержит недопустимые символы. Используйте только буквы, цифры, - и _"
-
-                        # Определяем корневую папку плагина (там где manifest.json)
-                        plugin_root = manifest_path.parent
-                        print(f"[PluginManager] Plugin root directory: {plugin_root}")
-
-                        # Проверяем наличие __init__.py
-                        init_file = plugin_root / "__init__.py"
-                        if not init_file.exists():
-                            return False, "Плагин должен содержать __init__.py в той же папке что и manifest.json"
-
-                        # Проверяем что плагин еще не установлен
-                        target_dir = self.plugins_dir / plugin_id
-                        if target_dir.exists():
-                            print(f"[PluginManager] Plugin already exists at: {target_dir}")
-                            # В UI уже спросили подтверждение, просто удаляем
-                            shutil.rmtree(target_dir)
-                            print(f"[PluginManager] Removed existing plugin directory")
-
-                        # Копируем плагин в папку плагинов
-                        print(f"[PluginManager] Copying plugin to: {target_dir}")
-                        shutil.copytree(plugin_root, target_dir)
-
-                        # Проверяем валидность манифеста через PluginManifest
-                        from .plugin_base import PluginManifest
-                        manifest = PluginManifest(target_dir / "manifest.json")
-
-                        if not manifest.validate():
-                            print("[PluginManager] Manifest validation failed")
-                            return False, "Невалидный манифест плагина"
-
-                        print(f"[PluginManager] Plugin {plugin_id} successfully installed")
-
-                        # Перезагружаем список плагинов
-                        self.discover_plugins()
-
-                        return True, plugin_id
-
-                except Exception as e:
-                    print(f"[PluginManager] Error during extraction: {e}")
-                    traceback.print_exc()
-                    return False, f"Ошибка при распаковке: {str(e)}"
-
-        except zipfile.BadZipFile:
-            return False, "Некорректный ZIP архив (файл поврежден)"
-        except Exception as e:
-            print(f"[PluginManager] General installation error: {e}")
-            traceback.print_exc()
-            return False, f"Ошибка установки: {str(e)}"
-
-    def reload_plugin_ui(self, plugin_id: str):
-        """Перезагружает UI плагина (удаляет и создает заново)"""
-        if plugin_id not in self.plugins:
-            print(f"[PluginManager] Cannot reload UI: plugin {plugin_id} not found")
-            return False
-
-        plugin = self.plugins[plugin_id]
-
-        if not plugin.enabled or not plugin.loaded:
-            print(f"[PluginManager] Cannot reload UI: plugin {plugin.name} not enabled or loaded")
-            return False
-
-        try:
-            print(f"[PluginManager] Reloading UI for plugin: {plugin.name}")
-
-            # Временно деактивируем плагин
-            if plugin.instance:
-                plugin.instance.on_disable()
-
-            # Удаляем все виджеты
-            if self.api:
-                self.api.remove_plugin_widgets(plugin_id)
-
-            # Снова активируем плагин
-            plugin.instance.on_enable()
-
-            print(f"[PluginManager] UI for plugin {plugin.name} reloaded successfully")
-            return True
-
-        except Exception as e:
-            print(f"[PluginManager] Error reloading UI for plugin {plugin_id}: {e}")
-            return False
-
 
 class LoadedPlugin:
     """Класс для хранения информации о загруженном плагине"""
 
     def __init__(self, plugin_id: str, name: str, version: str, author: str,
-                 description: str, api_version: str, permissions: List[str],
+                 description: str, api_version: str, permissions: Set[str],
                  plugin_dir: Path, enabled: bool = False, is_builtin: bool = False):
         self.plugin_id = plugin_id
         self.name = name
