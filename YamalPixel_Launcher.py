@@ -64,7 +64,7 @@ import tempfile # Для временных файлов
 
 import logging # Для логирования
 
-# Уникальная система модифицирования лаунчера через модули
+# Уникальная система модифицирования лаунчера через модули(плагины)! /plugins_external/названиепапки/__init__.py и Manifest.json
 # Добавляем текущую директорию в путь
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
