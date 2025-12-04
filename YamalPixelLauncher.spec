@@ -9,6 +9,8 @@ a = Analysis(
         ('ConfDir', 'ConfDir'),
         ('Network', 'Network'),
         ('Ui', 'Ui'),
+        ('core', 'core'),
+        ('ui_plugins','ui_plugins'),
     ],
     hiddenimports=[
         'asyncio',

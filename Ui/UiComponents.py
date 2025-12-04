@@ -1262,12 +1262,10 @@ class ModernVersionSelector(tk.Canvas):
 
     def refresh_versions(self):
         """Обновляет список версий"""
-        print("=" * 50)
-        print("🔄 НАЧАЛО ОБНОВЛЕНИЯ СПИСКА ВЕРСИЙ")
+
 
         # Сохраняем текущее выбранное значение
         current_selection = self.current_value.get()
-        print(f"📌 Текущий выбор: {current_selection}")
 
         # Сохраняем старый список
         old_versions = self.all_versions.copy()
@@ -1280,25 +1278,20 @@ class ModernVersionSelector(tk.Canvas):
             # Запасной вариант
             self.all_versions = old_versions
 
-        print(f"📊 Было версий: {len(old_versions)} → Стало: {len(self.all_versions)}")
 
         # Проверяем, осталось ли текущее выбранное значение в списке
         if current_selection not in self.all_versions and self.all_versions:
             # Если текущего значения больше нет, выбираем первое в списке
             self.current_value.set(self.all_versions[0])
-            print(f"⚠️ Выбранная версия больше не доступна, выбрана: {self.all_versions[0]}")
         elif current_selection in self.all_versions:
             # Если значение осталось, восстанавливаем его
             self.current_value.set(current_selection)
-            print(f"✅ Текущий выбор сохранен: {current_selection}")
         else:
             print(f"❌ Нет доступных версий!")
 
         # Перерисовываем селектор
         self.draw_selector()
 
-        print("✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО")
-        print("=" * 50)
 
         return old_versions != self.all_versions
 

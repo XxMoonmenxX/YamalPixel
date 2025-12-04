@@ -64,6 +64,34 @@ import tempfile # Для временных файлов
 
 import logging # Для логирования
 
+
+# Добавляем текущую директорию в путь
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
+
+# Пробуем импортировать систему плагинов
+try:
+    from core.plugin_manager import PluginManager
+    from ui_plugins.plugin_manager_ui import PluginManagerUI
+    PLUGIN_SYSTEM_AVAILABLE = True
+    print("✅ Система плагинов доступна")
+except ImportError as e:
+    print(f"⚠️ Система плагинов недоступна: {e}")
+    PLUGIN_SYSTEM_AVAILABLE = False
+    PluginManager = None
+    PluginManagerUI = None
+
+# Глобальные переменные для плагинов
+plugin_manager = None
+plugin_manager_ui = None
+
+
+
+
+
+
+
+
 # Настройка логгера
 logger = logging.getLogger("YamalPixel")
 handler = logging.StreamHandler()
@@ -2284,6 +2312,55 @@ win.title("YamPixel")
 LAST_SESSION_FILE = os.path.expanduser("~/YamalPixel/last_session.json")
 
 
+# После создания окна win, ДО создания остального интерфейса:
+
+def initialize_plugin_system():
+    """Инициализирует систему плагинов"""
+    global plugin_manager, plugin_manager_ui
+
+    if not PLUGIN_SYSTEM_AVAILABLE:
+        print("⚠️ Система плагинов отключена")
+        return False
+
+    try:
+        # Получаем путь к лаунчеру
+        launcher_dir = Path(__file__).parent
+
+        # Создаем менеджер плагинов
+        plugin_manager = PluginManager(win, CONFIG, launcher_dir)
+
+        # Инициализируем
+        if plugin_manager.initialize():
+            # Создаем UI менеджера
+            plugin_manager_ui = PluginManagerUI(win, plugin_manager)
+            print("✅ Система плагинов инициализирована")
+            return True
+        else:
+            print("❌ Не удалось инициализировать систему плагинов")
+            return False
+
+    except Exception as e:
+        print(f"❌ Ошибка инициализации системы плагинов: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+# Вызываем инициализацию после создания окна
+win.after(100, initialize_plugin_system)
+
+
+
+
+
+
+
+
+
+
+
+
+
 def load_last_session():
     """Загружает последние настройки"""
     try:
@@ -2409,6 +2486,20 @@ def on_closing():
     """При закрытии окна"""
     print("💾 Сохраняем настройки...")
     save_last_session()
+
+    # Останавливаем систему плагинов
+    if plugin_manager:
+        try:
+            # Деактивируем все плагины
+            for plugin_id in list(plugin_manager.plugins.keys()):
+                plugin = plugin_manager.plugins[plugin_id]
+                if plugin.enabled and plugin.instance:
+                    try:
+                        plugin.instance.on_disable()
+                    except Exception as e:
+                        print(f"[PluginManager] Ошибка деактивации {plugin_id}: {e}")
+        except Exception as e:
+            print(f"[PluginManager] Ошибка завершения работы: {e}")
 
     # Останавливаем музыку
     try:
@@ -3689,6 +3780,26 @@ settings_menu.configure(
 )
 menu_bar.add_cascade(label="Инструменты", menu=settings_menu)
 
+if PLUGIN_SYSTEM_AVAILABLE:
+    plugin_menu = tk.Menu(menu_bar, tearoff=0)
+    menu_bar.add_cascade(label="🔌 Плагины", menu=plugin_menu)
+
+    plugin_menu.add_command(
+        label="Менеджер плагинов",
+        command=lambda: plugin_manager_ui.show() if plugin_manager_ui else None
+    )
+
+    plugin_menu.add_separator()
+
+    plugin_menu.add_command(
+        label="Обновить плагины",
+        command=lambda: plugin_manager.discover_plugins() if plugin_manager else None
+    )
+
+
+
+
+
 
 # ОБНОВЛЕННЫЕ ПУНКТЫ МЕНЮ:
 settings_menu.add_command(
@@ -3840,6 +3951,10 @@ def show_background_menu():
 
     # Показываем меню под курсором
     menu.tk_popup(win.winfo_pointerx(), win.winfo_pointery())
+
+
+
+
 
 
 
@@ -4034,12 +4149,15 @@ def runn():
     if not is_valid:
         messagebox.showerror("Ошибка", f"❌ Некорректное имя пользователя!\n\n{error_msg}")
         return
+
     try:
         if not username.get().strip() or username.get().strip() == "Введите никнейм":
             messagebox.showerror("Ошибка", "❌ Введите имя пользователя!")
             return
 
         selected_version = version_selector.get()
+        if plugin_manager and plugin_manager.api:
+            plugin_manager.api.call_hook('on_launch_start', selected_version, username_text)
 
         def start_game_launch_wrapper():
             """Обертка для запуска игры после подготовки"""
@@ -4066,6 +4184,8 @@ def runn():
         messagebox.showerror(
             "Критическая ошибка", f"❌ Не удалось подготовить запуск:\n\n{str(e)}"
         )
+
+
 
 
 def install_required_components(version_name):
@@ -5763,6 +5883,15 @@ def monitor_game_process(process):
         except:
             pass
 
+        if plugin_manager and plugin_manager.api:
+            try:
+                # Попробуйте получить время из контекста или используйте 0
+                session_time = 0  # Или рассчитайте из другого места
+
+                plugin_manager.api.call_hook('on_launch_complete', session_time)
+            except NameError:
+                # Если session_time не определен, передаем None
+                plugin_manager.api.call_hook('on_launch_complete', None)
         print("[LAUNCHER] Процесс Minecraft завершен")
 
     except Exception as e:
