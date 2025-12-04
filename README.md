@@ -1,1 +1,1 @@
-Мой лаунчер для моего сервера и не только.
+Python minecraft launcher
