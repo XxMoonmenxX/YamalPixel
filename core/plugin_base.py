@@ -91,63 +91,37 @@ class PluginManifest:
             raise ValueError(f"Не удалось загрузить манифест: {e}")
 
     def validate(self) -> bool:
-        """Проверяет валидность манифеста с фокусом на безопасности"""
-        try:
-            # 1. Проверяем наличие всех обязательных полей
-            for field in self.REQUIRED_FIELDS:
-                if field not in self.data:
-                    print(f"[PluginManifest] Отсутствует обязательное поле: {field}")
-                    return False
+        """Проверяет, что плагин имеет максимум 2 файла"""
+        plugin_dir = self.path.parent
 
-            # 2. Валидация ID плагина
-            plugin_id = self.data['id']
-            if not isinstance(plugin_id, str):
-                return False
-            if not plugin_id.strip():
-                return False
-            # Только латинские буквы, цифры, - и _
-            if not all(c.isalnum() or c in '-_' for c in plugin_id):
-                return False
-            if len(plugin_id) > 50:
-                return False
+        # 1. Считаем файлы в директории плагина
+        all_files = list(plugin_dir.iterdir())
 
-            # 3. Валидация разрешений[citation:6]
-            permissions = self.data.get('permissions', [])
-            if not isinstance(permissions, list):
-                return False
-
-            # Допустимые разрешения (должны совпадать с PluginAPI.PERMISSIONS)
-            valid_permissions = {
-                'ui_button', 'ui_notification', 'config_read', 'config_write',
-                'filesystem_read', 'filesystem_mods_write', 'filesystem_config_write',
-                'hook_registration'
-            }
-
-            for perm in permissions:
-                if perm not in valid_permissions:
-                    print(f"[PluginManifest] Неизвестное разрешение: {perm}")
-                    return False
-
-            # 4. Валидация версии API
-            api_version = self.data['api_version']
-            if not isinstance(api_version, str):
-                return False
-            # Поддерживаем только версию 1.1 (с системой разрешений)
-            if api_version != "1.1":
-                print(f"[PluginManifest] Неподдерживаемая версия API: {api_version}")
-                return False
-
-            # 5. Валидация автора (опционально)
-            author = self.data.get('author', '')
-            if author and len(author) > 100:
-                return False
-
-            print(f"[PluginManifest] Манифест валиден: {self.data['name']}")
-            return True
-
-        except Exception as e:
-            print(f"[PluginManifest] Ошибка валидации: {e}")
+        # 2. Допускаем только 2 файла: __init__.py и manifest.json
+        if len(all_files) > 2:
+            print(f"[SECURITY] Plugin has {len(all_files)} files, max allowed: 2")
             return False
+
+        # 3. Проверяем обязательные файлы
+        required_files = {'__init__.py', 'manifest.json'}
+        actual_files = {f.name for f in all_files}
+
+        if not required_files.issubset(actual_files):
+            print(f"[SECURITY] Missing required files. Have: {actual_files}, Need: {required_files}")
+            return False
+
+        # 4. Запрещаем поддиректории
+        if any(f.is_dir() for f in all_files):
+            print(f"[SECURITY] Subdirectories are not allowed")
+            return False
+
+        # 5. Запрещаем любые другие файлы кроме разрешенных двух
+        if actual_files - required_files:
+            print(f"[SECURITY] Extra files not allowed: {actual_files - required_files}")
+            return False
+
+        print(f"[PluginManifest] Plugin structure OK: {actual_files}")
+        return True
 
     def get(self, key: str, default=None):
         """Получает значение из манифеста"""

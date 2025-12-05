@@ -132,7 +132,7 @@ class PluginManager:
             print(f"[PluginManager] Error creating directories: {e}")
 
     def discover_plugins(self) -> List[str]:
-        """Обнаруживает плагины с проверкой безопасности"""
+        """Обнаруживает плагины с учетом автоматически создаваемого __pycache__"""
         found_plugins = []
 
         for search_dir, is_builtin in [
@@ -145,90 +145,238 @@ class PluginManager:
 
             for item in search_dir.iterdir():
                 if item.is_dir():
+                    print(f"[PluginManager] Found plugin directory: {item.name}")
+
+                    # === БЕЗОПАСНОСТЬ: ПРОВЕРКА С УЧЕТОМ __pycache__ ===
+                    try:
+                        # Получаем ВСЕ элементы в директории
+                        all_items = list(item.iterdir())
+
+                        # Разделяем файлы и папки
+                        files = [f for f in all_items if f.is_file()]
+                        dirs = [d for d in all_items if d.is_dir()]
+
+                        # ПРОВЕРКА 1.1: Проверяем поддиректории
+                        # Допускаем ТОЛЬКО __pycache__ и ТОЛЬКО если он пустой
+                        allowed_dirs = {'__pycache__'}
+                        found_dirs = {d.name for d in dirs}
+
+                        if found_dirs - allowed_dirs:
+                            # Есть запрещенные директории
+                            bad_dirs = found_dirs - allowed_dirs
+                            print(f"[SECURITY] Plugin {item.name} contains forbidden directories: {bad_dirs}")
+                            continue
+
+                        # ПРОВЕРКА 1.2: Если есть __pycache__, проверяем его содержимое
+                        pycache_dir = item / "__pycache__"
+                        if pycache_dir.exists():
+                            # Проверяем что в __pycache__ только .pyc файлы для этого плагина
+                            pycache_files = list(pycache_dir.rglob('*.pyc'))
+                            pycache_count = len(pycache_files)
+
+                            if pycache_count > 5:  # Разумный лимит
+                                print(f"[SECURITY] Too many .pyc files in __pycache__: {pycache_count}")
+                                continue
+
+                            # Очищаем старый кэш если нужно
+                            self._cleanup_old_pycache(pycache_dir)
+
+                        # ПРОВЕРКА 1.3: Должно быть ровно 2 обычных файла
+                        if len(files) != 2:
+                            print(f"[SECURITY] Plugin {item.name} must have exactly 2 files, got {len(files)}")
+                            continue
+
+                        # ПРОВЕРКА 1.4: Проверяем имена файлов
+                        file_names = {f.name for f in files}
+                        required_files = {'__init__.py', 'manifest.json'}
+
+                        if file_names != required_files:
+                            print(
+                                f"[SECURITY] Plugin {item.name} wrong files: {file_names}, expected: {required_files}")
+                            continue
+
+                        print(f"[SECURITY] Plugin {item.name} passed file count check")
+
+                    except Exception as e:
+                        print(f"[SECURITY] Error checking plugin structure {item.name}: {e}")
+                        continue
+
+                    # === ПРОВЕРКА №2 - ПРОВЕРКА МАНИФЕСТА ===
                     manifest_path = item / "manifest.json"
                     init_path = item / "__init__.py"
 
-                    if manifest_path.exists() and init_path.exists():
-                        try:
-                            print(f"[PluginManager] Found plugin candidate: {item.name}")
-                            manifest = PluginManifest(manifest_path)
+                    if not manifest_path.exists():
+                        print(f"[SECURITY] Manifest missing: {item.name}")
+                        continue
 
-                            if manifest.validate():
-                                plugin_id = manifest.get('id')
+                    if not init_path.exists():
+                        print(f"[SECURITY] __init__.py missing: {item.name}")
+                        continue
 
-                                # ПРОВЕРКА БЕЗОПАСНОСТИ: Проверяем хэш плагина
-                                if not self._verify_plugin_integrity(item, plugin_id):
-                                    print(f"[PluginManager] Plugin failed integrity check: {plugin_id}")
-                                    continue
+                    try:
+                        print(f"[PluginManager] Loading manifest: {item.name}")
+                        manifest = PluginManifest(manifest_path)
 
-                                # ПРОВЕРКА БЕЗОПАСНОСТИ: Проверяем, не в карантине ли плагин
-                                quarantine_path = self.quarantine_dir / plugin_id
-                                if quarantine_path.exists():
-                                    print(f"[PluginManager] Plugin in quarantine: {plugin_id}")
-                                    continue
+                        if manifest.validate():
+                            plugin_id = manifest.get('id')
 
-                                if plugin_id in self.plugins:
-                                    print(f"[PluginManager] Plugin already loaded: {plugin_id}")
-                                    continue
+                            # ПРОВЕРКА №3 - ЦЕЛОСТНОСТЬ ПЛАГИНА
+                            if not self._verify_plugin_integrity(item, plugin_id):
+                                print(f"[SECURITY] Plugin failed integrity check: {plugin_id}")
+                                continue
 
-                                # Загружаем информацию о плагине
-                                plugin = LoadedPlugin(
-                                    plugin_id=plugin_id,
-                                    name=manifest.get('name'),
-                                    version=manifest.get('version'),
-                                    author=manifest.get('author', 'Unknown'),
-                                    description=manifest.get('description', ''),
-                                    api_version=manifest.get('api_version'),
-                                    permissions=set(manifest.get('permissions', [])),
-                                    plugin_dir=item,
-                                    enabled=False,
-                                    is_builtin=is_builtin
-                                )
+                            # ПРОВЕРКА №4 - КАРАНТИН
+                            quarantine_path = self.quarantine_dir / plugin_id
+                            if quarantine_path.exists():
+                                print(f"[SECURITY] Plugin in quarantine: {plugin_id}")
+                                continue
 
-                                self.plugins[plugin_id] = plugin
-                                found_plugins.append(plugin_id)
-                                print(f"[PluginManager] Plugin registered: {plugin.name} v{plugin.version}")
+                            if plugin_id in self.plugins:
+                                print(f"[PluginManager] Plugin already loaded: {plugin_id}")
+                                continue
 
-                            else:
-                                print(f"[PluginManager] Invalid manifest in: {item.name}")
+                            # ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ - ЗАГРУЖАЕМ
+                            plugin = LoadedPlugin(
+                                plugin_id=plugin_id,
+                                name=manifest.get('name'),
+                                version=manifest.get('version'),
+                                author=manifest.get('author', 'Unknown'),
+                                description=manifest.get('description', ''),
+                                api_version=manifest.get('api_version'),
+                                permissions=set(manifest.get('permissions', [])),
+                                plugin_dir=item,
+                                enabled=False,
+                                is_builtin=is_builtin
+                            )
 
-                        except Exception as e:
-                            print(f"[PluginManager] Error loading plugin {item.name}: {e}")
-                            traceback.print_exc()
+                            self.plugins[plugin_id] = plugin
+                            found_plugins.append(plugin_id)
+                            print(f"[PluginManager] Plugin registered: {plugin.name} v{plugin.version}")
 
-        print(f"[PluginManager] Total plugins found: {len(found_plugins)}")
+                        else:
+                            print(f"[PluginManager] Invalid manifest in: {item.name}")
+
+                    except Exception as e:
+                        print(f"[PluginManager] Error loading plugin {item.name}: {e}")
+                        traceback.print_exc()
+
+            print(f"[PluginManager] Scanned {search_dir}: {len(found_plugins)} plugins found")
+
+        print(f"[PluginManager] Total plugins discovered: {len(found_plugins)}")
+
+        # Логируем список найденных плагинов
+        for plugin_id in found_plugins:
+            if plugin_id in self.plugins:
+                plugin = self.plugins[plugin_id]
+                print(f"  - {plugin.name} ({plugin_id}) v{plugin.version}")
+
         return found_plugins
 
     def _verify_plugin_integrity(self, plugin_dir: Path, plugin_id: str) -> bool:
         """
         Проверяет целостность плагина.
-        В будущем можно добавить проверку цифровой подписи.
+        Усиленная проверка для плагинов с 2 файлами.
         """
         try:
-            # Проверяем наличие всех необходимых файлов
-            required_files = ['__init__.py', 'manifest.json']
-            for file in required_files:
-                if not (plugin_dir / file).exists():
-                    print(f"[PluginManager] Missing required file: {file}")
-                    return False
+            print(f"[SECURITY] Running integrity check for: {plugin_id}")
 
-            # Проверяем, что __init__.py не слишком большой (макс 1MB)
-            init_file = plugin_dir / "__init__.py"
-            if init_file.stat().st_size > 1024 * 1024:  # 1MB
-                print(f"[PluginManager] __init__.py file too large: {plugin_id}")
+            # ПРОВЕРКА 1: Рекурсивный подсчет файлов (на всякий случай)
+            def count_files_recursive(path: Path) -> int:
+                count = 0
+                for item in path.rglob('*'):
+                    if item.is_file():
+                        count += 1
+                return count
+
+            total_files = count_files_recursive(plugin_dir)
+            if total_files > 2:
+                print(f"[SECURITY] Plugin {plugin_id} has {total_files} files (recursive count)")
                 return False
 
-            # Проверяем, что в плагине нет явно опасных файлов
-            dangerous_extensions = ['.exe', '.dll', '.so', '.bat', '.cmd', '.sh', '.jar']
-            for file in plugin_dir.rglob('*'):
-                if file.suffix.lower() in dangerous_extensions:
-                    print(f"[PluginManager] Dangerous file in plugin: {file}")
+            # ПРОВЕРКА 2: Проверка размеров файлов
+            init_py = plugin_dir / "__init__.py"
+            manifest = plugin_dir / "manifest.json"
+
+            # Максимальные размеры
+            MAX_INIT_SIZE = 50 * 1024  # 50KB
+            MAX_MANIFEST_SIZE = 5 * 1024  # 5KB
+
+            if init_py.stat().st_size > MAX_INIT_SIZE:
+                print(f"[SECURITY] __init__.py too large: {init_py.stat().st_size} bytes")
+                return False
+
+            if manifest.stat().st_size > MAX_MANIFEST_SIZE:
+                print(f"[SECURITY] manifest.json too large: {manifest.stat().st_size} bytes")
+                return False
+
+            # ПРОВЕРКА 3: Содержимое __init__.py
+            try:
+                content = init_py.read_text(encoding='utf-8', errors='ignore')
+
+                # Запрещенные паттерны (безопасность)
+                DANGEROUS_PATTERNS = [
+                    'import os',
+                    'import subprocess',
+                    'import shutil',
+                    'import sys',
+                    '__import__',
+                    'exec(',
+                    'eval(',
+                    'compile(',
+                    'open(',
+                    'write(',
+                    'system(',
+                    'popen(',
+                    'rm -rf',
+                    'format(',
+                    'f"'  # f-строки могут быть опасны
+                ]
+
+                content_lower = content.lower()
+                for pattern in DANGEROUS_PATTERNS:
+                    if pattern in content_lower:
+                        print(f"[SECURITY] Dangerous pattern in __init__.py: {pattern}")
+                        return False
+
+                # ПРОВЕРКА 4: Должен содержать класс Plugin
+                if 'class Plugin' not in content and 'class Plugin(' not in content:
+                    print(f"[SECURITY] No 'class Plugin' found in __init__.py")
                     return False
 
+                # ПРОВЕРКА 5: Должен наследоваться от PluginBase
+                if 'PluginBase' not in content and 'plugin_base.PluginBase' not in content:
+                    print(f"[SECURITY] Plugin must inherit from PluginBase")
+                    return False
+
+            except Exception as e:
+                print(f"[SECURITY] Error reading __init__.py: {e}")
+                return False
+
+            # ПРОВЕРКА 6: Содержимое manifest.json
+            try:
+                with open(manifest, 'r', encoding='utf-8') as f:
+                    manifest_data = json.load(f)
+
+                # Проверяем наличие ID
+                if 'id' not in manifest_data:
+                    print(f"[SECURITY] Manifest missing 'id' field")
+                    return False
+
+                # Проверяем что ID совпадает
+                if manifest_data.get('id') != plugin_id:
+                    print(f"[SECURITY] Manifest ID mismatch: {manifest_data.get('id')} != {plugin_id}")
+                    return False
+
+            except Exception as e:
+                print(f"[SECURITY] Error reading manifest.json: {e}")
+                return False
+
+            print(f"[SECURITY] Integrity check PASSED for: {plugin_id}")
             return True
 
         except Exception as e:
-            print(f"[PluginManager] Integrity check error: {e}")
+            print(f"[SECURITY] Integrity check error for {plugin_id}: {e}")
+            traceback.print_exc()
             return False
 
     def load_plugin(self, plugin_id: str) -> bool:
