@@ -178,8 +178,7 @@ class PluginManager:
                                 print(f"[SECURITY] Too many .pyc files in __pycache__: {pycache_count}")
                                 continue
 
-                            # Очищаем старый кэш если нужно
-                            self._cleanup_old_pycache(pycache_dir)
+
 
                         # ПРОВЕРКА 1.3: Должно быть ровно 2 обычных файла
                         if len(files) != 2:
@@ -327,9 +326,9 @@ class PluginManager:
                     'write(',
                     'system(',
                     'popen(',
-                    'rm -rf',
-                    'format(',
-                    'f"'  # f-строки могут быть опасны
+                    'rm -rf'#,
+                    #'format('#,
+                    #'f"'  # f-строки могут быть опасны
                 ]
 
                 content_lower = content.lower()

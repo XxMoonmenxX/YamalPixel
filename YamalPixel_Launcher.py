@@ -59,6 +59,7 @@ from Ui.UiComponents import (
     ModernOnlineButton,
     ModernVersionSelector
 )
+from Ui.DependencyAnalyzer import DependencyAnalyzerUI
 import tempfile # Для временных файлов
 
 
@@ -4374,9 +4375,8 @@ def start_game_launch():
     """Основной процесс запуска игры (вынесен из runn)"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label, CURRENT_ACTIVE_COLLECTION
     selected_version = version_selector.get()
+
     try:
-
-
         # Проверяем, является ли выбранная версия кастомной сборкой
         if selected_version.startswith("📦 "):
             collection_name = selected_version[2:]
@@ -4386,20 +4386,61 @@ def start_game_launch():
                 messagebox.showerror("Ошибка", f"Не удалось загрузить сборку: {collection_name}")
                 return
 
-            # Настраиваем кастомную сборку
-            if not setup_custom_collection_launch(collection_data):
-                messagebox.showerror("Ошибка", "Не удалось настроить сборку")
-                return
+            # НОВОЕ: Проверяем зависимости перед запуском
+            check_result = check_collection_dependencies(collection_data)
+            if check_result and check_result.get("has_missing_deps", False):
+                missing_count = len(check_result.get("missing_deps", []))
+                required_count = len(check_result.get("required_deps", []))
 
-            # Устанавливаем настройки из сборки
-            CONFIG["version"] = collection_data["minecraft_version"]
-            CONFIG["loader_type"] = collection_data["loader"]
+                msg = f"🎯 Сборка: {collection_data['name']}\n"
+                msg += f"📊 Модов: {len(collection_data.get('mods', []))}\n"
+                msg += f"🔗 Зависимостей: {required_count}\n"
+                msg += f"❌ Отсутствует: {missing_count}\n\n"
 
+                if missing_count > 0:
+                    msg += "Недостающие зависимости:\n"
+                    for i, dep in enumerate(check_result["missing_deps"][:5]):  # Показываем первые 5
+                        msg += f"  • {dep.get('name', 'Unknown')}\n"
+
+                    if missing_count > 5:
+                        msg += f"  ... и еще {missing_count - 5}\n\n"
+
+                msg += "📥 Загрузить недостающие зависимости автоматически?"
+
+                answer = messagebox.askyesno("Проверка зависимостей", msg)
+                if answer:
+                    # Загружаем недостающие зависимости
+                    if not download_missing_dependencies_ui(
+                            check_result["missing_deps"],
+                            collection_data,
+                            on_complete=lambda: proceed_with_launch(selected_version, collection_data)
+                    ):
+                        return  # Пользователь отменил загрузку
+                else:
+                    # Пользователь отказался от загрузки зависимостей
+                    confirm = messagebox.askyesno(
+                        "Предупреждение",
+                        "Запуск без зависимостей может вызвать ошибки!\n\n"
+                        "Вы уверены, что хотите продолжить?"
+                    )
+                    if not confirm:
+                        return
+            else:
+                # Зависимости в порядке, продолжаем запуск
+                proceed_with_launch(selected_version, collection_data)
         else:
-            # Переключаемся на ванильную версию
+            # Для ванильных версий просто запускаем
             switch_to_vanilla_version(selected_version)
+            proceed_with_launch(selected_version, None)
+
     except Exception as e:
         messagebox.showerror("Ошибка", f"Ошибка при настройке версии: {e}")
+        set_launch_state(False)
+
+
+def proceed_with_launch(selected_version, collection_data=None):
+    """Продолжает процесс запуска после проверки зависимостей"""
+    global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME, progress_window, status_label, details_label, timer_label, log_label
 
     # НЕМЕДЛЕННО блокируем интерфейс
     set_launch_state(True)
@@ -4430,6 +4471,17 @@ def start_game_launch():
     ttk.Label(
         header_frame, text="🚀 Запуск YamalPixel", font=("Comfortaa", 16, "bold")
     ).pack()
+
+    # Если это сборка, показываем её имя
+    if selected_version.startswith("📦 "):
+        collection_name = selected_version[2:]
+        ttk.Label(
+            header_frame,
+            text=f"Сборка: {collection_name}",
+            font=("Comfortaa", 11),
+            foreground="#4ECDC4",
+        ).pack(pady=(5, 0))
+
     ttk.Label(
         header_frame,
         text="Подготовка к запуску игры...",
@@ -4543,13 +4595,13 @@ def start_game_launch():
                     print(f"🎮 Запускаем кастомную сборку: {collection_name}")
                     print(f"📊 Модов в сборке: {len(collection_data.get('mods', []))}")
 
-                    # Устанавливаем настройки из сборки
-                    minecraft_version = collection_data['minecraft_version']
-                    loader_type = collection_data['loader']
+                    # НОВОЕ: Показываем информацию о зависимостях
+                    if collection_data.get("dependencies_analyzed", False):
+                        deps_info = collection_data.get("dependency_info", {})
+                        required_deps = deps_info.get("required_dependencies", 0)
 
-                    # Можно добавить специальную логику для сборок
-                    if collection_data.get('requires_extra_setup'):
-                        setup_custom_collection(collection_data)
+                        if required_deps > 0:
+                            update_ui_log(f"📦 Сборка с {required_deps} зависимостями")
 
             # Валидация имени пользователя
             if not username_text or username_text == "Введите никнейм":
@@ -4800,13 +4852,31 @@ def start_game_launch():
             time.sleep(3)
             if is_minecraft_process_running(process):
                 win.after(2000, lambda: progress_window.destroy() if progress_window.winfo_exists() else None)
+
+                # НОВОЕ: Показываем информацию о сборке при успешном запуске
+                if selected_version.startswith("📦 "):
+                    collection_name = selected_version[2:]
+                    collection_data = load_collection_data(collection_name)
+
+                    if collection_data and collection_data.get("dependencies_analyzed", False):
+                        deps_info = collection_data.get("dependency_info", {})
+                        required_deps = deps_info.get("required_dependencies", 0)
+
+                        msg = f"✅ Игра успешно запущена!\n\n"
+                        msg += f"• Сборка: {collection_name}\n"
+                        msg += f"• Игрок: {username_text}\n"
+                        msg += f"• Зависимости: {required_deps} обязательных\n"
+                        msg += f"• Память: {selected_memory}"
+                    else:
+                        msg = f"✅ Игра успешно запущена!\n\n• Игрок: {username_text}\n• Сборка: {collection_name}\n• Память: {selected_memory}"
+                else:
+                    msg = f"✅ Игра успешно запущена!\n\n• Игрок: {username_text}\n• Версия: {selected_version}\n• Память: {selected_memory}"
+
                 win.after(
                     100,
-                    lambda: messagebox.showinfo(
-                        "Успешный запуск",
-                        f"✅ Игра успешно запущена!\n\n• Игрок: {username_text}\n• Версия: {selected_version}\n• Память: {selected_memory}"
-                    ),
+                    lambda: messagebox.showinfo("Успешный запуск", msg),
                 )
+
                 threading.Thread(target=monitor_game_process, args=(process,), daemon=True).start()
             else:
                 raise Exception("Процесс Minecraft завершился сразу")
@@ -4821,6 +4891,170 @@ def start_game_launch():
 
     # Запускаем основной процесс в потоке
     threading.Thread(target=execute_launch_process, daemon=True).start()
+
+
+def check_collection_dependencies(collection_data):
+    """
+    Проверяет зависимости сборки
+    Возвращает словарь с результатами проверки
+    """
+    try:
+        from ConfDir.dependency_utils import check_missing_dependencies
+
+        missing_deps = check_missing_dependencies(collection_data)
+        required_deps = []
+
+        # Собираем все обязательные зависимости из сборки
+        for mod in collection_data.get("mods", []):
+            for dep in mod.get("resolved_dependencies", []):
+                if dep.get("dependency_type") == "required":
+                    required_deps.append(dep)
+
+        return {
+            "has_missing_deps": len(missing_deps) > 0,
+            "missing_deps": missing_deps,
+            "required_deps": required_deps,
+            "total_required": len(required_deps),
+            "missing_count": len(missing_deps)
+        }
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки зависимостей: {e}")
+        return None
+
+
+def download_missing_dependencies_ui(missing_deps, collection_data, on_complete):
+    """
+    UI для загрузки недостающих зависимостей
+    """
+    if not missing_deps:
+        return True
+
+    # Создаем окно загрузки зависимостей
+    deps_window = tk.Toplevel(win)
+    set_window_icon(deps_window)
+    deps_window.title("Загрузка зависимостей")
+    deps_window.geometry("600x400")
+    deps_window.resizable(False, False)
+    deps_window.transient(win)
+    deps_window.grab_set()
+
+    main_frame = ttk.Frame(deps_window, padding=20)
+    main_frame.pack(fill="both", expand=True)
+
+    ttk.Label(
+        main_frame,
+        text="📥 Загрузка недостающих зависимостей",
+        font=("Comfortaa", 14, "bold")
+    ).pack(pady=(0, 10))
+
+    ttk.Label(
+        main_frame,
+        text=f"Найдено {len(missing_deps)} отсутствующих зависимостей",
+        font=("Comfortaa", 10)
+    ).pack(pady=(0, 20))
+
+    # Список зависимостей
+    list_frame = ttk.Frame(main_frame)
+    list_frame.pack(fill="both", expand=True, pady=(0, 20))
+
+    deps_listbox = tk.Listbox(list_frame, height=10, font=("Comfortaa", 9))
+    scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=deps_listbox.yview)
+    deps_listbox.configure(yscrollcommand=scrollbar.set)
+
+    for dep in missing_deps:
+        dep_name = dep.get('name', 'Unknown')
+        dep_source = dep.get('source', 'Unknown').upper()
+        deps_listbox.insert("end", f"• {dep_name} [{dep_source}]")
+
+    deps_listbox.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Прогресс
+    progress_frame = ttk.Frame(main_frame)
+    progress_frame.pack(fill="x", pady=(0, 10))
+
+    progress_label = ttk.Label(progress_frame, text="Готово к загрузке...")
+    progress_label.pack()
+
+    progress_bar = ttk.Progressbar(
+        progress_frame,
+        orient="horizontal",
+        length=500,
+        mode="determinate"
+    )
+    progress_bar.pack(pady=5)
+
+    # Кнопки
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill="x")
+
+    download_started = False
+
+    def start_download():
+        nonlocal download_started
+        download_started = True
+
+        def download_thread():
+            try:
+                from ConfDir.dependency_utils import download_missing_dependencies
+
+                total = len(missing_deps)
+                for i, dep in enumerate(missing_deps):
+                    # Обновляем UI
+                    win.after(0, lambda idx=i: progress_bar.config(value=(idx * 100) // total))
+                    win.after(0, lambda idx=i: progress_label.config(
+                        text=f"Загружаем {idx + 1}/{total}: {dep.get('name', 'Unknown')}"
+                    ))
+
+                    # Загружаем зависимость
+                    download_missing_dependencies([dep])
+
+                # Завершаем
+                win.after(0, lambda: progress_bar.config(value=100))
+                win.after(0, lambda: progress_label.config(text="✅ Все зависимости загружены!"))
+                win.after(2000, lambda: deps_window.destroy())
+                win.after(2100, lambda: on_complete() if on_complete else None)
+
+            except Exception as e:
+                win.after(0, lambda: progress_label.config(text=f"❌ Ошибка: {str(e)[:50]}"))
+
+        threading.Thread(target=download_thread, daemon=True).start()
+
+    def cancel_download():
+        if not download_started:
+            deps_window.destroy()
+            return False
+        else:
+            # Если загрузка уже началась, спрашиваем подтверждение
+            if messagebox.askyesno("Отмена", "Загрузка уже началась. Вы уверены, что хотите отменить?"):
+                deps_window.destroy()
+                return False
+            else:
+                return True
+
+    ttk.Button(
+        button_frame,
+        text="✅ Загрузить зависимости",
+        command=start_download
+    ).pack(side="left", padx=5)
+
+    ttk.Button(
+        button_frame,
+        text="❌ Пропустить",
+        command=lambda: cancel_download() or deps_window.destroy()
+    ).pack(side="right", padx=5)
+
+    # Блокируем основное окно
+    deps_window.focus_force()
+    deps_window.wait_window()
+
+    return download_started
+
+
+
+
+
 def update_system_certificates():
     """Пытается обновить системные сертификаты (для Windows)"""
     if os.name != 'nt':
@@ -5903,6 +6137,8 @@ current_sort_col = "downloads"
 current_sort_reverse = False
 
 
+
+
 def create_new_collection(collection_data=None, original_filename=None):
     """Создаёт окно для создания новой сборки модов с поддержкой CurseForge"""
     global current_sort_col, current_sort_reverse
@@ -5975,6 +6211,71 @@ def create_new_collection(collection_data=None, original_filename=None):
 
     ttk.Label(meta_frame, text="Загрузчик:").pack(side="left")
     loader_var = tk.StringVar(value=collection_data["loader"] if collection_data else "fabric")
+
+    # Добавляем кнопку анализа зависимостей
+    analysis_frame = ttk.Frame(main_frame)
+    analysis_frame.pack(fill="x", pady=(10, 0))
+
+    def analyze_dependencies():
+        """Анализирует зависимости выбранных модов"""
+        selected_mods = []
+
+        # Собираем выбранные моды
+        for item in selected_tree.get_children():
+            values = selected_tree.item(item)["values"]
+            tags = selected_tree.item(item)["tags"]
+
+            if len(tags) >= 2:
+                source = tags[0]
+                mod_info = {
+                    'source': source,
+                    'name': values[1],
+                    'filename': values[2]
+                }
+
+                if source == 'modrinth' and len(tags) >= 2:
+                    mod_info['project_id'] = tags[1]
+                    mod_info['mod_id'] = tags[1]
+                elif source == 'curseforge' and len(tags) >= 2:
+                    mod_info['project_id'] = tags[1]
+
+                selected_mods.append(mod_info)
+
+        if not selected_mods:
+            messagebox.showwarning("Анализ", "Выберите моды для анализа")
+            return
+
+        # Создаем анализатор и передаем ему tree_widget
+        analyzer = DependencyAnalyzerUI(
+            parent=collection_window,
+            minecraft_version=version_var.get(),
+            loader=loader_var.get().lower(),
+            tree_widget=selected_tree  # Передаем Treeview для добавления модов
+        )
+
+        def on_analysis_complete(result):
+            """Обработка завершения анализа (теперь это просто callback)"""
+            # Эта функция теперь только логирует или делает что-то дополнительное
+            # Основная логика добавления в окне анализатора
+
+            # Можно добавить логирование или другие действия
+            required_count = len(result.get('required_dependencies', []))
+            optional_count = len(result.get('optional_dependencies', []))
+
+            print(f"Анализ завершен. Обязательных: {required_count}, Опциональных: {optional_count}")
+
+        # Показываем анализатор
+        analyzer.show_analyzer(selected_mods, on_analysis_complete)
+
+
+
+    def add_selected_mods_with_analysis():
+        """Добавляет выбранные моды и сразу анализирует зависимости"""
+        # Сначала добавляем моды как обычно
+        add_selected_mods()
+
+        # Затем анализируем зависимости для всех модов в сборке
+        analyze_dependencies()
 
     # Функция обновления загрузчиков
     def update_loaders(*args):
@@ -6589,7 +6890,7 @@ def create_new_collection(collection_data=None, original_filename=None):
         if selected_tree.get_children() and messagebox.askyesno("Подтверждение", "Очистить все выбранные моды?"):
             selected_tree.delete(*selected_tree.get_children())
 
-    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods, width=18).pack(side="left",
+    ttk.Button(selected_buttons, text="➕ Добавить выбранные", command=add_selected_mods_with_analysis, width=18).pack(side="left",
                                                                                                         padx=5)
     ttk.Button(selected_buttons, text="🗑️ Удалить выбранные", command=remove_selected_mods, width=18).pack(side="left",
                                                                                                            padx=5)

@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 import urllib.parse
 
 
+
 class ModrinthAPI:
     def __init__(self):
         self.session = requests.Session()
@@ -157,4 +158,34 @@ class ModrinthAPI:
             return response.json()
         except Exception as e:
             print(f"Ошибка получения информации о проекте {project_slug}: {e}")
+            return None
+
+    def get_project(self, project_id_or_slug: str) -> Optional[Dict]:
+        """
+        Получает информацию о проекте
+        """
+        try:
+            response = self.session.get(
+                f"{self.base_url}/project/{project_id_or_slug}",
+                timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Ошибка получения проекта {project_id_or_slug}: {e}")
+            return None
+
+    def get_version(self, version_id: str) -> Optional[Dict]:
+        """
+        Получает информацию о конкретной версии
+        """
+        try:
+            response = self.session.get(
+                f"{self.base_url}/version/{version_id}",
+                timeout=10
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Ошибка получения версии {version_id}: {e}")
             return None

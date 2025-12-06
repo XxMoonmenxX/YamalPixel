@@ -175,3 +175,32 @@ class CurseForgeAPI:
         """Получение списка поддерживаемых загрузчиков"""
         # Для CurseForge всегда доступны основные загрузчики
         return ["fabric", "forge", "quilt", "neoforge"]
+
+    def get_mod_info(self, mod_id: str) -> Optional[Dict]:
+        """Упрощенное получение информации о моде"""
+        try:
+            # Используем поиск для получения информации о моде
+            response = self.session.get(
+                f"{self.proxy_url}/api/v1/curseforge/mod/{mod_id}",
+                timeout=self.timeout
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    return data.get("data", {})
+
+            # Если не сработало, пробуем через поиск
+            logger.warning(f"Не удалось получить информацию о моде {mod_id}, используем заглушку")
+
+            # Заглушка с базовой информацией
+            return {
+                "id": mod_id,
+                "name": f"Mod {mod_id}",
+                "slug": mod_id,
+                "dependencies": []  # Прокси не предоставляет зависимости
+            }
+
+        except Exception as e:
+            logger.error(f"Ошибка получения информации о моде: {e}")
+            return None
