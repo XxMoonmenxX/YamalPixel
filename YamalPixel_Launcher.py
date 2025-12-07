@@ -26,12 +26,14 @@ from concurrent.futures import ThreadPoolExecutor # Для асинхронно�
 import hashlib # Для хеширования
 import time # Для таймеров
 from datetime import datetime as dt # Для даты
-
+import time
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import psutil # Для получения информации о процессах
 import math # Для математики
 import json # Для работы с JSON
 from PIL import Image, ImageTk # Для работы с изображениями
-
 from ConfDir.utils import (aggressive_clean_name, calculate_similarity,
                            extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG)
 
@@ -86,23 +88,6 @@ except ImportError as e:
 plugin_manager = None
 plugin_manager_ui = None
 
-
-
-
-
-
-
-
-# Настройка логгера
-logger = logging.getLogger("YamalPixel")
-handler = logging.StreamHandler()
-formatter = logging.Formatter(
-    '[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%H:%M:%S'
-)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 
 def fix_python314_dll_issue():
@@ -886,34 +871,75 @@ def install_fabric_silent():
         return False
 
 
-def check_quilt_installed():
-    """Проверяет установлен ли Quilt для конкретной версии"""
+def check_quilt_installed (minecraft_version=None):
+    """Проверяет установлен ли Quilt с проверкой JAR файла"""
     try:
         minecraft_dir = CONFIG["minecraft_dir"]
         versions_dir = os.path.join(minecraft_dir, "versions")
 
-        # Проверяем наличие папки версии Quilt
+        # Получаем версию Minecraft, если не указана
+        if not minecraft_version:
+            minecraft_version = CONFIG["version"]
+
+        # Ищем папку Quilt
         installed_versions = minecraft_launcher_lib.utils.get_installed_versions(minecraft_dir)
+
         for version in installed_versions:
-            if version["id"].startswith("quilt-loader-"):
-                return True
+            if version["id"].startswith("quilt-loader-") and minecraft_version in version["id"]:
+                quilt_version = version["id"]
+                quilt_dir = os.path.join(versions_dir, quilt_version)
+
+                # Проверяем JAR файл
+                jar_file = os.path.join(quilt_dir, f"{quilt_version}.jar")
+                if os.path.exists(jar_file):
+                    jar_size = os.path.getsize(jar_file) / (1024 * 1024)
+                    print(f"✅ Quilt установлен: {quilt_version} ({jar_size:.1f} MB)")
+                    return True
+                else:
+                    print(f"⚠️ Папка Quilt найдена, но JAR отсутствует: {quilt_version}")
+                    return False
+
+        print(f"❌ Quilt не найден для {minecraft_version}")
         return False
-    except:
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки Quilt: {e}")
         return False
 
 
-def check_forge_installed():
-    """Проверяет установлен ли Forge"""
+def check_forge_installed (minecraft_version=None):
+    """Проверяет установлен ли Forge с проверкой JAR файла"""
     try:
         minecraft_dir = CONFIG["minecraft_dir"]
+        versions_dir = os.path.join(minecraft_dir, "versions")
+
+        # Получаем версию Minecraft, если не указана
+        if not minecraft_version:
+            minecraft_version = CONFIG["version"]
+
+        # Ищем папку Forge
         installed_versions = minecraft_launcher_lib.utils.get_installed_versions(minecraft_dir)
 
-        # Ищем версии с Forge
         for version in installed_versions:
-            if "forge" in version["id"].lower():
-                return True
+            if "forge" in version["id"].lower() and minecraft_version in version["id"]:
+                forge_version = version["id"]
+                forge_dir = os.path.join(versions_dir, forge_version)
+
+                # Проверяем JAR файл
+                jar_file = os.path.join(forge_dir, f"{forge_version}.jar")
+                if os.path.exists(jar_file):
+                    jar_size = os.path.getsize(jar_file) / (1024 * 1024)
+                    print(f"✅ Forge установлен: {forge_version} ({jar_size:.1f} MB)")
+                    return True
+                else:
+                    print(f"⚠️ Папка Forge найдена, но JAR отсутствует: {forge_version}")
+                    return False
+
+        print(f"❌ Forge не найден для {minecraft_version}")
         return False
-    except:
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки Forge: {e}")
         return False
 
 # Добавьте функцию установки Quilt
@@ -932,15 +958,36 @@ def install_quilt_silent():
         print(f"❌ Ошибка установки Quilt: {e}")
         return False
 
-def check_fabric_installed():
-    """Проверяет установлен ли Fabric"""
+
+def check_fabric_installed ():
+    """Проверяет установлен ли Fabric с проверкой JAR файла"""
     try:
         minecraft_dir = CONFIG["minecraft_dir"]
         versions_dir = os.path.join(minecraft_dir, "versions")
         fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{CONFIG['version']}"
         fabric_version_dir = os.path.join(versions_dir, fabric_version)
-        return os.path.exists(fabric_version_dir)
-    except: # noqa
+
+        # Проверяем существование папки
+        if not os.path.exists(fabric_version_dir):
+            print(f"❌ Папка Fabric не найдена: {fabric_version}")
+            return False
+
+        # Проверяем наличие JAR файла
+        jar_file = os.path.join(fabric_version_dir, f"{fabric_version}.jar")
+        if not os.path.exists(jar_file):
+            print(f"❌ JAR файл Fabric не найден: {fabric_version}.jar")
+            return False
+
+        # Проверяем размер JAR файла (должен быть > 1KB)
+        if os.path.getsize(jar_file) < 1024:
+            print(f"⚠️ JAR файл Fabric слишком маленький: {os.path.getsize(jar_file)} байт")
+            return False
+
+        print(f"✅ Fabric установлен: {fabric_version}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка проверки Fabric: {e}")
         return False
 
 
@@ -4618,11 +4665,16 @@ def proceed_with_launch(selected_version, collection_data=None):
                 if cancelled:
                     return
 
-                install_required_components_sync(selected_version)
-                update_ui_log("✅ Компоненты установлены")
+                # Передаем данные сборки, если они есть
+                if selected_version.startswith("📦 "):
+                    collection_name = selected_version[2:]
+                    collection_data = load_collection_data(collection_name)
+                    install_required_components_sync(selected_version, collection_data)
+                    update_ui_log("✅ Компоненты установлены")
+                else:
+                    install_required_components_sync(selected_version)
+                    update_ui_log("✅ Компоненты установлены")
 
-            if cancelled:
-                return
 
             # Шаг 1: Подготовка игры
             update_ui_status("Подготовка игры", "Очистка и проверка...")
@@ -5194,34 +5246,25 @@ def repair_single_version(version_name):
         return False
 
 
-def install_required_components_sync(version_name):
-    """Синхронная установка компонентов - ИСПРАВЛЕННАЯ ВЕРСИЯ для кастомных сборок"""
+def install_required_components_sync (version_name, collection_data=None):
+    """Синхронная установка компонентов - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     try:
         print(f"🔍 Начинаем установку для: {version_name}")
 
-        # 1. ПРОВЕРЯЕМ: Это кастомная сборка (начинается с 📦)?
-        if version_name.startswith("📦 "):
-            # Загружаем данные сборки напрямую из JSON-файла
-            collection_name = version_name[2:]  # Убираем эмодзи
-            collection_data = load_collection_data(collection_name)
-
-            if not collection_data:
-                raise Exception(f"Не удалось загрузить данные сборки: {collection_name}")
-
-            print(f"🎯 Загружена сборка: {collection_data['name']}")
-
-            # Получаем настройки ИЗ СБОРКИ, а не из version_configs
-            minecraft_version = collection_data['minecraft_version']  # "1.21.1"
-            loader_type = collection_data['loader']  # "neoforge"
+        # Если переданы данные сборки, используем их
+        if collection_data:
+            print(f"🎯 Используем переданные данные сборки: {collection_data['name']}")
+            minecraft_version = collection_data['minecraft_version']
+            loader_type = collection_data['loader']
             loader_version = collection_data.get('loader_version')
-
-            print(f"🎯 Версия Minecraft из сборки: {minecraft_version}")
-            print(f"🎯 Загрузчик из сборки: {loader_type}")
-
         else:
             # Это статическая версия - используем старую логику
             if version_name not in version_configs:
-                raise ValueError(f"Версия {version_name} не найдена в конфигурациях")
+                # Если версия начинается с "📦 ", это кастомная сборка без данных
+                if version_name.startswith("📦 "):
+                    raise Exception(f"Для кастомной сборки не переданы данные. Версия: {version_name}")
+                else:
+                    raise ValueError(f"Версия {version_name} не найдена в конфигурациях")
 
             config = version_configs[version_name]
             print(f"📋 Конфигурация: {config}")
@@ -5241,28 +5284,45 @@ def install_required_components_sync(version_name):
         print(f"🎯 Версия лоадера: {loader_version}")
 
         # 2. УСТАНАВЛИВАЕМ MINECRAFT
-        print(f"📥 Устанавливаем Minecraft {minecraft_version}")
-
-        # Удаляем существующую версию если есть
         versions_dir = os.path.join(CONFIG["minecraft_dir"], "versions")
         version_dir = os.path.join(versions_dir, minecraft_version)
+        jar_file_path = os.path.join(version_dir, f"{minecraft_version}.jar")
 
-        if os.path.exists(version_dir):
-            print(f"🗑️ Удаляем существующую версию: {minecraft_version}")
-            import shutil
-            shutil.rmtree(version_dir)
-
-        # Устанавливаем напрямую
-        minecraft_launcher_lib.install.install_minecraft_version(
-            version=minecraft_version,
-            minecraft_directory=CONFIG["minecraft_dir"]
-        )
-
-        # Проверяем что установилось
-        if os.path.exists(version_dir):
-            print(f"✅ Minecraft {minecraft_version} успешно установлена")
+        # Проверяем наличие JAR файла
+        if os.path.exists(jar_file_path):
+            print(f"✅ JAR файл Minecraft {minecraft_version} уже существует, пропускаем загрузку")
+            print(f"📁 Путь: {jar_file_path}")
         else:
-            raise Exception(f"Minecraft {minecraft_version} не установилась!")
+            print(f"📥 Устанавливаем Minecraft {minecraft_version}")
+
+            # Если директория версии существует, но нет JAR файла - удаляем и переустанавливаем
+            if os.path.exists(version_dir):
+                print(f"⚠️ Директория версии существует, но JAR файл отсутствует. Переустанавливаем...")
+                import shutil
+                try:
+                    shutil.rmtree(version_dir)
+                    print(f"🗑️ Удалена директория версии: {version_dir}")
+                except Exception as e:
+                    print(f"⚠️ Не удалось удалить директорию: {e}")
+
+            # Устанавливаем напрямую
+            minecraft_launcher_lib.install.install_minecraft_version(
+                version=minecraft_version,
+                minecraft_directory=CONFIG["minecraft_dir"]
+            )
+
+            # Проверяем что установилось
+            if os.path.exists(jar_file_path):
+                print(f"✅ Minecraft {minecraft_version} успешно установлена")
+                print(f"📁 JAR файл создан: {jar_file_path}")
+            else:
+                # Дополнительная проверка - может быть другой формат имени JAR файла
+                jar_files = [f for f in os.listdir(version_dir) if f.endswith('.jar')]
+                if jar_files:
+                    print(f"✅ Найден JAR файл с другим именем: {jar_files[0]}")
+                else:
+                    raise Exception(
+                        f"Minecraft {minecraft_version} не установилась! JAR файл не найден в {version_dir}")
 
         # 3. УСТАНАВЛИВАЕМ МОДЛОАДЕР (если требуется)
         if loader_type == "fabric" and loader_version:
@@ -5288,8 +5348,9 @@ def install_required_components_sync(version_name):
 
     except Exception as e:
         print(f"❌ Критическая ошибка в install_required_components_sync: {e}")
+        import traceback
+        traceback.print_exc()
         return False
-
 
 
 def install_quilt_sync(minecraft_version, minecraft_directory):
@@ -5374,65 +5435,113 @@ def install_forge_sync(minecraft_version, minecraft_directory):
         return False
 
 
-def install_neoforge_sync(minecraft_version, minecraft_directory):
-    """Синхронная установка NeoForge - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+def install_neoforge_sync (minecraft_version, minecraft_directory):
+    """Синхронная установка NeoForge с проверкой существования"""
     try:
-        print(f"🔧 Устанавливаем NeoForge для {minecraft_version}...")
+        print(f"🔧 Проверяем установку NeoForge для {minecraft_version}...")
 
-        # Прямой вызов API NeoForge вместо mod_loader
+        # 1. Проверяем список установленных версий
+        versions_dir = os.path.join(minecraft_directory, "versions")
+
+        # Сначала ищем существующие установки NeoForge
+        existing_neoforge_versions = []
+        if os.path.exists(versions_dir):
+            for folder in os.listdir(versions_dir):
+                # Проверяем папки с префиксом neoforge-
+                if folder.startswith("neoforge-"):
+                    neoforge_dir = os.path.join(versions_dir, folder)
+                    # Проверяем наличие JAR файла
+                    jar_file = os.path.join(neoforge_dir, f"{folder}.jar")
+                    if os.path.exists(jar_file):
+                        print(f"✅ Найден установленный NeoForge: {folder}")
+                        existing_neoforge_versions.append(folder)
+
+        # 2. Получаем версии NeoForge с API
         neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
 
         if not neoforge_versions:
-            raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
-
-        # Берем последнюю стабильную версию
-        latest_neoforge = neoforge_versions[0]
-        print(f"📦 Используем NeoForge {latest_neoforge}")
-
-        # Устанавливаем NeoForge
-        minecraft_launcher_lib.neoforge.install(
-            minecraft_version=minecraft_version,
-            loader_version=latest_neoforge,
-            minecraft_directory=minecraft_directory
-        )
-
-        print(f"✅ NeoForge успешно установлен!")
-        return True
-
-    except Exception as e:
-        print(f"❌ Ошибка установки NeoForge: {e}")
-        return False
-
-def check_network_connectivity():
-    """Проверяет доступность серверов Minecraft"""
-    import urllib.request
-    import ssl
-
-    test_urls = [
-        "https://libraries.minecraft.net",
-        "https://launcher.mojang.com",
-        "https://piston-meta.mojang.com"
-    ]
-
-    for url in test_urls:
-        try:
-            # Создаем контекст без проверки SSL для теста
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-            with urllib.request.urlopen(url, timeout=10, context=context) as response:
-                if response.status == 200:
-                    print(f"✅ {url} доступен")
-                else:
-                    print(f"⚠️ {url} недоступен (статус: {response.status})")
-
-        except Exception as e:
-            print(f"❌ {url} недоступен: {e}")
+            print(f"❌ Не найдены версии NeoForge для {minecraft_version}")
             return False
 
-    return True
+        # 3. Берем последнюю стабильную версию
+        latest_neoforge = neoforge_versions[0]
+        target_version = f"neoforge-{latest_neoforge}"
 
+        print(f"📦 Используем NeoForge: {latest_neoforge}")
+        print(f"🎯 Целевая версия: {target_version}")
+
+        # 4. Проверяем, установлена ли уже эта версия
+        if target_version in existing_neoforge_versions:
+            target_dir = os.path.join(versions_dir, target_version)
+            jar_file = os.path.join(target_dir, f"{target_version}.jar")
+
+            if os.path.exists(jar_file):
+                jar_size = os.path.getsize(jar_file) / (1024 * 1024)  # Размер в MB
+                print(f"✅ NeoForge {latest_neoforge} уже установлен")
+                print(f"   • JAR файл: {os.path.basename(jar_file)}")
+                print(f"   • Размер: {jar_size:.1f} MB")
+                return True
+            else:
+                print(f"⚠️ Папка найдена, но JAR файл отсутствует или в его названии присутствует -installer: {target_version}")
+                # Удаляем поврежденную папку и переустанавливаем
+                import shutil
+                if os.path.exists(target_dir):
+                    shutil.rmtree(target_dir)
+                    print(f"🗑️ Удалена поврежденная папка: {target_version}")
+
+        # 5. Проверяем файл json версии
+        json_file = os.path.join(versions_dir, target_version, f"{target_version}.json")
+        if os.path.exists(json_file):
+            try:
+                with open(json_file, 'r') as f:
+                    json.load(f)
+                print(f"✅ JSON файл версии найден: {target_version}")
+                # Если JSON существует, проверяем JAR
+                jar_path = os.path.join(versions_dir, target_version, f"{target_version}.jar")
+                if os.path.exists(jar_path):
+                    print(f"✅ JAR файл уже существует: {os.path.basename(jar_path)}")
+                    return True
+                else:
+                    print(f"⚠️ JSON есть, но JAR отсутствует. Продолжаем установку...")
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON файл поврежден: {e}")
+                # Удаляем поврежденный JSON
+                os.remove(json_file)
+            except Exception as e:
+                print(f"⚠️ Ошибка чтения JSON: {e}")
+
+        # 6. Устанавливаем NeoForge (только если не установлен)
+        print(f"📥 Устанавливаем NeoForge {latest_neoforge}...")
+
+        try:
+            minecraft_launcher_lib.neoforge.install(
+                minecraft_version=minecraft_version,
+                loader_version=latest_neoforge,
+                minecraft_directory=minecraft_directory
+            )
+
+            # 7. Проверяем успешность установки
+            installed_dir = os.path.join(versions_dir, target_version)
+            installed_jar = os.path.join(installed_dir, f"{target_version}.jar")
+
+            if os.path.exists(installed_jar):
+                jar_size = os.path.getsize(installed_jar) / (1024 * 1024)
+                print(f"✅ NeoForge успешно установлен!")
+                print(f"   • Папка: {target_version}")
+                print(f"   • JAR файл: {os.path.basename(installed_jar)}")
+                print(f"   • Размер: {jar_size:.1f} MB")
+                return True
+            else:
+                print(f"❌ Установка завершена, но JAR файл не найден: {target_version}.jar")
+                return False
+
+        except Exception as e:
+            print(f"❌ Ошибка установки NeoForge: {e}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Критическая ошибка при установке NeoForge: {e}")
+        return False
 
 def repair_minecraft_installation(version):
     """Восстанавливает установку Minecraft для проблемных версий"""
