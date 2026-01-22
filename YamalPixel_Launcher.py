@@ -3127,7 +3127,6 @@ def is_latest_version():
 
 
 
-
 def set_launch_state(launching=False):
     """Управляет состоянием кнопок во время запуска"""
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
