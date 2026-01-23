@@ -16,7 +16,7 @@ class CurseForgeAPI:
     # Единый API ключ для доступа к прокси
     API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
 
-    def __init__(self, proxy_url: str = "http://localhost:8000"):
+    def __init__(self, proxy_url: str = "http://90.151.59.120:8000"):
         self.proxy_url = proxy_url.rstrip('/')
         self.session = requests.Session()
         self.session.headers.update({
