@@ -67,616 +67,349 @@ import logging # Для логирования
 
 PROXY_BASE_URL = "http://90.151.59.120:8000"  # Адрес вашего прокси
 
+import os
+import requests
+import hashlib
+import threading
+import logging
+from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
+import time
+import re
 
-def notify_proxy_to_cache(url: str, filepath: str, file_type: str, file_hash: str):
-    """Уведомляет прокси о необходимости кэширования файла"""
-    try:
-        print(f"📨 Уведомляем прокси о файле: {os.path.basename(filepath)}")
+# Настройка логгера для прокси
+logger = logging.getLogger("SmartCache")
 
-        cache_request_url = f"{PROXY_BASE_URL}/api/v1/cache/request"
-        filename = os.path.basename(filepath)
+PROXY_BASE_URL = "http://90.151.59.120:8000"  # Адрес вашего прокси
 
-        # Создаем данные для кэширования
-        cache_data = {
-            "filename": filename,
-            "source_url": url,
-            "file_type": file_type,
-            "file_hash": file_hash,
-            "file_size": os.path.getsize(filepath),
-            "timestamp": datetime.datetime.now().isoformat()
-        }
 
-        # Определяем дополнительные метаданные в зависимости от типа
-        if "modrinth" in url.lower():
-            cache_data["source"] = "modrinth"
-            # Парсим ID из URL Modrinth
-            match = re.search(r'project/([^/]+)', url)
-            if match:
-                cache_data["project_slug"] = match.group(1)
-                match2 = re.search(r'versions/([^/]+)', url)
-                if match2:
-                    cache_data["version_id"] = match2.group(1)
+@dataclass
+class CacheInfo:
+    """Информация о файле в кэше"""
+    exists: bool
+    size: int
+    hash: str
+    last_modified: float
+    source: str  # 'cache' или 'original'
 
-        elif "curseforge" in url.lower() or "edge.forgecdn.net" in url.lower():
-            cache_data["source"] = "curseforge"
-            # Парсим ID из URL CurseForge
-            match = re.search(r'/files/(\d+)/(\d+)/', url)
-            if match:
-                cache_data["mod_id"] = match.group(1)
-                cache_data["file_id"] = match.group(2)
 
-        elif "maven.fabricmc.net" in url.lower():
-            cache_data["source"] = "fabric_loader"
-        elif "maven.minecraftforge.net" in url.lower():
-            cache_data["source"] = "forge_loader"
-        elif "piston-meta.mojang.com" in url.lower():
-            cache_data["source"] = "minecraft_version"
-        elif "libraries.minecraft.net" in url.lower():
-            cache_data["source"] = "minecraft_library"
+class SmartCacheManager:
+    """Умный менеджер кэширования с fallback механизмом"""
+
+    def __init__(self, proxy_url: str = PROXY_BASE_URL, cache_dir: str = None):
+        self.proxy_url = proxy_url.rstrip('/')
+
+        # Определяем папку кэша (в папке лаунчера)
+        if cache_dir:
+            self.cache_dir = cache_dir
         else:
-            cache_data["source"] = "unknown"
+            # Кэш рядом с лаунчером
+            launcher_dir = os.path.dirname(os.path.abspath(__file__))
+            self.cache_dir = os.path.join(launcher_dir, "launcher_cache")
 
-        # Отправляем запрос на кэширование
-        try:
-            response = requests.post(
-                cache_request_url,
-                json=cache_data,
-                timeout=2,  # Очень короткий таймаут
-                headers={
-                    "X-API-Key": "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU",
-                    "Content-Type": "application/json"
-                }
-            )
+        self.active_downloads: Dict[str, threading.Event] = {}
 
-            if response.status_code == 200:
-                print(f"📨 Прокси получил уведомление о файле")
-            else:
-                print(f"⚠️ Не удалось уведомить прокси: {response.status_code}")
+        # Создаем папку кэша если не существует
+        os.makedirs(self.cache_dir, exist_ok=True)
 
-        except requests.exceptions.Timeout:
-            print(f"⏱️ Таймаут уведомления прокси (файл сохранен локально)")
-        except Exception as e:
-            print(f"⚠️ Ошибка уведомления прокси: {e}")
+        logger.info(f"🔧 Менеджер кэша инициализирован: {self.cache_dir}")
 
-    except Exception as e:
-        print(f"⚠️ Ошибка в notify_proxy_to_cache: {e}")
-
-
-def download_file_through_proxy_with_timeout(original_url: str, filepath: str, timeout: int = 5) -> bool:
-    """
-    Улучшенная схема с КЭШИРОВАНИЕМ локально перед отправкой на прокси
-    """
-    import concurrent.futures
-    import threading
-    import time
-    import hashlib
-    import json
-    from pathlib import Path
-
-    filename = os.path.basename(filepath)
-    print(f"🔄 Начинаем скачивание: {filename}")
-
-    # Сначала проверяем, есть ли файл уже на диске
-    if os.path.exists(filepath):
-        file_size = os.path.getsize(filepath)
-        if file_size > 1000:  # Файл не битый
-            print(f"✅ Файл уже существует: {filename} ({file_size} байт)")
-
-            # Асинхронно уведомляем прокси о существующем файле
-            threading.Thread(
-                target=notify_proxy_about_existing_file,
-                args=(original_url, filepath, file_size),
-                daemon=True
-            ).start()
-            return True
-
-    # Генерируем уникальный ID для файла
-    file_hash = hashlib.md5(original_url.encode()).hexdigest()[:16]
-
-    # Определяем тип файла
-    file_type = "unknown"
-    if "libraries.minecraft.net" in original_url:
-        file_type = "minecraft_library"
-    elif "resources.download.minecraft.net" in original_url:
-        file_type = "minecraft_resource"
-    elif "maven.fabricmc.net" in original_url:
-        file_type = "fabric_loader"
-    elif "maven.minecraftforge.net" in original_url:
-        file_type = "forge_loader"
-    elif "maven.neoforged.net" in original_url:
-        file_type = "neoforge_loader"
-    elif "piston-meta.mojang.com" in original_url:
-        file_type = "minecraft_manifest"
-    elif "cdn.modrinth.com" in original_url:
-        file_type = "modrinth_mod"
-    elif "edge.forgecdn.net" in original_url:
-        file_type = "curseforge_mod"
-    elif "launcher.mojang.com" in original_url:
-        file_type = "minecraft_client"
-    else:
-        file_type = "other"
-
-    # Локальный кэш путей для предотвращения дублирования
-    download_lock = threading.Lock()
-    direct_success = False
-    proxy_success = False
-
-    def download_direct():
-        """Прямая загрузка с официального источника"""
-        nonlocal direct_success
-        try:
-            print(f"📡 Прямая загрузка: {filename[:50]}...")
-
-            response = requests.get(
-                original_url,
-                stream=True,
-                timeout=timeout,
-                headers={
-                    "User-Agent": "YamalPixel-Launcher/1.0.0",
-                    "Accept-Encoding": "gzip"
-                }
-            )
-
-            if response.status_code == 200:
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                # Временный файл
-                temp_path = filepath + ".tmp"
-
-                with open(temp_path, 'wb') as f:
-                    downloaded = 0
-                    total_size = int(response.headers.get('content-length', 0))
-
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-
-                # Проверяем файл
-                if os.path.getsize(temp_path) > 100:
-                    os.replace(temp_path, filepath)  # Атомарная замена
-                    file_size = os.path.getsize(filepath)
-
-                    with download_lock:
-                        direct_success = True
-
-                    print(f"✅ Прямая загрузка успешна: {file_size} байт")
-
-                    # Уведомляем прокси в фоне
-                    threading.Thread(
-                        target=notify_proxy_to_cache,
-                        args=(original_url, filepath, file_type, file_hash),
-                        daemon=True
-                    ).start()
-
-                    return True
-                else:
-                    os.remove(temp_path)
-
-        except Exception as e:
-            print(f"⚠️ Прямая загрузка не удалась: {e}")
-        return False
-
-    def download_via_proxy():
-        """Загрузка через прокси ТОЛЬКО если прямая не удалась"""
-        nonlocal proxy_success
-
-        # Ждем немного чтобы прямая загрузка могла завершиться
-        time.sleep(0.5)
-
-        # Если прямая уже успешна - не пытаемся через прокси
-        with download_lock:
-            if direct_success:
-                return False
-
-        try:
-            print(f"🔄 Пробуем через прокси: {filename[:50]}...")
-
-            # Используем FAST endpoint для библиотек Minecraft
-            if file_type in ["minecraft_library", "minecraft_resource", "minecraft_client"]:
-                encoded_url = requests.utils.quote(original_url, safe='')
-                proxy_url = f"{PROXY_BASE_URL}/api/v1/mirror/download/fast?url={encoded_url}"
-
-                response = requests.get(proxy_url, timeout=10)
-
-                if response.status_code == 200:
-                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                    with open(filepath, 'wb') as f:
-                        f.write(response.content)
-
-                    file_size = os.path.getsize(filepath)
-                    if file_size > 100:
-                        with download_lock:
-                            proxy_success = True
-                        print(f"✅ Загрузка через прокси успешна: {file_size} байт")
-                        return True
-
-            # Для других типов файлов используем стандартный endpoint
-            else:
-                proxy_url = f"{PROXY_BASE_URL}/api/v1/mirror/download"
-
-                payload = {
-                    "url": original_url,
-                    "filename": filename,
-                    "file_type": file_type,
-                    "file_hash": file_hash
-                }
-
-                response = requests.post(
-                    proxy_url,
-                    json=payload,
-                    timeout=15
-                )
-
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        if data.get("download_url"):
-                            file_response = requests.get(
-                                data["download_url"],
-                                stream=True,
-                                timeout=30
-                            )
-
-                            if file_response.status_code == 200:
-                                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                                with open(filepath, 'wb') as f:
-                                    for chunk in file_response.iter_content(chunk_size=8192):
-                                        if chunk:
-                                            f.write(chunk)
-
-                                file_size = os.path.getsize(filepath)
-                                if file_size > 100:
-                                    with download_lock:
-                                        proxy_success = True
-                                    print(f"✅ Загрузка через прокси успешна: {file_size} байт")
-                                    return True
-                    except json.JSONDecodeError:
-                        print(f"❌ Прокси вернул невалидный JSON")
-
-        except Exception as e:
-            print(f"⚠️ Загрузка через прокси не удалась: {e}")
-        return False
-
-    # Запускаем параллельно
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        direct_future = executor.submit(download_direct)
-        proxy_future = executor.submit(download_via_proxy)
-
-        try:
-            # Ждем первый успешный результат
-            for future in concurrent.futures.as_completed([direct_future, proxy_future], timeout=timeout):
-                try:
-                    result = future.result(timeout=1)
-                    if result:
-                        print(f"🎉 Загрузка завершена успешно!")
-                        return True
-                except Exception as e:
-                    print(f"⚠️ Ошибка в потоке загрузки: {e}")
-
-        except concurrent.futures.TimeoutError:
-            print(f"⏱️ Таймаут ({timeout} сек)")
-
-        # Проверяем флаги
-        with download_lock:
-            if direct_success or proxy_success:
-                return True
-
-    print(f"❌ Не удалось скачать файл")
-    return False
-
-
-def download_file_through_proxy_with_timeout(original_url: str, filepath: str, timeout: int = 5) -> bool:
-    """
-    Улучшенная схема с КЭШИРОВАНИЕМ локально перед отправкой на прокси
-    """
-    import concurrent.futures
-    import threading
-    import time
-    import hashlib
-    import json
-    from pathlib import Path
-
-    filename = os.path.basename(filepath)
-    print(f"🔄 Начинаем скачивание: {filename}")
-
-    # Сначала проверяем, есть ли файл уже на диске
-    if os.path.exists(filepath):
-        file_size = os.path.getsize(filepath)
-        if file_size > 1000:  # Файл не битый
-            print(f"✅ Файл уже существует: {filename} ({file_size} байт)")
-
-            # Асинхронно уведомляем прокси о существующем файле
-            threading.Thread(
-                target=notify_proxy_about_existing_file,
-                args=(original_url, filepath, file_size),
-                daemon=True
-            ).start()
-            return True
-
-    # Генерируем уникальный ID для файла
-    file_hash = hashlib.md5(original_url.encode()).hexdigest()[:16]
-
-    # Определяем тип файла
-    file_type = "unknown"
-    if "libraries.minecraft.net" in original_url:
-        file_type = "minecraft_library"
-    elif "resources.download.minecraft.net" in original_url:
-        file_type = "minecraft_resource"
-    elif "maven.fabricmc.net" in original_url:
-        file_type = "fabric_loader"
-    elif "maven.minecraftforge.net" in original_url:
-        file_type = "forge_loader"
-    elif "maven.neoforged.net" in original_url:
-        file_type = "neoforge_loader"
-    elif "piston-meta.mojang.com" in original_url:
-        file_type = "minecraft_manifest"
-    elif "cdn.modrinth.com" in original_url:
-        file_type = "modrinth_mod"
-    elif "edge.forgecdn.net" in original_url:
-        file_type = "curseforge_mod"
-    elif "launcher.mojang.com" in original_url:
-        file_type = "minecraft_client"
-
-    # Локальный кэш путей для предотвращения дублирования
-    download_lock = threading.Lock()
-    direct_success = False
-    proxy_success = False
-
-    def download_direct():
-        """Прямая загрузка с официального источника"""
-        nonlocal direct_success
-        try:
-            print(f"📡 Прямая загрузка: {filename[:50]}...")
-
-            response = requests.get(
-                original_url,
-                stream=True,
-                timeout=timeout,
-                headers={
-                    "User-Agent": "YamalPixel-Launcher/1.0.0",
-                    "Accept-Encoding": "gzip"
-                }
-            )
-
-            if response.status_code == 200:
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                # Временный файл
-                temp_path = filepath + ".tmp"
-
-                with open(temp_path, 'wb') as f:
-                    downloaded = 0
-                    total_size = int(response.headers.get('content-length', 0))
-
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-
-                # Проверяем файл
-                if os.path.getsize(temp_path) > 100:
-                    os.replace(temp_path, filepath)  # Атомарная замена
-                    file_size = os.path.getsize(filepath)
-
-                    with download_lock:
-                        direct_success = True
-
-                    print(f"✅ Прямая загрузка успешна: {file_size} байт")
-
-                    # Уведомляем прокси в фоне
-                    threading.Thread(
-                        target=notify_proxy_to_cache,
-                        args=(original_url, filepath, file_type, file_hash),
-                        daemon=True
-                    ).start()
-
-                    return True
-                else:
-                    os.remove(temp_path)
-
-        except Exception as e:
-            print(f"⚠️ Прямая загрузка не удалась: {e}")
-        return False
-
-    def download_via_proxy():
-        """Загрузка через прокси ТОЛЬКО если прямая не удалась"""
-        nonlocal proxy_success
-
-        # Ждем немного чтобы прямая загрузка могла завершиться
-        time.sleep(0.5)
-
-        # Если прямая уже успешна - не пытаемся через прокси
-        with download_lock:
-            if direct_success:
-                return False
-
-        try:
-            print(f"🔄 Пробуем через прокси: {filename[:50]}...")
-
-            # Используем FAST endpoint для библиотек Minecraft
-            if file_type in ["minecraft_library", "minecraft_resource"]:
-                encoded_url = requests.utils.quote(original_url, safe='')
-                proxy_url = f"{PROXY_BASE_URL}/api/v1/mirror/download/fast?url={encoded_url}"
-
-                response = requests.get(proxy_url, timeout=10)
-
-                if response.status_code == 200:
-                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                    with open(filepath, 'wb') as f:
-                        f.write(response.content)
-
-                    file_size = os.path.getsize(filepath)
-                    if file_size > 100:
-                        with download_lock:
-                            proxy_success = True
-                        print(f"✅ Загрузка через прокси успешна: {file_size} байт")
-                        return True
-
-            # Для других типов файлов используем стандартный endpoint
-            else:
-                proxy_url = f"{PROXY_BASE_URL}/api/v1/mirror/download"
-
-                payload = {
-                    "url": original_url,
-                    "filename": filename,
-                    "file_type": file_type,
-                    "file_hash": file_hash
-                }
-
-                response = requests.post(
-                    proxy_url,
-                    json=payload,
-                    timeout=15
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("download_url"):
-                        file_response = requests.get(
-                            data["download_url"],
-                            stream=True,
-                            timeout=30
-                        )
-
-                        if file_response.status_code == 200:
-                            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                            with open(filepath, 'wb') as f:
-                                for chunk in file_response.iter_content(chunk_size=8192):
-                                    if chunk:
-                                        f.write(chunk)
-
-                            file_size = os.path.getsize(filepath)
-                            if file_size > 100:
-                                with download_lock:
-                                    proxy_success = True
-                                print(f"✅ Загрузка через прокси успешна: {file_size} байт")
-                                return True
-
-        except Exception as e:
-            print(f"⚠️ Загрузка через прокси не удалась: {e}")
-        return False
-
-    # Запускаем параллельно
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        direct_future = executor.submit(download_direct)
-        proxy_future = executor.submit(download_via_proxy)
-
-        try:
-            # Ждем первый успешный результат
-            for future in concurrent.futures.as_completed([direct_future, proxy_future], timeout=timeout):
-                try:
-                    result = future.result(timeout=1)
-                    if result:
-                        print(f"🎉 Загрузка завершена успешно!")
-                        return True
-                except Exception as e:
-                    print(f"⚠️ Ошибка в потоке загрузки: {e}")
-
-        except concurrent.futures.TimeoutError:
-            print(f"⏱️ Таймаут ({timeout} сек)")
-
-        # Проверяем флаги
-        with download_lock:
-            if direct_success or proxy_success:
-                return True
-
-    print(f"❌ Не удалось скачать файл")
-    return False
-
-
-def notify_proxy_about_existing_file(url: str, filepath: str, file_size: int):
-    """
-    Уведомляет прокси о существующем файле (без повторной загрузки)
-    """
-    try:
-        filename = os.path.basename(filepath)
-        print(f"📨 Уведомляем прокси о существующем файле: {filename}")
-
-        # Определяем тип файла
-        file_type = "unknown"
-        if "libraries.minecraft.net" in url:
-            file_type = "minecraft_library"
-        elif "resources.download.minecraft.net" in url:
-            file_type = "minecraft_resource"
-        elif "cdn.modrinth.com" in url:
-            file_type = "modrinth_mod"
-        elif "edge.forgecdn.net" in url:
-            file_type = "curseforge_mod"
-
+    def get_cache_path(self, url: str) -> Tuple[str, str]:
+        """Возвращает путь к файлу в кэше"""
+        # Генерируем хеш из URL
         file_hash = hashlib.md5(url.encode()).hexdigest()[:16]
 
-        cache_request_url = f"{PROXY_BASE_URL}/api/v1/cache/request"
+        # Извлекаем оригинальное имя файла из URL
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        filename = os.path.basename(parsed.path)
 
-        cache_data = {
-            "filename": filename,
-            "source_url": url,
-            "file_type": file_type,
-            "file_hash": file_hash,
-            "file_size": file_size,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "already_exists": True  # Флаг что файл уже существует
-        }
+        if not filename or '.' not in filename:
+            filename = f"file_{file_hash}.jar"
 
-        # Быстрый запрос с коротким таймаутом
-        response = requests.post(
-            cache_request_url,
-            json=cache_data,
-            timeout=2
+        # Очищаем имя файла
+        safe_filename = re.sub(r'[^\w\-_.]', '_', filename)
+
+        cache_filename = f"{file_hash}_{safe_filename}"
+        cache_path = os.path.join(self.cache_dir, cache_filename)
+
+        return cache_path, cache_filename
+
+    def check_cache(self, url: str) -> CacheInfo:
+        """Проверяет наличие файла в кэше"""
+        cache_path, _ = self.get_cache_path(url)
+
+        if os.path.exists(cache_path):
+            try:
+                stat = os.stat(cache_path)
+                if stat.st_size > 100:  # Минимальный размер файла
+                    # Вычисляем хеш файла
+                    with open(cache_path, 'rb') as f:
+                        file_hash = hashlib.md5(f.read()).hexdigest()
+
+                    return CacheInfo(
+                        exists=True,
+                        size=stat.st_size,
+                        hash=file_hash,
+                        last_modified=stat.st_mtime,
+                        source='cache'
+                    )
+            except:
+                pass
+
+        return CacheInfo(
+            exists=False,
+            size=0,
+            hash='',
+            last_modified=0,
+            source='none'
         )
 
-        if response.status_code == 200:
-            print(f"📨 Прокси уведомлен о существующем файле")
-        else:
-            print(f"⚠️ Не удалось уведомить прокси: {response.status_code}")
+    def cache_file(self, url: str, content: bytes) -> bool:
+        """Сохраняет файл в кэш"""
+        try:
+            cache_path, cache_filename = self.get_cache_path(url)
+
+            # Сохраняем файл
+            with open(cache_path, 'wb') as f:
+                f.write(content)
+
+            logger.info(f"💾 Файл сохранен в локальный кэш: {cache_filename} ({len(content)} байт)")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения в локальный кэш: {e}")
+            return False
+
+    def serve_from_cache(self, url: str) -> Optional[bytes]:
+        """Отдает файл из кэша если он есть"""
+        cache_info = self.check_cache(url)
+
+        if cache_info.exists:
+            try:
+                cache_path, _ = self.get_cache_path(url)
+                with open(cache_path, 'rb') as f:
+                    content = f.read()
+
+                logger.info(f"📤 Отдаем из локального кэша: {os.path.basename(cache_path)} ({len(content)} байт)")
+                return content
+            except Exception as e:
+                logger.error(f"❌ Ошибка чтения из локального кэша: {e}")
+
+        return None
+
+
+# Глобальный экземпляр менеджера кэша
+cache_manager = SmartCacheManager()
+
+
+def save_file(filepath: str, content: bytes) -> bool:
+    """Сохраняет содержимое в файл"""
+    try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+        with open(filepath, 'wb') as f:
+            f.write(content)
+
+        # Проверяем что файл сохранен корректно
+        saved_size = os.path.getsize(filepath)
+        return saved_size == len(content)
 
     except Exception as e:
-        print(f"⚠️ Ошибка уведомления прокси: {e}")
+        logger.error(f"❌ Ошибка сохранения файла {filepath}: {e}")
+        return False
+
+
+def notify_proxy_to_cache(original_url: str, filename: str, content: bytes):
+    """Уведомляет прокси-сервер о необходимости кэширования (в фоне)"""
+
+    def send_notification():
+        try:
+            cache_request_url = f"{PROXY_BASE_URL}/api/v1/cache/request"
+            cache_data = {
+                "url": original_url,
+                "filename": filename,
+                "source": "launcher_download",
+                "size": len(content),
+                "hash": hashlib.md5(content).hexdigest()
+            }
+
+            # Быстрая отправка, не ждем долго
+            requests.post(cache_request_url, json=cache_data, timeout=3)
+            logger.info(f"📨 Уведомили прокси о файле для кэширования: {filename}")
+
+        except Exception as e:
+            # Не критично, если не удалось уведомить прокси
+            logger.debug(f"⚠️ Не удалось уведомить прокси: {e}")
+
+    # Запускаем в фоне
+    threading.Thread(target=send_notification, daemon=True).start()
+
+
+def download_direct_with_cache(original_url: str, filepath: str) -> bool:
+    """Прямая загрузка с одновременным кэшированием"""
+    try:
+        logger.info(f"⬇️ Прямая загрузка: {original_url[:80]}...")
+
+        response = requests.get(
+            original_url,
+            stream=True,
+            timeout=30,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+
+        if response.status_code != 200:
+            return False
+
+        # Скачиваем файл
+        content = response.content
+        if len(content) < 100:  # Минимальный размер
+            return False
+
+        # Сохраняем локально
+        if not save_file(filepath, content):
+            return False
+
+        # Сохраняем в локальный кэш
+        cache_manager.cache_file(original_url, content)
+
+        # Уведомляем прокси (в фоне)
+        filename = os.path.basename(filepath)
+        notify_proxy_to_cache(original_url, filename, content)
+
+        logger.info(f"✅ Прямая загрузка успешна + кэшировано")
+        return True
+
+    except Exception as e:
+        logger.warning(f"⚠️ Прямая загрузка не удалась: {e}")
+        return False
+
+
+def download_from_proxy_cache(original_url: str, filepath: str) -> bool:
+    """Загрузка из прокси-кэша"""
+    try:
+        encoded_url = requests.utils.quote(original_url, safe='')
+        proxy_url = f"{PROXY_BASE_URL}/api/v1/mirror/download?url={encoded_url}"
+
+        filename = os.path.basename(filepath)
+        logger.info(f"🔄 Запрашиваем у прокси: {filename}")
+
+        response = requests.get(
+            proxy_url,
+            timeout=15,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+
+        if response.status_code != 200:
+            return False
+
+        content = response.content
+        if len(content) < 100:
+            return False
+
+        # Сохраняем файл
+        if not save_file(filepath, content):
+            return False
+
+        # Также сохраняем в локальный кэш
+        cache_manager.cache_file(original_url, content)
+
+        logger.info(f"✅ Получено из прокси-кэша")
+        return True
+
+    except Exception as e:
+        logger.warning(f"⚠️ Прокси недоступен: {e}")
+        return False
+
+
+def download_with_fallback_chain(original_url: str, filepath: str) -> bool:
+    """
+    Загрузка файла с цепочкой fallback'ов по приоритету:
+    1. Прямая загрузка (если доступно) + кэширование
+    2. Прокси-кэш (если прямой недоступен)
+    3. Локальный кэш (если всё остальное недоступно)
+    """
+    filename = os.path.basename(filepath)
+    logger.info(f"🔗 Цепочка загрузки для: {filename}")
+
+    # Приоритет 1: Прямая загрузка
+    logger.info("1️⃣ Приоритет: Прямая загрузка")
+    if download_direct_with_cache(original_url, filepath):
+        return True
+
+    # Приоритет 2: Прокси-кэш
+    logger.info("2️⃣ Приоритет: Прокси-кэш")
+    if download_from_proxy_cache(original_url, filepath):
+        return True
+
+    # Приоритет 3: Локальный кэш
+    logger.info("3️⃣ Приоритет: Локальный кэш")
+    content = cache_manager.serve_from_cache(original_url)
+    if content:
+        if save_file(filepath, content):
+            logger.info(f"✅ Получено из локального кэша: {filename}")
+            return True
+
+    # Всё провалилось
+    logger.error(f"❌ Все источники недоступны для: {filename}")
+    return False
+
 
 def download_file_through_proxy(original_url: str, filepath: str) -> bool:
     """
-    Основная функция-обертка с параллельным опросом
+    ОСНОВНАЯ функция-обертка для загрузки ЛЮБОГО файла через нашу систему.
+    Заменяет старую функцию download_file_through_proxy.
     """
-    # 1. ПРОВЕРКА: нужно ли проксировать этот URL?
-    # Белый список доменов для проксирования
-    PROXY_WHITELIST = [
-        "resources.download.minecraft.net",  # Ресурсы Minecraft
-        "cdn.modrinth.com",  # Modrinth
-        "edge.forgecdn.net",  # CurseForge
-        "media.forgecdn.net",  # CurseForge
-    ]
+    try:
+        # 1. ФИЛЬТРАЦИЯ: Нужно ли кэшировать этот файл?
+        # Белый список доменов для кэширования
+        CACHE_WHITELIST = [
+            "resources.download.minecraft.net",
+            "libraries.minecraft.net",
+            "maven.minecraftforge.net",
+            "maven.neoforged.net",
+            "maven.fabricmc.net",
+            "files.minecraftforge.net"
+        ]
 
-    # Черный список доменов (НЕ проксируем)
-    PROXY_BLACKLIST = [
-        "libraries.minecraft.net",  # Библиотеки Minecraft
-        "maven.minecraftforge.net",
-        "maven.neoforged.net",
-        "maven.fabricmc.net",
-        "files.minecraftforge.net",
-        "launcher.mojang.com",
-        "launchermeta.mojang.com",
-        "piston-meta.mojang.com",
-        "piston-data.mojang.com"
-    ]
+        # Черный список (никогда не кэшируем)
+        BLACKLIST_PATTERNS = [
+            'lwjgl', 'jinput', 'opengl', 'jemalloc',
+            'glfw', 'stb', 'tinyfd', 'natives-',
+            '.dll', '.so', '.dylib',
+            'client.jar', 'server.jar',
+            'manifest.json'
+        ]
 
-    # Проверяем черный список
-    should_block = any(domain in original_url for domain in PROXY_BLACKLIST)
-    if should_block:
-        print(f"🚫 Прямая загрузка (черный список): {os.path.basename(filepath)}")
-        return download_direct_fallback(original_url, filepath)
+        filename = os.path.basename(filepath)
+        filename_lower = filename.lower()
 
-    # Проверяем белый список
-    should_proxy = any(domain in original_url for domain in PROXY_WHITELIST)
-    if not should_proxy:
-        print(f"📡 Прямая загрузка (не в белом списке): {os.path.basename(filepath)}")
-        return download_direct_fallback(original_url, filepath)
+        # Проверяем черный список
+        should_block = any(pattern in filename_lower for pattern in BLACKLIST_PATTERNS)
+        if should_block:
+            logger.info(f"🚫 Файл в черном списке, прямая загрузка: {filename}")
+            return download_direct_with_cache(original_url, filepath)
 
-    # 2. Используем новую схему с параллельным опросом
-    return download_file_through_proxy_with_timeout(original_url, filepath, timeout=5)
+        # Проверяем белый список
+        should_cache = any(domain in original_url for domain in CACHE_WHITELIST)
+        if not should_cache:
+            logger.info(f"📡 Не в белом списке, прямая загрузка: {filename}")
+            return download_direct_with_cache(original_url, filepath)
+
+        # 2. Если файл прошел фильтры - используем умную систему
+        logger.info(f"🎯 Умное кэширование для: {filename}")
+        return download_with_fallback_chain(original_url, filepath)
+
+    except Exception as e:
+        logger.error(f"💥 Критическая ошибка в download_file_through_proxy: {e}")
+        # Fallback: простая прямая загрузка
+        try:
+            response = requests.get(original_url, timeout=30)
+            if response.status_code == 200:
+                return save_file(filepath, response.content)
+        except:
+            pass
+        return False
 
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -879,100 +612,178 @@ def download_direct_fallback(original_url: str, filepath: str) -> bool:
 def patch_minecraft_downloads():
     """
     Патчим ВСЕ функции download_file в minecraft_launcher_lib
-    Теперь с предотвращением дублирования
+    С ФИЛЬТРАЦИЕЙ - проксируем только ресурсы, НЕ библиотеки!
     """
     import minecraft_launcher_lib._helper
     import minecraft_launcher_lib.install
 
-    # Словарь для отслеживания скачиваемых файлов
-    active_downloads = {}
-    download_lock = threading.Lock()
+    # Функция для определения, нужно ли проксировать
+    def should_proxy_download(url: str, filename: str) -> bool:
+        """
+        Определяет, нужно ли проксировать этот файл.
+        Возвращает True только для РЕСУРСОВ Minecraft (скины, текстуры).
+        """
+        # Белый список доменов (ТОЛЬКО ресурсы)
+        WHITELIST_DOMAINS = [
+            "resources.download.minecraft.net"  # ТОЛЬКО ресурсы
+        ]
 
-    def patched_download(url, path, *args, **kwargs):
-        filename = os.path.basename(path)
+        # Черный список доменов (НИКОГДА не проксируем)
+        BLACKLIST_DOMAINS = [
+            "libraries.minecraft.net",  # Библиотеки
+            "maven.minecraftforge.net",  # Forge
+            "maven.fabricmc.net",  # Fabric
+            "maven.neoforged.net",  # NeoForge
+            "files.minecraftforge.net",  # Forge файлы
+            "launcher.mojang.com",  # Лаунчер
+            "launchermeta.mojang.com",  # Метаданные
+            "piston-meta.mojang.com"  # Метаданные
+        ]
 
-        # Проверяем не скачивается ли уже этот файл
-        with download_lock:
-            if filename in active_downloads:
-                print(f"🔄 Файл уже скачивается: {filename}")
-                # Ждем пока другой поток закончит
-                while filename in active_downloads:
-                    time.sleep(0.1)
+        # 1. Проверяем черный список
+        if any(domain in url for domain in BLACKLIST_DOMAINS):
+            return False
 
-                # Проверяем результат
-                if os.path.exists(path) and os.path.getsize(path) > 100:
-                    print(f"✅ Файл уже скачан другим потоком: {filename}")
+        # 2. Проверяем белый список
+        if not any(domain in url for domain in WHITELIST_DOMAINS):
+            return False
+
+        # 3. Проверяем по имени файла
+        filename_lower = filename.lower()
+
+        # Черный список паттернов
+        BLACKLIST_PATTERNS = [
+            'lwjgl', 'jinput', 'opengl', 'jemalloc',
+            'glfw', 'stb', 'tinyfd', 'natives-',
+            '.dll', '.so', '.dylib',  # Нативные библиотеки
+            'forge-', 'fabric-', 'neoforge-',
+            'client.jar', 'server.jar',
+            '.exe', '.msi',  # Исполняемые файлы
+            'manifest.json'
+        ]
+
+        # Проверяем, нет ли файла в черном списке
+        if any(pattern in filename_lower for pattern in BLACKLIST_PATTERNS):
+            return False
+
+        # 4. Проверяем расширение файла
+        ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.json', '.properties']
+        if not any(filename_lower.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+            return False
+
+        # 5. Только файлы с хэшем в имени (ресурсы Minecraft)
+        # Ресурсы Minecraft имеют имена типа: ab/cdef1234...
+        if '/' not in url and len(filename) != 64:  # Не ресурсный файл
+            return False
+
+        return True
+
+    # ---- 1. ПАТЧ ГЛАВНОГО МОДУЛЯ _helper.py ----
+    if hasattr(minecraft_launcher_lib._helper, 'download_file'):
+        original_helper_download = minecraft_launcher_lib._helper.download_file
+
+        def patched_helper_download(url, path, *args, **kwargs):
+            filename = os.path.basename(path)
+
+            # Проверяем, нужно ли проксировать
+            if should_proxy_download(url, filename):
+                print(f"🔄 МОДЛОАДЕР: проксируем ресурс {filename}")
+                if download_file_through_proxy(url, path):
+                    # Вызываем callback если есть
+                    if 'callback' in kwargs and kwargs['callback']:
+                        try:
+                            if callable(kwargs['callback']):
+                                kwargs['callback'](len=None, bsize=None, tsize=None)
+                            elif isinstance(kwargs['callback'], dict):
+                                kwargs['callback'].get("setProgress", lambda x: None)(100)
+                        except:
+                            pass
                     return True
-
-        # Помечаем как скачиваемый
-        with download_lock:
-            active_downloads[filename] = True
-
-        try:
-            print(f"🔄 MINECRAFT: скачиваем {filename}")
-
-            # Проверяем есть ли уже файл
-            if os.path.exists(path):
-                file_size = os.path.getsize(path)
-                if file_size > 1000:
-                    print(f"✅ Файл уже существует: {filename} ({file_size} байт)")
-                    return True
-
-            # Скачиваем с улучшенной функцией
-            success = download_file_through_proxy_with_timeout(url, path, timeout=10)
-
-            if success:
-                # Вызываем callback если есть
-                if 'callback' in kwargs and kwargs['callback']:
-                    try:
-                        if callable(kwargs['callback']):
-                            kwargs['callback'](len=None, bsize=None, tsize=None)
-                        elif isinstance(kwargs['callback'], dict):
-                            kwargs['callback'].get("setProgress", lambda x: None)(100)
-                    except:
-                        pass
-                return True
+                else:
+                    # Fallback: оригинальная функция
+                    print(f"🔄 Используем оригинальную загрузку: {filename}")
+                    return original_helper_download(url, path, **kwargs)
             else:
-                # Fallback на оригинальную функцию minecraft_launcher_lib
-                print(f"🔄 Fallback на оригинальную загрузку: {filename}")
-                return original_download(url, path, **kwargs)
+                # НЕ проксируем - используем оригинальную функцию
+                print(f"📡 Прямая загрузка: {filename}")
+                return original_helper_download(url, path, **kwargs)
 
-        finally:
-            # Убираем из активных загрузок
-            with download_lock:
-                active_downloads.pop(filename, None)
+        minecraft_launcher_lib._helper.download_file = patched_helper_download
+        print("✅ Запатчен download_file в _helper.py")
 
+    # ---- 2. ПАТЧ МОДУЛЯ install.py ----
+    if hasattr(minecraft_launcher_lib.install, 'download_file'):
+        original_install_download = minecraft_launcher_lib.install.download_file
 
-def batch_notify_proxy(file_list):
-    """
-    Пакетное уведомление прокси о нескольких файлах
-    """
+        def patched_install_download(url, path, *args, **kwargs):
+            filename = os.path.basename(path)
+
+            # Проверяем, нужно ли проксировать
+            if should_proxy_download(url, filename):
+                print(f"🔄 MINECRAFT: проксируем ресурс {filename}")
+                if download_file_through_proxy(url, path):
+                    # Вызываем callback если есть
+                    if 'callback' in kwargs and kwargs['callback']:
+                        try:
+                            if callable(kwargs['callback']):
+                                kwargs['callback'](len=None, bsize=None, tsize=None)
+                            elif isinstance(kwargs['callback'], dict):
+                                kwargs['callback'].get("setProgress", lambda x: None)(100)
+                        except:
+                            pass
+                    return True
+                else:
+                    # Fallback: оригинальная функция
+                    print(f"🔄 Используем оригинальную загрузку: {filename}")
+                    return original_install_download(url, path, **kwargs)
+            else:
+                # НЕ проксируем - используем оригинальную функцию
+                print(f"📡 Прямая загрузка: {filename}")
+                return original_install_download(url, path, **kwargs)
+
+        minecraft_launcher_lib.install.download_file = patched_install_download
+        print("✅ Запатчен download_file в install.py")
+
+    # ---- 3. ПАТЧ ДЛЯ КОНКРЕТНЫХ МОДЛОАДЕРОВ ----
+    print("🎯 Патчим загрузки модлоадеров...")
+
+    # Патч для Fabric
     try:
-        if not file_list:
-            return
+        import minecraft_launcher_lib.mod_loader._fabric as fabric_module
+        if hasattr(fabric_module, 'download_file'):
+            fabric_module.download_file = minecraft_launcher_lib._helper.download_file
+            print("✅ Запатчен Fabric")
+    except:
+        pass
 
-        print(f"📨 Пакетное уведомление прокси о {len(file_list)} файлах")
+    # Патч для Quilt
+    try:
+        import minecraft_launcher_lib.mod_loader._quilt as quilt_module
+        if hasattr(quilt_module, 'download_file'):
+            quilt_module.download_file = minecraft_launcher_lib._helper.download_file
+            print("✅ Запатчен Quilt")
+    except:
+        pass
 
-        cache_request_url = f"{PROXY_BASE_URL}/api/v1/cache/batch"
+    # Патч для Forge
+    try:
+        import minecraft_launcher_lib.mod_loader._forge as forge_module
+        if hasattr(forge_module, 'download_file'):
+            forge_module.download_file = minecraft_launcher_lib._helper.download_file
+            print("✅ Запатчен Forge")
+    except:
+        pass
 
-        batch_data = {
-            "files": file_list,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
+    # Патч для NeoForge
+    try:
+        import minecraft_launcher_lib.mod_loader._neoforge as neoforge_module
+        if hasattr(neoforge_module, 'download_file'):
+            neoforge_module.download_file = minecraft_launcher_lib._helper.download_file
+            print("✅ Запатчен NeoForge")
+    except:
+        pass
 
-        response = requests.post(
-            cache_request_url,
-            json=batch_data,
-            timeout=5
-        )
-
-        if response.status_code == 200:
-            print(f"📨 Пакетное уведомление отправлено")
-        else:
-            print(f"⚠️ Ошибка пакетного уведомления: {response.status_code}")
-
-    except Exception as e:
-        print(f"⚠️ Ошибка пакетного уведомления: {e}")
+    print("✅ Все функции загрузки успешно пропатчены с ФИЛЬТРАЦИЕЙ!")
 
 
 def download_file_through_proxy_wrapper(url, path, original_func, **kwargs):

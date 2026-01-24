@@ -13,7 +13,7 @@ from ConfDir.Configs import set_window_icon
 
 # Конфигурация сервера (замените на реальный адрес вашего сервера)
 COMMUNITY_SERVER_URL = "http://90.151.59.120:8000"  # Пример адреса
-SERVER_API_KEY = "YAMALPIXEL_COMMUNITY"
+SERVER_API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
 
 
 class CommunityCollectionAPI:
