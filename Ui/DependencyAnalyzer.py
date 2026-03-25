@@ -1,263 +1,288 @@
 # Ui/DependencyAnalyzer.py
-import tkinter as tk
-from tkinter import ttk, messagebox
 import threading
-from typing import List, Dict, Callable, Optional
+from typing import List, Dict, Callable
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTreeWidget, QTreeWidgetItem, QProgressBar, QMessageBox, QApplication
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QFont, QColor
+
+import logging
+
+logger = logging.getLogger("YamalPixel.DependencyAnalyzer")
 
 from Network.DependencyManager import DependencyManager, ModDependency
 
 
+class DependencyAnalyzerWorker(QThread):
+    """Поток для анализа зависимостей"""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, mods, minecraft_version, loader):
+        super().__init__()
+        self.mods = mods
+        self.minecraft_version = minecraft_version
+        self.loader = loader
+        self.dependency_manager = DependencyManager()
+
+    def run(self):
+        try:
+            self.progress.emit("Анализ модов...")
+
+            all_dependencies = []
+
+            for i, mod in enumerate(self.mods):
+                self.progress.emit(f"Анализ: {mod.get('name', 'Unknown')} ({i + 1}/{len(self.mods)})")
+
+                # Получаем зависимости для мода
+                dependencies = self.dependency_manager.resolve_dependencies_for_mod(
+                    mod, self.minecraft_version, self.loader
+                )
+
+                logger.info(f"Для мода {mod.get('name')} найдено {len(dependencies)} зависимостей")
+                all_dependencies.extend(dependencies)
+
+            # Разделяем на обязательные и опциональные
+            required = []
+            optional = []
+            seen = set()
+
+            for dep in all_dependencies:
+                key = f"{dep.source}:{dep.mod_id or dep.project_id}"
+                if key not in seen:
+                    seen.add(key)
+                    if dep.dependency_type == 'required':
+                        required.append(dep)
+                    elif dep.dependency_type == 'optional':
+                        optional.append(dep)
+
+            result = {
+                'total_mods': len(self.mods),
+                'required_dependencies': required,
+                'optional_dependencies': optional,
+                'all_dependencies': required + optional
+            }
+
+            logger.info(f"Анализ завершен: обязательных={len(required)}, опциональных={len(optional)}")
+            self.finished.emit(result)
+
+        except Exception as e:
+            logger.error(f"Ошибка анализа зависимостей: {e}", exc_info=True)
+            self.error.emit(str(e))
+
+
 class DependencyAnalyzerUI:
-    """UI для анализа и отображения зависимостей"""
+    """UI для анализа и отображения зависимостей (PyQt6 версия)"""
 
     def __init__(self, parent, minecraft_version: str, loader: str, tree_widget=None):
         self.parent = parent
         self.minecraft_version = minecraft_version
         self.loader = loader
         self.dependency_manager = DependencyManager()
-        self.tree_widget = tree_widget  # Treeview для добавления модов
+        self.tree_widget = tree_widget
         self.on_complete_callback = None
-
-        # Окно анализа
         self.analyzer_window = None
-        self.current_analysis = None
         self._is_window_open = False
 
     def show_analyzer(self, mods: List[Dict], on_complete: Callable = None):
         """Показывает окно анализа зависимостей"""
-        # Проверяем, не открыто ли уже окно
-        if self._is_window_open and self.analyzer_window and self.analyzer_window.winfo_exists():
-            self.analyzer_window.lift()
-            self.analyzer_window.focus_force()
+        if self._is_window_open and self.analyzer_window and self.analyzer_window.isVisible():
+            self.analyzer_window.raise_()
+            self.analyzer_window.activateWindow()
             return
 
         self.on_complete_callback = on_complete
-        self.analyzer_window = tk.Toplevel(self.parent)
-        self.analyzer_window.title("Анализ зависимостей")
-        self.analyzer_window.geometry("800x600")
-        self.analyzer_window.resizable(True, True)
-
-        # Делаем окно модальным
-        self.analyzer_window.transient(self.parent)
-        self.analyzer_window.grab_set()
-
-        # Обработчик закрытия окна
-        self.analyzer_window.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.analyzer_window = QDialog(self.parent)
+        self.analyzer_window.setWindowTitle("Анализ зависимостей")
+        self.analyzer_window.setMinimumSize(800, 600)
+        self.analyzer_window.setModal(True)
         self._is_window_open = True
 
-        # Центрируем окно
-        self.analyzer_window.update_idletasks()
-        x = (self.parent.winfo_screenwidth() // 2) - (800 // 2)
-        y = (self.parent.winfo_screenheight() // 2) - (600 // 2)
-        self.analyzer_window.geometry(f"800x600+{x}+{y}")
+        # Обработчик закрытия
+        self.analyzer_window.finished.connect(self._on_close)
 
         self._create_ui()
         self._start_analysis(mods)
+        self.analyzer_window.exec()
 
     def _create_ui(self):
         """Создает интерфейс анализатора"""
-        main_frame = ttk.Frame(self.analyzer_window, padding=20)
-        main_frame.pack(fill="both", expand=True)
+        main_layout = QVBoxLayout(self.analyzer_window)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
 
         # Заголовок
-        ttk.Label(
-            main_frame,
-            text="🔍 Анализ зависимостей",
-            font=("Comfortaa", 14, "bold")
-        ).pack(pady=(0, 15))
+        title = QLabel("🔍 Анализ зависимостей")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title)
 
-        # Статус анализа
-        self.status_label = ttk.Label(
-            main_frame,
-            text="Подготовка к анализу...",
-            font=("Comfortaa", 10)
-        )
-        self.status_label.pack(pady=5)
+        # Статус
+        self.status_label = QLabel("Подготовка к анализу...")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.status_label)
 
         # Прогресс-бар
-        self.progress_bar = ttk.Progressbar(
-            main_frame,
-            orient="horizontal",
-            length=700,
-            mode="indeterminate"
-        )
-        self.progress_bar.pack(pady=10)
-        self.progress_bar.start()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)  # Indeterminate
+        main_layout.addWidget(self.progress_bar)
 
-        # Фрейм для результатов
-        results_frame = ttk.LabelFrame(main_frame, text="Результаты анализа", padding=10)
-        results_frame.pack(fill="both", expand=True, pady=(10, 0))
+        # Результаты
+        results_label = QLabel("Результаты анализа:")
+        results_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        main_layout.addWidget(results_label)
 
-        # Treeview для отображения зависимостей
-        columns = ("type", "name", "source", "status")
-        self.deps_tree = ttk.Treeview(
-            results_frame,
-            columns=columns,
-            show="headings",
-            height=15
-        )
+        # Tree для отображения зависимостей
+        self.deps_tree = QTreeWidget()
+        self.deps_tree.setHeaderLabels(["Тип", "Название", "Источник", "Статус"])
+        self.deps_tree.setColumnWidth(0, 100)
+        self.deps_tree.setColumnWidth(1, 350)
+        self.deps_tree.setColumnWidth(2, 100)
+        self.deps_tree.setColumnWidth(3, 100)
+        main_layout.addWidget(self.deps_tree)
 
-        self.deps_tree.heading("type", text="Тип")
-        self.deps_tree.heading("name", text="Название")
-        self.deps_tree.heading("source", text="Источник")
-        self.deps_tree.heading("status", text="Статус")
+        # Кнопки
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
 
-        self.deps_tree.column("type", width=80)
-        self.deps_tree.column("name", width=300)
-        self.deps_tree.column("source", width=100)
-        self.deps_tree.column("status", width=100)
+        self.add_button = QPushButton("➕ Добавить обязательные зависимости")
+        self.add_button.setEnabled(False)
+        self.add_button.clicked.connect(self._add_required_dependencies)
+        button_layout.addWidget(self.add_button)
 
-        # Скроллбар
-        scrollbar = ttk.Scrollbar(
-            results_frame,
-            orient="vertical",
-            command=self.deps_tree.yview
-        )
-        self.deps_tree.configure(yscrollcommand=scrollbar.set)
+        self.close_button = QPushButton("❌ Закрыть")
+        self.close_button.clicked.connect(self.analyzer_window.close)
+        button_layout.addWidget(self.close_button)
 
-        self.deps_tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Кнопки управления
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x", pady=(10, 0))
-
-        self.add_button = ttk.Button(
-            button_frame,
-            text="➕ Добавить обязательные зависимости",
-            state="disabled",
-            command=self._add_required_dependencies
-        )
-        self.add_button.pack(side="left", padx=5)
-
-        ttk.Button(
-            button_frame,
-            text="❌ Закрыть",
-            command=self._on_close
-        ).pack(side="right", padx=5)
+        main_layout.addLayout(button_layout)
 
     def _start_analysis(self, mods: List[Dict]):
         """Запускает анализ в отдельном потоке"""
-
-        def analyze_thread():
-            try:
-                self.parent.after(0, lambda: self.status_label.config(text="Анализируем моды..."))
-
-                # Анализируем зависимости
-                result = self.dependency_manager.analyze_collection_dependencies(
-                    mods, self.minecraft_version, self.loader
-                )
-
-                self.parent.after(0, lambda: self._display_results(result))
-                self.parent.after(0, lambda: self.progress_bar.stop())
-
-                # Вызываем callback если он есть
-                if self.on_complete_callback:
-                    self.parent.after(0, lambda: self.on_complete_callback(result))
-
-            except Exception as e:
-                self.parent.after(0, lambda: self.status_label.config(
-                    text=f"Ошибка анализа: {str(e)[:50]}..."
-                ))
-                self.parent.after(0, lambda: self.progress_bar.stop())
-                self.parent.after(0, lambda: self._on_close())
-
-        threading.Thread(target=analyze_thread, daemon=True).start()
+        self.worker = DependencyAnalyzerWorker(mods, self.minecraft_version, self.loader)
+        self.worker.progress.connect(self.status_label.setText)
+        self.worker.finished.connect(self._display_results)
+        self.worker.error.connect(lambda e: self._show_error(e))
+        self.worker.start()
 
     def _display_results(self, result: Dict):
         """Отображает результаты анализа"""
-        self.current_analysis = result
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
 
         # Очищаем дерево
-        for item in self.deps_tree.get_children():
-            self.deps_tree.delete(item)
+        self.deps_tree.clear()
 
         # Добавляем обязательные зависимости
-        for dep in result.get('required_dependencies', []):
-            self.deps_tree.insert(
-                "",
-                "end",
-                values=(
-                    "🔴 Обязательная",
-                    dep.name,
-                    dep.source.upper(),
-                    "Не установлена"
-                ),
-                tags=("required", dep)
-            )
+        required_deps = result.get('required_dependencies', [])
+        logger.info(f"Найдено обязательных зависимостей: {len(required_deps)}")
+
+        for dep in required_deps:
+            item = QTreeWidgetItem()
+            item.setText(0, "🔴 Обязательная")
+            item.setText(1, dep.name)
+            item.setText(2, dep.source.upper())
+            item.setText(3, "Не установлена")
+            item.setData(0, Qt.ItemDataRole.UserRole, dep)
+            self.deps_tree.addTopLevelItem(item)
 
         # Добавляем необязательные зависимости
-        for dep in result.get('optional_dependencies', []):
-            self.deps_tree.insert(
-                "",
-                "end",
-                values=(
-                    "🟡 Необязательная",
-                    dep.name,
-                    dep.source.upper(),
-                    "Опционально"
-                ),
-                tags=("optional", dep)
-            )
+        optional_deps = result.get('optional_dependencies', [])
+        logger.info(f"Найдено опциональных зависимостей: {len(optional_deps)}")
 
-        # Настраиваем цвета
-        self.deps_tree.tag_configure("required", foreground="#ff6b6b")
-        self.deps_tree.tag_configure("optional", foreground="#f39c12")
+        for dep in optional_deps:
+            item = QTreeWidgetItem()
+            item.setText(0, "🟡 Необязательная")
+            item.setText(1, dep.name)
+            item.setText(2, dep.source.upper())
+            item.setText(3, "Опционально")
+            item.setData(0, Qt.ItemDataRole.UserRole, dep)
+            self.deps_tree.addTopLevelItem(item)
 
-        # Обновляем статус
+        # Подсвечиваем обязательные зависимости
+        for i in range(self.deps_tree.topLevelItemCount()):
+            item = self.deps_tree.topLevelItem(i)
+            if "Обязательная" in item.text(0):
+                item.setForeground(0, QColor("#ff6b6b"))
+                item.setForeground(1, QColor("#ff6b6b"))
+
         total = result.get('total_mods', 0)
-        required = len(result.get('required_dependencies', []))
-        optional = len(result.get('optional_dependencies', []))
+        required = len(required_deps)
+        optional = len(optional_deps)
 
-        self.status_label.config(
-            text=f"Проанализировано модов: {total}. "
-                 f"Найдено зависимостей: {required + optional} "
-                 f"(обязательных: {required}, опциональных: {optional})"
+        status_text = (
+            f"✅ Проанализировано модов: {total}. "
+            f"Найдено зависимостей: {required + optional} "
+            f"(обязательных: {required}, опциональных: {optional})"
         )
+        self.status_label.setText(status_text)
+        logger.info(status_text)
 
         # Активируем кнопку если есть обязательные зависимости
-        if required > 0:
-            self.add_button.config(state="normal")
+        self.add_button.setEnabled(required > 0)
+
+        # Вызываем callback
+        if self.on_complete_callback:
+            self.on_complete_callback(result)
+
+    def _show_error(self, error_msg: str):
+        """Показывает ошибку"""
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.status_label.setText(f"❌ Ошибка: {error_msg}")
+        QMessageBox.critical(self.analyzer_window, "Ошибка", f"Не удалось проанализировать зависимости:\n{error_msg}")
 
     def _add_required_dependencies(self):
         """Добавляет обязательные зависимости в сборку"""
-        if not self.current_analysis:
+        if not self.tree_widget:
+            QMessageBox.warning(self.analyzer_window, "Ошибка", "Не удалось добавить зависимости")
             return
 
-        required_deps = self.current_analysis.get('required_dependencies', [])
+        # Собираем обязательные зависимости
+        required_deps = []
+        for i in range(self.deps_tree.topLevelItemCount()):
+            item = self.deps_tree.topLevelItem(i)
+            if "Обязательная" in item.text(0):
+                dep = item.data(0, Qt.ItemDataRole.UserRole)
+                if dep:
+                    required_deps.append(dep)
 
         if not required_deps:
-            messagebox.showinfo("Информация", "Нет обязательных зависимостей для добавления")
+            QMessageBox.information(self.analyzer_window, "Информация", "Нет обязательных зависимостей для добавления")
             return
 
         # Спрашиваем подтверждение
-        confirm = messagebox.askyesno(
+        reply = QMessageBox.question(
+            self.analyzer_window,
             "Добавление зависимостей",
             f"Добавить {len(required_deps)} обязательных зависимостей в сборку?\n\n"
-            f"Рекомендуется проверить совместимость версий."
+            f"Рекомендуется проверить совместимость версий.\n\n"
+            f"Зависимости будут добавлены к существующим модам.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
-        if not confirm:
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # Добавляем зависимости
+        # Добавляем зависимости, не удаляя существующие
         added_count = 0
         for dep in required_deps:
             if self._add_dependency_to_tree(dep):
                 added_count += 1
 
-        # Показываем результат
         if added_count > 0:
-            messagebox.showinfo(
+            QMessageBox.information(
+                self.analyzer_window,
                 "Готово",
-                f"Добавлено {added_count} зависимостей в сборку.\n"
-                f"Проверьте список модов."
+                f"✅ Добавлено {added_count} зависимостей в сборку.\n\n"
+                f"Теперь в сборке {self.tree_widget.topLevelItemCount()} модов."
             )
-
-            # Закрываем окно анализатора после добавления
-            self._on_close()
+            self.analyzer_window.close()
         else:
-            messagebox.showinfo(
+            QMessageBox.information(
+                self.analyzer_window,
                 "Информация",
                 "Все зависимости уже есть в сборке."
             )
@@ -268,27 +293,39 @@ class DependencyAnalyzerUI:
             return False
 
         # Проверяем, нет ли уже этого мода
-        for item in self.tree_widget.get_children():
-            item_tags = self.tree_widget.item(item)["tags"]
-            if len(item_tags) >= 2 and item_tags[1] == dep.project_id:
-                return False  # Уже существует
+        for i in range(self.tree_widget.topLevelItemCount()):
+            item = self.tree_widget.topLevelItem(i)
+            if item.text(1) == dep.name:
+                return False
 
         # Добавляем новый мод
-        self.tree_widget.insert(
-            "",
-            "end",
-            values=(
-                dep.source.capitalize(),
-                dep.name,
-                f"{dep.mod_id or dep.project_id}.jar"
-            ),
-            tags=(dep.source, dep.project_id)
-        )
+        source_icon = "🌐" if dep.source == "modrinth" else "⚡"
+        item = QTreeWidgetItem()
+        item.setText(0, f"{source_icon} {dep.source.capitalize()}")
+        item.setText(1, dep.name)
+        item.setText(2, f"{dep.mod_id or dep.project_id}.jar")
+
+        # Сохраняем данные для последующего использования
+        mod_data = {
+            'source': dep.source,
+            'name': dep.name,
+            'filename': f"{dep.mod_id or dep.project_id}.jar"
+        }
+
+        if dep.source == 'modrinth':
+            mod_data['modrinth_id'] = dep.mod_id or dep.project_id
+            mod_data['modrinth_slug'] = dep.mod_id or dep.project_id
+        else:
+            mod_data['curseforge_id'] = dep.mod_id or dep.project_id
+            mod_data['curseforge_slug'] = dep.mod_id or dep.project_id
+
+        item.setData(0, Qt.ItemDataRole.UserRole, mod_data)
+        self.tree_widget.addTopLevelItem(item)
         return True
 
     def _on_close(self):
         """Обработчик закрытия окна"""
         self._is_window_open = False
-        if self.analyzer_window and self.analyzer_window.winfo_exists():
-            self.analyzer_window.grab_release()
-            self.analyzer_window.destroy()
+        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
+            self.worker.terminate()
+            self.worker.wait(1000)

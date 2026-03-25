@@ -52,6 +52,17 @@ class ModrinthAPI:
 
         logger.info(f"Инициализирован Modrinth API с прокси: {self.proxy_url}")
 
+    def get_project(self, project_id: str) -> Optional[Dict]:
+        """Получает информацию о проекте по ID или slug"""
+        try:
+            url = f"{self.base_url}/project/{project_id}"
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Ошибка получения проекта {project_id}: {e}")
+            return None
+
     def _make_proxy_request(self, method: str, endpoint: str, **kwargs) -> Optional[requests.Response]:
         """Универсальный метод для запросов к прокси"""
         url = f"{self.proxy_url}{endpoint}"
@@ -108,20 +119,30 @@ class ModrinthAPI:
         """Получить версии мода для конкретной версии Minecraft и загрузчика"""
         try:
             url = f"{self.base_url}/project/{mod_id}/version"
-            # Передаём как JSON-строки
-            params = {
-                "game_versions": f'["{minecraft_version}"]',
-                "loaders": f'["{loader}"]',
-            }
-            response = self.session.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            versions = response.json()
 
-            # Фильтруем версии, у которых есть JAR-файл
-            return [
-                v for v in versions
-                if v.get("files") and any(f["filename"].endswith(".jar") for f in v["files"])
-            ]
+            # Получаем все версии
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            all_versions = response.json()
+
+            # Фильтруем по версии Minecraft и загрузчику
+            filtered = []
+            for version in all_versions:
+                game_versions = version.get("game_versions", [])
+                loaders = version.get("loaders", [])
+
+                # Проверяем совместимость
+                if minecraft_version in game_versions:
+                    if loader.lower() in [l.lower() for l in loaders]:
+                        # Проверяем, есть ли JAR-файл
+                        if version.get("files") and any(f["filename"].endswith(".jar") for f in version["files"]):
+                            filtered.append(version)
+
+            # Сортируем по дате (новые сверху)
+            filtered.sort(key=lambda x: x.get("date_published", ""), reverse=True)
+
+            logger.info(f"Найдено {len(filtered)} версий для {mod_id} (MC={minecraft_version}, loader={loader})")
+            return filtered
 
         except Exception as e:
             logger.error(f"Ошибка получения версий мода {mod_id}: {e}")
@@ -345,17 +366,15 @@ class ModrinthAPI:
             logger.error(f"Ошибка получения информации о проекте {project_slug}: {e}")
             return None
 
-    def get_project(self, project_id_or_slug: str) -> Optional[Dict]:
-        """Получает информацию о проекте"""
+    def get_project(self, project_id: str) -> Optional[Dict]:
+        """Получает информацию о проекте по ID или slug"""
         try:
-            response = self.session.get(
-                f"{self.base_url}/project/{project_id_or_slug}",
-                timeout=10
-            )
+            url = f"{self.base_url}/project/{project_id}"
+            response = self.session.get(url, timeout=10)
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            logger.error(f"Ошибка получения проекта {project_id_or_slug}: {e}")
+            logger.error(f"Ошибка получения проекта {project_id}: {e}")
             return None
 
     def get_version(self, version_id: str) -> Optional[Dict]:

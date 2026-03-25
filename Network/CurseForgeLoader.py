@@ -24,9 +24,9 @@ class CurseForgeAPI:
             'Accept': 'application/json',
             'X-API-Key': self.API_KEY  # Добавляем ключ по умолчанию
         })
-        self.timeout = 10
-        self.direct_timeout = 15
-        self.proxy_timeout = 30
+        self.timeout = 30  # увеличиваем с 10 до 30
+        self.direct_timeout = 30
+        self.proxy_timeout = 60  # увеличиваем с 30 до 60
 
         logger.info(f"Инициализирован CurseForge API с прокси: {self.proxy_url}")
 
@@ -123,14 +123,15 @@ class CurseForgeAPI:
             return None
 
     def get_mod_versions(self, mod_id: str, minecraft_version: str, loader: str) -> Optional[List[Dict]]:
-        """Получение версий мода"""
+        """Получение версий мода с зависимостями"""
         try:
             response = self._make_proxy_request(
                 'GET',
                 f'/api/v1/curseforge/mod/{mod_id}/versions',
                 params={
                     'minecraft_version': minecraft_version,
-                    'loader': loader.lower()
+                    'loader': loader.lower(),
+                    'include_dependencies': 'true'  # <-- добавить этот параметр
                 }
             )
 
@@ -142,6 +143,26 @@ class CurseForgeAPI:
 
         except Exception as e:
             logger.error(f"Ошибка получения версий: {e}")
+            return None
+
+    def get_mod_info(self, mod_id: str) -> Optional[Dict]:
+        """Получает информацию о моде по ID"""
+        try:
+            response = self._make_proxy_request(
+                'GET',
+                f'/api/v1/curseforge/mod/{mod_id}'
+            )
+
+            if response:
+                data = response.json()
+                if data.get("success"):
+                    return data.get("data", {})
+
+            logger.warning(f"Не удалось получить информацию о моде {mod_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Ошибка получения информации о моде {mod_id}: {e}")
             return None
 
     def download_mod(self, mod_id: str, version_id: str, filename: str, destination_dir: str) -> bool:

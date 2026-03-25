@@ -1,6 +1,8 @@
 from pathlib import Path # Для работы с путями
 import os
 import sys
+import requests
+import logging
 
 
 
@@ -1034,3 +1036,44 @@ CURSEFORGE_CONFIG = {
     "max_retries": 3
 }
 
+def setup_environment():
+    """Настройка окружения и загрузка ресурсов"""
+    try:
+        # Создаем папку если не существует
+        RESOURCE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Скачиваем недостающие файлы
+        for filename, url in RESOURCES.items():
+            file_path = RESOURCE_DIR / filename
+            if not file_path.exists():
+                # Получаем прямую ссылку на файл
+                download_url = get_yandex_direct_link(url)
+                if not download_url:
+                    continue
+
+                # Скачиваем файл
+                response = requests.get(download_url, stream=True)
+                response.raise_for_status()
+
+                # Сохраняем файл
+                with open(file_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                logging.info(f"Файл {filename} успешно загружен")
+
+    except Exception as e:
+        logging.error(f"Ошибка инициализации: {str(e)}")
+        raise
+
+
+def get_yandex_direct_link(public_key):
+    """Получаем прямую ссылку для скачивания через API Яндекс.Диска"""
+    api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
+    try:
+        response = requests.get(api_url, params={"public_key": public_key}, timeout=30)
+        response.raise_for_status()
+        return response.json().get("href")
+    except Exception as e:
+        logging.error(f"Ошибка получения ссылки: {str(e)}")
+        return None

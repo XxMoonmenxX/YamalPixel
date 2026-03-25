@@ -1,36 +1,35 @@
+# Network/Updates.py
 import logging
 import requests
 import re
-import tkinter as tk
-from tkinter import ttk, messagebox
 import os
 import sys
-from ttkthemes import ThemedTk
-from ConfDir.Versions import CURRENT_VERSION
-from pathlib import Path
 import subprocess
+import tempfile
+import stat
+import webbrowser
+from pathlib import Path
 
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QTextEdit, QProgressBar, QMessageBox, QFrame
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QFont, QTextCursor
 
-# УДАЛИТЬ эту строку - не создаем отдельное окно здесь
-# updsc = ThemedTk(theme="arc")
+from ConfDir.Versions import CURRENT_VERSION
+from ConfDir.Configs import resource_path
 
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    if hasattr(sys, '_MEIPASS'):
-        base_path = sys._MEIPASS
-    else:
-        base_path = Path.home() / "YamalPixelRes"
-    return os.path.join(base_path, relative_path)
+logger = logging.getLogger("YamalPixel.Updates")
 
 
 def set_window_icon(window):
-    """Set icon for all windows"""
+    """Set icon for all windows (PyQt6 version)"""
     try:
+        from PyQt6.QtGui import QIcon
         icon_path = resource_path("icon.ico")
 
-        # Дополнительная проверка для PyInstaller
         if not os.path.exists(icon_path):
-            # Пробуем найти в домашней директории
             home_icon_path = Path.home() / "YamalPixelRes" / "icon.ico"
             if os.path.exists(home_icon_path):
                 icon_path = home_icon_path
@@ -38,318 +37,356 @@ def set_window_icon(window):
                 print(f"Icon not found: {icon_path}")
                 return
 
-        window.iconbitmap(icon_path)
+        window.setWindowIcon(QIcon(icon_path))
         print(f"Icon loaded from: {icon_path}")
 
     except Exception as e:
         print(f"Icon error: {e}")
 
 
-def check_for_updates_local(parent_window=None):
-    """
-    Проверка обновлений с передачей родительского окна
-    parent_window: главное окно лаунчера (win)
-    """
-    try:
-        logging.info("Проверка обновлений...")
+class UpdateDownloadWorker(QThread):
+    """Поток для скачивания обновления"""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str, str)  # success, filepath
+    error = pyqtSignal(str)
 
-        # Проверяем права доступа
-        if not can_update_launcher():
-            logging.warning("Недостаточно прав для автоматического обновления")
+    def __init__(self, download_url, temp_exe):
+        super().__init__()
+        self.download_url = download_url
+        self.temp_exe = temp_exe
+
+    def run(self):
+        try:
+            with requests.get(self.download_url, stream=True) as r:
+                r.raise_for_status()
+                total_size = int(r.headers.get("content-length", 0))
+
+                with open(self.temp_exe, "wb") as f:
+                    downloaded = 0
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                percent = int((downloaded / total_size) * 100)
+                                self.progress.emit(percent)
+
+            # Делаем файл исполняемым (для Linux/MacOS)
+            if os.name != "nt":
+                os.chmod(self.temp_exe, os.stat(self.temp_exe).st_mode | stat.S_IEXEC)
+
+            self.finished.emit("success", self.temp_exe)
+
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+# Network/Updates.py - исправленный UpdateDialog
+
+class UpdateDialog(QDialog):
+    """Диалог обновления лаунчера"""
+
+    def __init__(self, parent=None, release_data=None):
+        super().__init__(parent)
+        self.release_data = release_data
+        self.latest_version = release_data["tag_name"].lstrip("v") if release_data else CURRENT_VERSION
+        self.changelog = self._format_changelog(
+            release_data.get("body", "Нет описания изменений")) if release_data else ""
+
+        self.setWindowTitle(f"YamalPixel - Обновление до v{self.latest_version}")
+        self.setMinimumSize(600, 500)
+        self.setModal(True)
+
+        # Устанавливаем стиль
+        self.setStyleSheet(self._get_stylesheet())
+
+        # Основной layout
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 30, 30, 30)
+
+        # Заголовок
+        title = QLabel("✨ Доступно обновление! ✨")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Версия
+        version_label = QLabel(f"Версия {self.latest_version}")
+        version_label.setObjectName("version")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(version_label)
+
+        # Разделитель
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("background-color: #4ECDC4; max-height: 2px;")
+        layout.addWidget(line)
+
+        # Что нового
+        whats_new = QLabel("📋 Что нового:")
+        whats_new.setObjectName("whatsnew")
+        layout.addWidget(whats_new)
+
+        # Текстовое поле с changelog
+        self.changelog_text = QTextEdit()
+        self.changelog_text.setReadOnly(True)
+        self.changelog_text.setPlainText(self.changelog)
+        self.changelog_text.setMinimumHeight(200)
+        layout.addWidget(self.changelog_text)
+
+        layout.addSpacing(10)
+
+        # Кнопки
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        self.install_btn = QPushButton("🔄 Установить обновление")
+        self.install_btn.setObjectName("install")
+        self.install_btn.setFixedSize(200, 45)
+        self.install_btn.clicked.connect(self.install_update)
+        button_layout.addWidget(self.install_btn)
+
+        self.skip_btn = QPushButton("⏭️ Пропустить")
+        self.skip_btn.setObjectName("skip")
+        self.skip_btn.setFixedSize(140, 45)
+        self.skip_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.skip_btn)
+
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+
+        self.set_window_icon()
+
+    def _get_stylesheet(self):
+        return """
+            QDialog {
+                background-color: #1e1e2f;
+                border-radius: 15px;
+            }
+            QLabel#title {
+                color: #4ECDC4;
+                font-size: 22px;
+                font-weight: bold;
+                font-family: 'Segoe UI';
+                padding: 10px;
+            }
+            QLabel#version {
+                color: #a0a0a0;
+                font-size: 14px;
+                font-family: 'Segoe UI';
+                padding-bottom: 10px;
+            }
+            QLabel#whatsnew {
+                color: #ffffff;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: 'Segoe UI';
+                margin-top: 10px;
+            }
+            QTextEdit {
+                background-color: #2a2a3a;
+                color: #e0e0e0;
+                border: 1px solid #4ECDC4;
+                border-radius: 12px;
+                padding: 12px;
+                font-size: 12px;
+                font-family: 'Consolas', monospace;
+            }
+            QPushButton#install {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #FF6B6B, stop:1 #4ECDC4);
+                color: white;
+                border: none;
+                border-radius: 22px;
+                font-size: 13px;
+                font-weight: bold;
+                font-family: 'Segoe UI';
+            }
+            QPushButton#install:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #ff8585, stop:1 #6ad5cb);
+            }
+            QPushButton#skip {
+                background-color: #3a3a4a;
+                color: #cccccc;
+                border: 1px solid #4ECDC4;
+                border-radius: 22px;
+                font-size: 13px;
+                font-weight: bold;
+                font-family: 'Segoe UI';
+            }
+            QPushButton#skip:hover {
+                background-color: #4a4a5a;
+                color: white;
+            }
+            QScrollBar:vertical {
+                background-color: #2a2a3a;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #4ECDC4;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #6ad5cb;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """
+
+    def _format_changelog(self, changelog):
+        """Форматирует changelog для отображения"""
+        if not changelog:
+            return "✨ Нет описания изменений"
+
+        # Убираем Markdown-разметку
+        changelog = re.sub(r"#{2,}", "", changelog)
+        changelog = re.sub(r"\- ", "• ", changelog)
+        changelog = re.sub(r"\*\*(.*?)\*\*", r"▸ \1", changelog)
+        changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
+
+        # Добавляем эмодзи для разных типов изменений
+        changelog = re.sub(r"fixed", "🔧 fixed", changelog, flags=re.IGNORECASE)
+        changelog = re.sub(r"added", "✨ added", changelog, flags=re.IGNORECASE)
+        changelog = re.sub(r"changed", "🔄 changed", changelog, flags=re.IGNORECASE)
+        changelog = re.sub(r"removed", "🗑️ removed", changelog, flags=re.IGNORECASE)
+
+        return changelog.strip()
+
+    def set_window_icon(self):
+        try:
+            from PyQt6.QtGui import QIcon
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+        except Exception as e:
+            print(f"Icon error: {e}")
+
+    def install_update(self):
+        """Начинает установку обновления"""
+        # Ищем EXE-файл в ассетах
+        update_asset = None
+        for asset in self.release_data.get("assets", []):
+            if asset["name"].lower().endswith(".exe"):
+                update_asset = asset
+                break
+
+        if not update_asset:
+            available = "\n".join([f"• {a['name']}" for a in self.release_data.get("assets", [])])
+            QMessageBox.warning(
+                self,
+                "Файл не найден",
+                f"EXE-файл не найден в релизе.\n\nДоступные файлы:\n{available}"
+            )
             return
 
-        response = requests.get(
-            "https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest"
+        self.accept()  # Закрываем диалог обновления
+        self.start_download_and_install(update_asset["browser_download_url"])
+
+    def start_download_and_install(self, download_url):
+        """Запускает скачивание и установку обновления"""
+        self.progress_dialog = UpdateProgressDialog(self, download_url)
+        self.progress_dialog.show()
+
+
+class UpdateProgressDialog(QDialog):
+    """Диалог прогресса скачивания обновления"""
+
+    def __init__(self, parent=None, download_url=None):
+        super().__init__(parent)
+        self.download_url = download_url
+        self.temp_exe = os.path.join(tempfile.gettempdir(), "YamalPixelLauncher_New.exe")
+
+        self.setWindowTitle("Обновление")
+        self.setFixedSize(450, 180)
+        self.setModal(True)
+
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e2f;
+                border-radius: 15px;
+            }
+            QLabel {
+                color: white;
+                font-family: 'Segoe UI';
+                font-size: 12px;
+            }
+            QProgressBar {
+                background-color: #2a2a3a;
+                border: none;
+                border-radius: 10px;
+                height: 20px;
+                text-align: center;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #FF6B6B, stop:1 #4ECDC4);
+                border-radius: 10px;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(25, 25, 25, 25)
+
+        self.status_label = QLabel("📥 Скачивание обновления...")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.status_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        layout.addWidget(self.progress_bar)
+
+        self.percent_label = QLabel("0%")
+        self.percent_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.percent_label)
+
+        # Запускаем скачивание
+        self.worker = UpdateDownloadWorker(download_url, self.temp_exe)
+        self.worker.progress.connect(self.on_progress)
+        self.worker.finished.connect(self.on_download_finished)
+        self.worker.error.connect(self.on_download_error)
+        self.worker.start()
+
+    def on_progress(self, percent):
+        self.progress_bar.setValue(percent)
+        self.percent_label.setText(f"{percent}%")
+
+    def on_download_finished(self, success, filepath):
+        """Обработка завершения скачивания"""
+        self.status_label.setText("⚙️ Подготовка к обновлению...")
+        self.progress_bar.setValue(100)
+        self.percent_label.setText("100%")
+
+        # Запускаем установку
+        self.perform_update(filepath)
+
+    def on_download_error(self, error_msg):
+        """Обработка ошибки скачивания"""
+        self.close()
+        QMessageBox.critical(
+            self,
+            "Ошибка",
+            f"Не удалось скачать обновление:\n{error_msg}\n\n"
+            f"Попробуйте скачать новую версию вручную с GitHub."
         )
-        response.raise_for_status()
+        self.show_manual_update()
 
-        release_data = response.json()
-        changelog = release_data.get("body", "Нет описания изменений")
+    def perform_update(self, temp_exe):
+        """Выполняет установку обновления"""
+        current_exe = os.path.abspath(sys.argv[0])
+        backup_exe = os.path.join(os.path.dirname(current_exe), "YamalPixelLauncher_Backup.exe")
+        temp_dir = tempfile.gettempdir()
 
-        # Убираем Markdown-разметку и форматируем
-        changelog = re.sub(r"\#{2,}", "", changelog)  # noqa
-        changelog = re.sub(r"\- ", "• ", changelog)  # noqa
-        changelog = re.sub(r"\*\*(.*?)\*\*", r"\1", changelog)
-        changelog = re.sub(r"\*(.*?)\*", r"\1", changelog)
-        changelog = changelog.strip()
-
-        latest_version = release_data["tag_name"].lstrip("v")
-
-        if latest_version != CURRENT_VERSION:
-            logging.info(f"Найдена новая версия: {latest_version}")
-
-            # Создаем окно обновления относительно родительского окна
-            update_window = tk.Toplevel(parent_window)
-            set_window_icon(update_window)
-            update_window.title(f"YamalPixel - Обновление до v{latest_version}")
-            update_window.geometry("550x450")
-            update_window.resizable(True, True)
-            update_window.transient(parent_window)
-            update_window.grab_set()
-
-            # Устанавливаем минимальный размер окна
-            update_window.minsize(500, 400)
-
-            # Делаем светлую тему для лучшей читаемости
-            update_window.configure(bg="white")
-
-            # Центрируем окно относительно родителя
-            update_window.update_idletasks()
-            if parent_window:
-                x = parent_window.winfo_x() + (parent_window.winfo_width() - 550) // 2
-                y = parent_window.winfo_y() + (parent_window.winfo_height() - 450) // 2
-            else:
-                # Если родителя нет, центрируем на экране
-                x = (update_window.winfo_screenwidth() // 2) - (550 // 2)
-                y = (update_window.winfo_screenheight() // 2) - (450 // 2)
-
-            update_window.geometry(f"550x450+{x}+{y}")
-
-            # Используем grid для всего окна
-            update_window.columnconfigure(0, weight=1)
-            update_window.rowconfigure(2, weight=1)  # Текстовое поле будет расширяться
-
-            # Заголовок
-            header_frame = tk.Frame(update_window, bg="white")
-            header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=15)
-            header_frame.columnconfigure(0, weight=1)
-
-            tk.Label(
-                header_frame,
-                text=f"Доступно обновление!",
-                font=("Comfortaa", 14, "bold"),
-                bg="white",
-                fg="#2c3e50",
-            ).grid(row=0, column=0)
-
-            tk.Label(
-                header_frame,
-                text=f"Версия {latest_version}",
-                font=("Comfortaa", 11),
-                bg="white",
-                fg="#7f8c8d",
-            ).grid(row=1, column=0, pady=(5, 0))
-
-            # Разделитель
-            separator = ttk.Separator(update_window, orient="horizontal")
-            separator.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
-
-            # Метка "Что нового"
-            label_frame = tk.Frame(update_window, bg="white")
-            label_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 5))
-            label_frame.columnconfigure(0, weight=1)
-
-            tk.Label(
-                label_frame,
-                text="Что нового в этой версии:",
-                font=("Comfortaa", 10, "bold"),
-                bg="white",
-                fg="#2c3e50",
-            ).grid(row=0, column=0, sticky="w")
-
-            # Фрейм для текста с прокруткой
-            text_frame = tk.Frame(update_window, bg="white")
-            text_frame.grid(row=3, column=0, sticky="nsew", padx=20, pady=(0, 10))
-            text_frame.columnconfigure(0, weight=1)
-            text_frame.rowconfigure(0, weight=1)
-
-            # Текстовое поле
-            text_widget = tk.Text(
-                text_frame,
-                wrap="word",
-                width=60,
-                height=15,
-                font=("Comfortaa", 9),
-                bg="#f8f9fa",
-                fg="#2c3e50",
-                relief="solid",
-                borderwidth=1,
-                padx=10,
-                pady=10,
-            )
-
-            scrollbar = ttk.Scrollbar(
-                text_frame, orient="vertical", command=text_widget.yview
-            )
-            text_widget.configure(yscrollcommand=scrollbar.set)
-
-            # Вставляем текст
-            text_widget.insert("1.0", changelog)
-            text_widget.configure(state="disabled")
-
-            # Упаковываем с grid
-            text_widget.grid(row=0, column=0, sticky="nsew")
-            scrollbar.grid(row=0, column=1, sticky="ns")
-
-            # Фрейм для кнопок
-            button_frame = tk.Frame(update_window, bg="white")
-            button_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=15)
-            button_frame.columnconfigure(0, weight=1)
-            button_frame.columnconfigure(1, weight=1)
-
-            def install_update():
-                update_window.destroy()
-
-                # Ищем ЛЮБОЙ EXE-файл в ассетах
-                update_asset = next(
-                    (
-                        asset
-                        for asset in release_data["assets"]
-                        if asset["name"].lower().endswith(".exe")
-                    ),
-                    None,
-                )
-
-                if update_asset:
-                    download_and_install_update(update_asset["browser_download_url"], parent_window)
-                else:
-                    # Если EXE не найден, показываем какие файлы есть
-                    available_files = "\n".join(
-                        [f"• {asset['name']}" for asset in release_data["assets"]]
-                    )
-                    messagebox.showerror(
-                        "Файл не найден",
-                        f"EXE-файл не найден в релизе.\n\nДоступные файлы:\n{available_files}",
-                    )
-
-            def skip_update():
-                update_window.destroy()
-                logging.info("Пользователь отказался от обновления")
-
-            # Кнопки - используем grid для фиксированного размера
-            btn_install = tk.Button(
-                button_frame,
-                text="🔄 УСТАНОВИТЬ ОБНОВЛЕНИЕ",
-                font=("Comfortaa", 10, "bold"),
-                bg="#27ae60",
-                fg="white",
-                relief="flat",
-                padx=20,
-                pady=10,
-                command=install_update,
-            )
-            btn_install.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-
-            btn_skip = tk.Button(
-                button_frame,
-                text="ПРОПУСТИТЬ",
-                font=("Comfortaa", 10),
-                bg="#95a5a6",
-                fg="white",
-                relief="flat",
-                padx=20,
-                pady=10,
-                command=skip_update,
-            )
-            btn_skip.grid(row=0, column=1, sticky="ew")
-
-            # Фокус и прокрутка
-            text_widget.focus_set()
-            text_widget.see("1.0")
-
-            # Добавляем ховер-эффекты для кнопок
-            def on_enter_install(_e):
-                btn_install.configure(bg="#219653")
-
-            def on_leave_install(_e):
-                btn_install.configure(bg="#27ae60")
-
-            def on_enter_skip(_e):
-                btn_skip.configure(bg="#7f8c8d")
-
-            def on_leave_skip(_e):
-                btn_skip.configure(bg="#95a5a6")
-
-            btn_install.bind("<Enter>", on_enter_install)
-            btn_install.bind("<Leave>", on_leave_install)
-            btn_skip.bind("<Enter>", on_enter_skip)
-            btn_skip.bind("<Leave>", on_leave_skip)
-
-        else:
-            messagebox.showinfo("Обновление", "Вы используете последнюю версию: " + CURRENT_VERSION)
-
-    except Exception as e:
-        logging.error(f"Ошибка проверки обновлений: {str(e)}")
-        messagebox.showerror("Ошибка", f"Не удалось проверить обновления: {str(e)}")
-
-
-def can_update_launcher():
-    """Проверяет, можно ли обновить лаунчер"""
-    try:
-        # Пробуем создать тестовый файл в той же директории
-        test_file = os.path.join(os.path.dirname(sys.argv[0]), "test_write.tmp")
-        with open(test_file, "w") as f:
-            f.write("test")
-        os.remove(test_file)
-        return True
-    except:  # noqa
-        return False
-
-
-def download_and_install_update(download_url, parent_window=None):
-    """Улучшенная функция обновления с обработкой прав доступа"""
-    import tempfile
-    import stat
-
-    temp_dir = tempfile.gettempdir()
-    temp_exe = os.path.join(temp_dir, "YamalPixelLauncher_New.exe")
-    current_exe = os.path.abspath(sys.argv[0])  # Текущий исполняемый файл
-    backup_exe = os.path.join(
-        os.path.dirname(current_exe), "YamalPixelLauncher_Backup.exe"
-    )
-
-    progress_window = None
-
-    try:
-        # Создаем окно прогресса относительно родителя
-        progress_window = tk.Toplevel(parent_window) if parent_window else tk.Toplevel()
-        set_window_icon(progress_window)
-        progress_window.title("Обновление")
-        progress_window.geometry("400x150")
-        progress_window.resizable(False, False)
-
-        progress = ttk.Progressbar(
-            progress_window, orient="horizontal", length=300, mode="determinate"
-        )
-        progress.pack(pady=20)
-        status_label = ttk.Label(progress_window, text="Скачивание обновления...")
-        status_label.pack()
-
-        # Скачиваем новую версию во временную папку
-        with requests.get(download_url, stream=True) as r:
-            r.raise_for_status()
-            total_size = int(r.headers.get("content-length", 0))
-
-            with open(temp_exe, "wb") as f:
-                downloaded = 0
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        percent = (
-                            int((downloaded / total_size) * 100)
-                            if total_size > 0
-                            else 0
-                        )
-                        progress["value"] = percent
-                        status_label.config(text=f"Загружено {percent}%")
-                        progress_window.update()
-
-        # Делаем файл исполняемым (для Linux/MacOS)
-        if os.name != "nt":
-            os.chmod(temp_exe, os.stat(temp_exe).st_mode | stat.S_IEXEC)
-
-        progress["value"] = 100
-        status_label.config(text="Подготовка к обновлению...")
-        progress_window.update()
-
-        # Создаем скрипт обновления
         if os.name == "nt":  # Windows
             bat_path = os.path.join(temp_dir, "yamalpixel_update.bat")
-            with open(bat_path, "w") as bat_file:
-                bat_file.write(
-                    f"""
-@echo off
+            with open(bat_path, "w", encoding="utf-8") as bat_file:
+                bat_file.write(f"""@echo off
 chcp 65001 >nul
 echo YamalPixel - Обновление
 timeout /t 2 /nobreak >nul
@@ -357,12 +394,12 @@ timeout /t 2 /nobreak >nul
 :: Закрываем лаунчер
 taskkill /f /im "{os.path.basename(current_exe)}" >nul 2>&1
 
-:: ОЧИСТКА ВРЕМЕННЫХ ФАЙЛОВ PYINSTALLER
+:: Очистка временных файлов PyInstaller
 del /q /f "%TEMP%\\_MEI*" >nul 2>&1
 for /d %%i in ("%TEMP%\\_MEI*") do rd /s /q "%%i" >nul 2>&1
 timeout /t 1 /nobreak >nul
 
-:: Создаем бэкап старой версии
+:: Создаем бэкап
 if exist "{current_exe}" (
     copy "{current_exe}" "{backup_exe}" >nul 2>&1
 )
@@ -378,22 +415,19 @@ if exist "{current_exe}" (
     start "" "{current_exe}"
 )
 
-:: Удаляем временные файлы
+:: Очистка
 del "{backup_exe}" >nul 2>&1
 del "%~f0" >nul 2>&1
-"""
-                )
+""")
 
-            # Запускаем батник
             subprocess.Popen(
                 [bat_path], shell=True, creationflags=subprocess.CREATE_NO_WINDOW
             )
 
         else:  # Linux/MacOS
             sh_path = os.path.join(temp_dir, "yamalpixel_update.sh")
-            with open(sh_path, "w") as sh_file:
-                sh_file.write(
-                    f"""#!/bin/bash
+            with open(sh_path, "w", encoding="utf-8") as sh_file:
+                sh_file.write(f"""#!/bin/bash
 echo "YamalPixel - Обновление"
 sleep 2
 
@@ -421,8 +455,7 @@ fi
 # Очистка
 rm -f "{backup_exe}" 2>/dev/null
 rm -f "$0" 2>/dev/null
-"""
-                )
+""")
             os.chmod(sh_path, 0o755)
             subprocess.Popen(
                 ["nohup", "bash", sh_path],
@@ -431,51 +464,110 @@ rm -f "$0" 2>/dev/null
             )
 
         # Закрываем текущий лаунчер
-        if progress_window:
-            progress_window.destroy()
+        QApplication.quit()
+        sys.exit(0)
 
-        if parent_window:
-            parent_window.after(100, lambda: sys.exit(0))
-        else:
+    def show_manual_update(self):
+        """Показывает опцию ручного обновления"""
+        reply = QMessageBox.question(
+            self,
+            "Ручное обновление",
+            "Не удалось автоматически обновиться.\n\n"
+            "Причины:\n"
+            "• Недостаточно прав\n"
+            "• Антивирус заблокировал обновление\n"
+            "• Файл занят другим процессом\n\n"
+            "Хотите скачать новую версию вручную?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            webbrowser.open(self.download_url)
+            QMessageBox.information(
+                self,
+                "Ручное обновление",
+                "Скачайте новую версию и замените текущий файл лаунчера.\n\n"
+                "Текущий лаунчер будет закрыт."
+            )
+            QApplication.quit()
             sys.exit(0)
 
-    except Exception as e:
-        logging.error(f"Ошибка обновления: {str(e)}")
 
-        # Очистка при ошибке
-        try:
-            if os.path.exists(temp_exe):
-                os.remove(temp_exe)
-        except:  # noqa
-            pass
-
-        if progress_window:
-            progress_window.destroy()
-
-        # Предлагаем альтернативный способ обновления
-        show_manual_update_option(download_url, parent_window)
+def can_update_launcher():
+    """Проверяет, можно ли обновить лаунчер"""
+    try:
+        test_file = os.path.join(os.path.dirname(sys.argv[0]), "test_write.tmp")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        return True
+    except:
+        return False
 
 
-def show_manual_update_option(download_url, parent_window=None):
-    """Показывает опцию ручного обновления при ошибке автоматического"""
-    result = messagebox.askyesno(
-        "Ошибка автоматического обновления",
-        "Не удалось автоматически обновиться.\n\n"
-        "Причины:\n"
-        "• Недостаточно прав\n"
-        "• Антивирус заблокировал обновление\n"
-        "• Файл занят другим процессом\n\n"
-        "Хотите скачать новую версию вручную?",
-        icon="warning",
-    )
+def check_for_updates_local(parent_window=None):
+    """
+    Проверка обновлений для PyQt6
+    parent_window: главное окно лаунчера (QMainWindow)
+    """
+    try:
+        logging.info("Проверка обновлений...")
 
-    if result:
-        import webbrowser
+        # Проверяем права доступа
+        if not can_update_launcher():
+            logging.warning("Недостаточно прав для автоматического обновления")
+            QMessageBox.information(
+                parent_window,
+                "Обновление",
+                "Недостаточно прав для автоматического обновления.\n\n"
+                "Запустите лаунчер от имени администратора для автоматического обновления,\n"
+                "или скачайте новую версию вручную с GitHub."
+            )
+            return
 
-        webbrowser.open(download_url)
-        messagebox.showinfo(
-            "Ручное обновление",
-            "Скачайте новую версию и замените текущий файл лаунчера.\n\n"
-            "Текущий лаунчер будет закрыт.",
+        response = requests.get(
+            "https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest",
+            timeout=10
         )
-        sys.exit(0)
+        response.raise_for_status()
+
+        release_data = response.json()
+        latest_version = release_data["tag_name"].lstrip("v")
+
+        if latest_version != CURRENT_VERSION:
+            logging.info(f"Найдена новая версия: {latest_version}")
+
+            # Показываем диалог обновления
+            dialog = UpdateDialog(parent_window, release_data)
+            dialog.exec()
+
+        else:
+            QMessageBox.information(
+                parent_window,
+                "Обновление",
+                f"Вы используете последнюю версию: {CURRENT_VERSION}"
+            )
+
+    except requests.exceptions.Timeout:
+        logging.error("Таймаут при проверке обновлений")
+        QMessageBox.warning(
+            parent_window,
+            "Ошибка",
+            "Не удалось проверить обновления: превышен таймаут.\n\n"
+            "Проверьте интернет-соединение и попробуйте позже."
+        )
+    except requests.exceptions.ConnectionError:
+        logging.error("Ошибка подключения при проверке обновлений")
+        QMessageBox.warning(
+            parent_window,
+            "Ошибка",
+            "Не удалось подключиться к серверу обновлений.\n\n"
+            "Проверьте интернет-соединение и попробуйте позже."
+        )
+    except Exception as e:
+        logging.error(f"Ошибка проверки обновлений: {str(e)}")
+        QMessageBox.critical(
+            parent_window,
+            "Ошибка",
+            f"Не удалось проверить обновления: {str(e)}"
+        )

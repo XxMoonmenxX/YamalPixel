@@ -1,5 +1,11 @@
-import tkinter as tk # Графический интерфейс
-from tkinter import ttk, messagebox # Для стилизации и сообщений
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QLabel, QPushButton, QLineEdit,
+                             QComboBox, QProgressBar, QTextEdit, QMessageBox,
+                             QCheckBox, QFrame, QSpacerItem, QSizePolicy,
+                             QScrollArea, QTreeWidget, QTreeWidgetItem,
+                             QTabWidget, QDialog, QDialogButtonBox)
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QLinearGradient, QPalette, QBrush, QColor # Для стилизации и сообщений
 import minecraft_launcher_lib # Для запуска лаунчера
 import minecraft_launcher_lib.mod_loader
 from minecraft_launcher_lib.mod_loader import get_mod_loader #Кастомная сборка minecraft_launcher_lib, пришлось повозиться с _neoforge.py
@@ -8,7 +14,6 @@ import threading # Для асинхронного запуска лаунчер
 import os # Для работы с файлами
 import requests # Для запросов
 import re # Для регулярных выражений
-from ttkthemes import ThemedTk # Для темы
 from mcstatus import JavaServer # Для проверки статуса сервера
 from pygame import mixer # Для музыки
 import zipfile # Для работы с ZIP-файлами
@@ -2706,13 +2711,15 @@ def skip_java_check():
 # Инициализация звука
 mixer.init()
 mixer.music.set_volume(0.1)
-
+set_window_icon(win)
 # Создание главного окна
 win = ThemedTk(theme="arc")
 win.geometry("1920x1080")
-set_window_icon(win)
-win.title("YamPixel")
 
+win.title("YamPixel")
+if not check_java_version():
+    if messagebox.askyesno("Java не найдена", "Установить Java 17?"):
+        install_java_with_progress()
 # === ПЕРЕМЕЩАЕМ СЮДА ВСЁ ОТНОСИТЕЛЬНО СЕССИИ ===
 LAST_SESSION_FILE = os.path.expanduser("~/YamalPixel/last_session.json")
 
