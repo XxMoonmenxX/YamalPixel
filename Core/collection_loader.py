@@ -5,8 +5,10 @@ import shutil
 from datetime import datetime
 from typing import List, Dict, Optional
 from ConfDir.Configs import COLLECTIONS_CONFIG, CONFIG
-from Network.ModrinthLoader import ModrinthAPI
-from Network.CurseForgeLoader import CurseForgeAPI
+from Network.Downloader import download_single_mod_turbo_sync
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_collections_dir() -> str:
@@ -140,97 +142,85 @@ def delete_collection(filename: str) -> bool:
 
 
 def install_collection(collection_data: Dict, progress_callback=None) -> bool:
-    """Устанавливает сборку (скачивает моды) - для PyQt6"""
+    """
+    Устанавливает сборку (скачивает моды)
+    Использует универсальную функцию загрузки с поддержкой прокси
+    """
     try:
         from Core.run import set_current_collection
+
         mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
         os.makedirs(mods_dir, exist_ok=True)
 
-        modrinth_api = ModrinthAPI()
-        curseforge_api = None
-
-        # Инициализируем CurseForge API если доступен
-        from ConfDir.Configs import CURSEFORGE_CONFIG
-        if CURSEFORGE_CONFIG.get("enabled", False):
-            try:
-                proxy_url = CURSEFORGE_CONFIG.get("proxy_url", "http://localhost:8000")
-                curseforge_api = CurseForgeAPI(proxy_url)
-            except:
-                pass
-
-        if success_count == total_mods:
-            # Сохраняем текущую сборку
-            set_current_collection(collection_data['name'])
-
         total_mods = len(collection_data.get('mods', []))
         success_count = 0
+
+        # Сохраняем информацию о сборке для callback
+        collection_name = collection_data.get('name', 'Unknown')
+        minecraft_version = collection_data.get('minecraft_version', '1.20.1')
+        loader = collection_data.get('loader', 'fabric')
+
+        logger.info(f"📦 Установка сборки: {collection_name}")
+        logger.info(f"   Версия: {minecraft_version}, Загрузчик: {loader}")
+        logger.info(f"   Модов: {total_mods}")
 
         for i, mod in enumerate(collection_data.get('mods', [])):
             if progress_callback:
                 progress_callback(i, total_mods, mod.get('name', 'Unknown'))
 
             source = mod.get('source', 'modrinth')
+            mod_name = mod.get('name', 'Unknown')
+
+            logger.debug(f"   [{i + 1}/{total_mods}] Загрузка: {mod_name} (источник: {source})")
 
             try:
+                # Подготавливаем информацию о моде для загрузчика
+                mod_info = {
+                    "file": mod.get('filename', f"{mod.get('modrinth_slug', mod_name)}.jar"),
+                    "name": mod_name,
+                    "source": source,
+                }
+
+                # Добавляем URL в зависимости от источника
                 if source == 'modrinth':
-                    mod_id = mod.get('modrinth_id')
-                    if not mod_id:
-                        continue
+                    mod_info["modrinth_id"] = mod.get('modrinth_id')
+                    mod_info["project_id"] = mod.get('modrinth_id')
+                    mod_info["version_id"] = mod.get('version_id')  # может быть None
+                elif source == 'curseforge':
+                    mod_info["curseforge_id"] = str(mod.get('curseforge_id'))
+                    mod_info["project_id"] = str(mod.get('curseforge_id'))
+                elif source == 'yandex' or source == 'local':
+                    mod_info["url"] = mod.get('url', '')
 
-                    versions = modrinth_api.get_mod_versions(
-                        mod_id=mod_id,
-                        minecraft_version=collection_data['minecraft_version'],
-                        loader=collection_data['loader'].lower()
-                    )
+                # Используем универсальную функцию загрузки с передачей версии и загрузчика
+                success = download_single_mod_turbo_sync(
+                    mod_info=mod_info,
+                    minecraft_dir=CONFIG["minecraft_dir"],
+                    source=source,
+                    minecraft_version=minecraft_version,  # ← передаём версию Minecraft
+                    loader=loader  # ← передаём тип загрузчика
+                )
 
-                    if versions:
-                        latest_version = versions[0]
-                        if latest_version.get('files'):
-                            file_info = latest_version['files'][0]
-                            filename = file_info['filename']
-                            project_slug = mod.get('modrinth_slug', mod_id)
-
-                            # Используем метод download_mod из ModrinthAPI
-                            if modrinth_api.download_mod(project_slug, latest_version['id'], filename, mods_dir):
-                                success_count += 1
-                            else:
-                                # Пробуем альтернативный метод
-                                from Network.Downloader import download_single_mod_turbo
-                                temp_mod = {"file": filename, "url": f"https://modrinth.com/mod/{project_slug}"}
-                                if download_single_mod_turbo(temp_mod, CONFIG["minecraft_dir"]):
-                                    success_count += 1
-
-                elif source == 'curseforge' and curseforge_api:
-                    mod_id = mod.get('curseforge_id')
-                    if not mod_id:
-                        continue
-
-                    versions = curseforge_api.get_mod_versions(
-                        mod_id=str(mod_id),
-                        minecraft_version=collection_data['minecraft_version'],
-                        loader=collection_data['loader'].lower()
-                    )
-
-                    if versions:
-                        version_info = versions[0]
-                        filename = version_info.get('filename', f'mod-{mod_id}.jar')
-
-                        if curseforge_api.download_mod(str(mod_id), version_info['id'], filename, mods_dir):
-                            success_count += 1
-
-                elif source == 'local':
-                    # Локальные моды копируем из папки сборки
-                    local_path = os.path.join(get_collections_dir(), 'mods', mod.get('filename', ''))
-                    if os.path.exists(local_path):
-                        shutil.copy2(local_path, os.path.join(mods_dir, mod['filename']))
-                        success_count += 1
+                if success:
+                    success_count += 1
+                    logger.info(f"   ✅ {mod_name} - установлен")
+                else:
+                    logger.warning(f"   ❌ {mod_name} - не удалось загрузить")
 
             except Exception as e:
-                print(f"Ошибка установки мода {mod.get('name')}: {e}")
+                logger.error(f"   💥 Ошибка установки мода {mod_name}: {e}")
+
+        # Сохраняем текущую сборку если успешно загружено больше половины
+        if success_count >= total_mods // 2:
+            set_current_collection(collection_name)
+            logger.info(f"✅ Сборка '{collection_name}' установлена ({success_count}/{total_mods})")
+        else:
+            logger.warning(f"⚠️ Сборка '{collection_name}' установлена частично ({success_count}/{total_mods})")
 
         return success_count == total_mods
+
     except Exception as e:
-        print(f"❌ Ошибка установки сборки: {e}")
+        logger.error(f"❌ Ошибка установки сборки: {e}")
         return False
 
 

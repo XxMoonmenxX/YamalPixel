@@ -54,9 +54,11 @@ RESOURCES = {
     "icon.ico": "https://disk.yandex.ru/i/nRwZp3AzRI16qQ"
 }
 # Конфигурация
+API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
 CONFIG = {
     "version": "1.20.1",
     "fabric_loader": "0.17.2",
+    "use_proxy_for_downloads": True,
     "minecraft_dir": os.path.expanduser("~/YamalPixel"),
     "mods": [
         {
