@@ -32,11 +32,14 @@ from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_c
 
 from Core.run import is_game_running, set_current_collection, get_current_collection
 
+from Network.java_checker import check_java_on_startup, check_java_version
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
 from Network.ModrinthLoader import ModrinthAPI
 from Network.CurseForgeLoader import CurseForgeAPI
 from Network.CommunityCollections import show_community_collections
+from Network.shader_manager import show_shader_manager
+from Network.Downloader import download_shaders_turbo_ui
 
 from Ui.UiComponents import (
     ModernButton, ModernCheckbutton, ModernCloseButton,
@@ -509,6 +512,40 @@ class MainWindow(QMainWindow):
 
         # Рабочий поток для сетевых операций
         self.worker_thread = None
+
+        # Давай-ка чекнем java
+        self.check_java_on_startup()
+
+    def check_java_on_startup(self):
+        """Проверяет Java при запуске"""
+
+        def check_thread():
+            try:
+                ok, message = check_java_version()
+                if not ok:
+                    # Нужно показать диалог в основном потоке
+                    from PyQt6.QtCore import QMetaObject, Q_ARG
+                    QMetaObject.invokeMethod(
+                        self, "_show_java_dialog",
+                        Qt.ConnectionType.QueuedConnection
+                    )
+                else:
+                    print(f"✅ Java проверена: {message}")
+            except Exception as e:
+                print(f"⚠️ Ошибка проверки Java: {e}")
+
+        threading.Thread(target=check_thread, daemon=True).start()
+
+    def _show_java_dialog(self):
+        """Показывает диалог установки Java (вызывается из основного потока)"""
+        from Network.java_checker import JavaCheckDialog
+        dialog = JavaCheckDialog(self)
+        dialog.exec()
+
+    def _show_java_dialog(self):
+        """Показывает диалог установки Java (вызывается из основного потока)"""
+        dialog = JavaCheckDialog(self)
+        dialog.exec()
 
     def load_fonts(self):
         """Загружает шрифты, поддерживающие кириллицу"""
@@ -1121,14 +1158,80 @@ class MainWindow(QMainWindow):
         """Открывает менеджер шейдеров"""
         try:
             from Network.Downloader import download_shaders_turbo_ui
+            from ConfDir.Configs import SHADERS_CONFIG
 
-            # Создаем простой диалог выбора шейдеров
+            # Создаем диалог выбора шейдеров
             dialog = QDialog(self)
-            dialog.setWindowTitle("Выбор шейдеров")
-            dialog.setMinimumSize(800, 500)
+            dialog.setWindowTitle("🎨 Выбор шейдеров")
+            dialog.setMinimumSize(900, 550)
             dialog.setModal(True)
 
+            # Стилизация диалога
+            dialog.setStyleSheet("""
+                QDialog {
+                    background-color: #2b2b2b;
+                    border-radius: 15px;
+                }
+                QLabel {
+                    color: white;
+                    font-family: 'Segoe UI';
+                }
+                QListWidget {
+                    background-color: #1a1a2a;
+                    color: #e0e0e0;
+                    border: 1px solid #4ECDC4;
+                    border-radius: 8px;
+                    outline: none;
+                    font-family: 'Segoe UI';
+                    font-size: 12px;
+                }
+                QListWidget::item {
+                    padding: 8px;
+                }
+                QListWidget::item:selected {
+                    background-color: #4ECDC4;
+                    color: #1a1a1a;
+                }
+                QPushButton {
+                    background-color: #3a3a4a;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 8px 16px;
+                    font-weight: bold;
+                    font-family: 'Segoe UI';
+                    font-size: 12px;
+                }
+                QPushButton:hover {
+                    background-color: #4a4a5a;
+                }
+                QPushButton#download {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #FF6B6B, stop:1 #4ECDC4);
+                }
+                QPushButton#download:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #ff8585, stop:1 #6ad5cb);
+                }
+                QPushButton#select_all, QPushButton#clear_all {
+                    background-color: #4a5568;
+                }
+            """)
+
             layout = QVBoxLayout(dialog)
+            layout.setSpacing(15)
+            layout.setContentsMargins(20, 20, 20, 20)
+
+            # Заголовок
+            title = QLabel("🎨 Менеджер шейдеров")
+            title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(title)
+
+            subtitle = QLabel("Выберите шейдеры для установки")
+            subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            subtitle.setStyleSheet("color: #888888; font-size: 12px;")
+            layout.addWidget(subtitle)
 
             # Список шейдеров
             list_widget = QListWidget()
@@ -1138,23 +1241,68 @@ class MainWindow(QMainWindow):
                 item.setCheckState(Qt.CheckState.Unchecked)
                 list_widget.addItem(item)
 
-            layout.addWidget(QLabel("Выберите шейдеры для установки:"))
             layout.addWidget(list_widget)
 
-            # Кнопки
-            btn_layout = QHBoxLayout()
-            select_all_btn = QPushButton("Выбрать все")
-            clear_all_btn = QPushButton("Снять все")
-            download_btn = QPushButton("Скачать")
-            cancel_btn = QPushButton("Отмена")
+            # Счетчик выбранных
+            counter_label = QLabel("Выбрано: 0 шейдеров")
+            counter_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            counter_label.setStyleSheet("color: #cccccc; font-size: 11px;")
+            layout.addWidget(counter_label)
+
+            def update_counter():
+                count = 0
+                for i in range(list_widget.count()):
+                    if list_widget.item(i).checkState() == Qt.CheckState.Checked:
+                        count += 1
+                counter_label.setText(f"Выбрано: {count} шейдеров")
+                if count > 5:
+                    counter_label.setStyleSheet("color: #ffaa00; font-size: 11px;")
+                else:
+                    counter_label.setStyleSheet("color: #cccccc; font-size: 11px;")
 
             def select_all():
                 for i in range(list_widget.count()):
                     list_widget.item(i).setCheckState(Qt.CheckState.Checked)
+                update_counter()
 
             def clear_all():
                 for i in range(list_widget.count()):
                     list_widget.item(i).setCheckState(Qt.CheckState.Unchecked)
+                update_counter()
+
+            def on_item_changed(item):
+                update_counter()
+
+            list_widget.itemChanged.connect(on_item_changed)
+
+            # Кнопки
+            button_layout = QHBoxLayout()
+
+            select_all_btn = QPushButton("✅ Выбрать все")
+            select_all_btn.setObjectName("select_all")
+            select_all_btn.clicked.connect(select_all)
+            button_layout.addWidget(select_all_btn)
+
+            clear_all_btn = QPushButton("❌ Снять все")
+            clear_all_btn.setObjectName("clear_all")
+            clear_all_btn.clicked.connect(clear_all)
+            button_layout.addWidget(clear_all_btn)
+
+            button_layout.addStretch()
+
+            download_btn = QPushButton("📥 Скачать выбранные")
+            download_btn.setObjectName("download")
+            button_layout.addWidget(download_btn)
+
+            open_folder_btn = QPushButton("📁 Открыть папку")
+            open_folder_btn.clicked.connect(self.open_shaders_folder)
+            button_layout.addWidget(open_folder_btn)
+
+            cancel_btn = QPushButton("❌ Закрыть")
+            cancel_btn.clicked.connect(dialog.reject)
+            button_layout.addWidget(cancel_btn)
+
+            layout.addLayout(button_layout)
 
             def download():
                 selected = []
@@ -1163,29 +1311,48 @@ class MainWindow(QMainWindow):
                     if item.checkState() == Qt.CheckState.Checked:
                         selected.append(SHADERS_CONFIG["shaders"][i])
 
-                if selected:
-                    dialog.accept()
-                    # Запускаем загрузку в отдельном потоке
-                    threading.Thread(target=lambda: download_shaders_turbo_ui(selected), daemon=True).start()
-                else:
+                if not selected:
                     MessageDialog.show_warning(self, "Выбор", "Выберите хотя бы один шейдер")
+                    return
 
-            select_all_btn.clicked.connect(select_all)
-            clear_all_btn.clicked.connect(clear_all)
+                total_size = len(selected) * 50
+                reply = MessageDialog.show_question(
+                    self,
+                    "Подтверждение загрузки",
+                    f"Начать загрузку {len(selected)} шейдеров?\n\n"
+                    f"Примерный размер: ~{total_size} MB\n"
+                    f"Время загрузки: 1-5 минут\n\n"
+                    f"Шейдеры будут сохранены в папку shaderpacks"
+                )
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    dialog.accept()
+                    # Запускаем загрузку в отдельном потоке с UI прогресса
+                    download_shaders_turbo_ui(selected, self)
+
             download_btn.clicked.connect(download)
-            cancel_btn.clicked.connect(dialog.reject)
 
-            btn_layout.addWidget(select_all_btn)
-            btn_layout.addWidget(clear_all_btn)
-            btn_layout.addStretch()
-            btn_layout.addWidget(download_btn)
-            btn_layout.addWidget(cancel_btn)
+            # Центрируем окно
+            dialog.move(
+                self.x() + (self.width() - dialog.width()) // 2,
+                self.y() + (self.height() - dialog.height()) // 2
+            )
 
-            layout.addLayout(btn_layout)
             dialog.exec()
 
         except Exception as e:
             MessageDialog.show_error(self, "Ошибка", f"Не удалось открыть менеджер шейдеров: {e}")
+
+    def open_shaders_folder(self):
+        """Открывает папку с шейдерами"""
+        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        os.makedirs(shaders_dir, exist_ok=True)
+
+        if os.name == "nt":
+            os.startfile(shaders_dir)
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", shaders_dir])
 
     def open_game_folder(self):
         """Открывает папку с игрой"""
@@ -1411,8 +1578,9 @@ class MainWindow(QMainWindow):
                     self.status_updated.emit("Установка Minecraft...")
                     self.progress_updated.emit(70)
 
+                    # ИСПРАВЛЕНО: version вместо versionid
                     minecraft_launcher_lib.install.install_minecraft_version(
-                        versionid=CONFIG["version"],
+                        version=CONFIG["version"],  # ← здесь исправлено
                         minecraft_directory=minecraft_dir
                     )
 
@@ -1481,7 +1649,43 @@ class MainWindow(QMainWindow):
                 self.setMinimumSize(400, 200)
                 self.setModal(True)
 
+                self.setStyleSheet("""
+                    QDialog {
+                        background-color: #2b2b2b;
+                        border-radius: 15px;
+                    }
+                    QLabel {
+                        color: white;
+                        font-family: 'Segoe UI';
+                    }
+                    QProgressBar {
+                        background-color: #3a3a4a;
+                        border: none;
+                        border-radius: 8px;
+                        height: 20px;
+                        text-align: center;
+                        color: white;
+                    }
+                    QProgressBar::chunk {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 #FF6B6B, stop:1 #4ECDC4);
+                        border-radius: 8px;
+                    }
+                    QPushButton {
+                        background-color: #4a5568;
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        padding: 8px 16px;
+                    }
+                    QPushButton:hover {
+                        background-color: #5a6b82;
+                    }
+                """)
+
                 layout = QVBoxLayout(self)
+                layout.setSpacing(15)
+                layout.setContentsMargins(25, 25, 25, 25)
 
                 self.status_label = QLabel("Подготовка к переустановке...")
                 self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1574,8 +1778,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             MessageDialog.show_error(self, "Ошибка", f"Не удалось выбрать фон: {e}")
 
-    def load_custom_background(self, filename):
-        """Загружает выбранный фон и сохраняет в настройки"""
+    def load_custom_background(self, filename, show_message=False):
+        """Загружает выбранный фон"""
         try:
             bg_path = RESOURCE_DIR / filename
             if bg_path.exists():
@@ -1591,11 +1795,10 @@ class MainWindow(QMainWindow):
                 palette = QPalette()
                 palette.setBrush(QPalette.ColorRole.Window, QBrush(scaled_pixmap))
                 self.setPalette(palette)
-
-                # Сохраняем текущий фон
                 self.current_background = filename
 
-                MessageDialog.show_info(self, "Успех", f"Фон {filename} применен!")
+                if show_message:
+                    MessageDialog.show_info(self, "Успех", f"Фон {filename} применен!")
         except Exception as e:
             print(f"Ошибка загрузки фона: {e}")
 

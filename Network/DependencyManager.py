@@ -1,16 +1,9 @@
 # Network/DependencyManager.py
-import sqlite3
-import json
-import threading
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import List, Dict, Set, Optional
+import re
+import requests
 import logging
-
-from Network.ModrinthLoader import ModrinthAPI
-from Network.CurseForgeLoader import CurseForgeAPI
-from ConfDir.Configs import CONFIG, CURSEFORGE_CONFIG
-from ConfDir.known_dependencies import get_dependencies_for_mod
+from bs4 import BeautifulSoup
+from typing import List, Dict, Optional
 
 logger = logging.getLogger("YamalPixel.DependencyManager")
 
@@ -19,731 +12,360 @@ class ModDependency:
     """Класс для представления зависимости мода"""
 
     def __init__(self, data: Dict):
-        self.source = data.get('source')  # 'modrinth' или 'curseforge'
+        self.source = data.get('source')
         self.project_id = data.get('project_id')
-        self.mod_id = data.get('mod_id')  # Slug или ID
+        self.mod_id = data.get('mod_id')
         self.name = data.get('name', 'Unknown')
-        self.version_range = data.get('version_range', '*')
-        self.dependency_type = data.get('type', 'required')  # required/optional/incompatible
-        self.loader = data.get('loader')  # fabric/forge/neoforge
-        self.minecraft_version = data.get('minecraft_version')
-
-    def __str__(self):
-        return f"{self.name} ({self.source}:{self.mod_id or self.project_id}) [{self.dependency_type}]"
-
-    def to_dict(self):
-        """Преобразует в словарь для JSON"""
-        return {
-            'source': self.source,
-            'project_id': self.project_id,
-            'mod_id': self.mod_id,
-            'name': self.name,
-            'version_range': self.version_range,
-            'type': self.dependency_type,
-            'loader': self.loader,
-            'minecraft_version': self.minecraft_version
-        }
-
-
-class DependencyCache:
-    """Кеш зависимостей на основе SQLite"""
-
-    def __init__(self):
-        self.db_path = Path(CONFIG["minecraft_dir"]) / "dependency_cache.db"
-        self.init_db()
-
-    def init_db(self):
-        """Инициализирует базу данных"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # Таблица для кеша зависимостей
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS mod_dependencies (
-                mod_key TEXT PRIMARY KEY,
-                source TEXT,
-                mod_info_json TEXT,
-                dependencies_json TEXT,
-                last_updated TIMESTAMP
-            )
-        ''')
-
-        # Таблица для результатов поиска
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS search_cache (
-                search_key TEXT PRIMARY KEY,
-                results_json TEXT,
-                last_updated TIMESTAMP
-            )
-        ''')
-
-        conn.commit()
-        conn.close()
-
-    def get_mod_dependencies(self, mod_key: str, max_age_hours: int = 24) -> Optional[Dict]:
-        """Получает зависимости мода из кеша"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            'SELECT dependencies_json, last_updated FROM mod_dependencies WHERE mod_key = ?',
-            (mod_key,)
-        )
-        result = cursor.fetchone()
-        conn.close()
-
-        if not result:
-            return None
-
-        deps_json, last_updated = result
-        last_updated = datetime.fromisoformat(last_updated)
-
-        # Проверяем свежесть кеша
-        if datetime.now() - last_updated > timedelta(hours=max_age_hours):
-            return None
-
-        return json.loads(deps_json)
-
-    def save_mod_dependencies(self, mod_key: str, source: str, mod_info: Dict, dependencies: List[Dict]):
-        """Сохраняет зависимости мода в кеш"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            '''INSERT OR REPLACE INTO mod_dependencies 
-               (mod_key, source, mod_info_json, dependencies_json, last_updated)
-               VALUES (?, ?, ?, ?, ?)''',
-            (
-                mod_key,
-                source,
-                json.dumps(mod_info),
-                json.dumps(dependencies),
-                datetime.now().isoformat()
-            )
-        )
-
-        conn.commit()
-        conn.close()
-
-    def get_search_results(self, search_key: str) -> Optional[List[Dict]]:
-        """Получает результаты поиска из кеша"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            'SELECT results_json FROM search_cache WHERE search_key = ?',
-            (search_key,)
-        )
-        result = cursor.fetchone()
-        conn.close()
-
-        if not result:
-            return None
-
-        return json.loads(result[0])
-
-    def save_search_results(self, search_key: str, results: List[Dict]):
-        """Сохраняет результаты поиска в кеш"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            '''INSERT OR REPLACE INTO search_cache 
-               (search_key, results_json, last_updated)
-               VALUES (?, ?, ?)''',
-            (search_key, json.dumps(results), datetime.now().isoformat())
-        )
-
-        conn.commit()
-        conn.close()
+        self.dependency_type = data.get('type', 'required')
+        self.url = data.get('url')
 
 
 class DependencyManager:
-    """Основной менеджер зависимостей"""
-
     def __init__(self):
-        self.modrinth_api = ModrinthAPI()
+        self.modrinth_api = None
         self.curseforge_api = None
-        self.cache = DependencyCache()
+        self._init_curseforge_api()
 
-        # Инициализируем CurseForge API если доступен
-        if CURSEFORGE_CONFIG.get("enabled", False):
-            try:
-                proxy_url = CURSEFORGE_CONFIG.get("proxy_url", "http://localhost:8000")
-                self.curseforge_api = CurseForgeAPI(proxy_url)
+    def _get_modrinth_api(self):
+        """Ленивая инициализация Modrinth API"""
+        if self.modrinth_api is None:
+            from Network.ModrinthLoader import ModrinthAPI
+            self.modrinth_api = ModrinthAPI()
+        return self.modrinth_api
 
-                if not self.curseforge_api.test_connection():
-                    logger.warning("CurseForge API недоступен")
-                    self.curseforge_api = None
-            except Exception as e:
-                logger.error(f"Ошибка инициализации CurseForge API: {e}")
+    def _init_curseforge_api(self):
+        """Инициализация CurseForge API через прокси"""
+        try:
+            from Network.CurseForgeLoader import CurseForgeAPI
+            from ConfDir.Configs import CURSEFORGE_CONFIG
+
+            proxy_url = CURSEFORGE_CONFIG.get("proxy_url", "http://90.151.59.120:8000")
+            self.curseforge_api = CurseForgeAPI(proxy_url)
+
+            if not self.curseforge_api.test_connection():
+                logger.warning("⚠️ CurseForge прокси недоступен")
                 self.curseforge_api = None
-
-        # Очередь для обработки
-        self.processing_queue = []
-        self.is_processing = False
+            else:
+                logger.info("✅ CurseForge API через прокси инициализирован")
+        except Exception as e:
+            logger.error(f"Ошибка инициализации CurseForge API: {e}")
+            self.curseforge_api = None
 
     def resolve_dependencies_for_mod(self, mod_info: Dict, minecraft_version: str, loader: str) -> List[ModDependency]:
-        """
-        Рекурсивно разрешает зависимости для одного мода
-        """
+        """Основной метод для получения зависимостей"""
         source = mod_info.get('source')
-        # Правильное получение ID мода - ищем в разных полях
-        mod_id = (mod_info.get('mod_id') or
-                  mod_info.get('project_id') or
-                  mod_info.get('modrinth_id') or
-                  mod_info.get('curseforge_id'))
-
-        logger.info(f"🔍 Анализ зависимостей для: {mod_info.get('name', 'Unknown')} (source={source}, id={mod_id})")
+        mod_id = mod_info.get('mod_id') or mod_info.get('project_id') or mod_info.get('curseforge_id')
+        mod_name = mod_info.get('name', '')
 
         if not source or not mod_id:
-            logger.warning(f"⚠️ Недостаточно данных: source={source}, mod_id={mod_id}")
+            logger.warning(f"⚠️ Мод {mod_name} пропущен: нет source={source} или id={mod_id}")
             return []
 
-        mod_key = f"{source}:{mod_id}:{minecraft_version}:{loader}"
+        logger.info(f"🔍 Анализ зависимостей для: {mod_name} (ID: {mod_id}, источник: {source})")
 
-        # Проверяем кеш
-        cached = self.cache.get_mod_dependencies(mod_key)
-        if cached:
-            logger.debug(f"📦 Используем кеш для {mod_key}")
-            return [ModDependency(dep) for dep in cached]
-
-        # Получаем зависимости из API
-        dependencies = self._fetch_dependencies_from_api(source, mod_id, minecraft_version, loader)
-
-        logger.info(f"📊 Для {mod_info.get('name')} получено {len(dependencies)} зависимостей")
-
-        # Сохраняем в кеш
-        if dependencies:
-            self.cache.save_mod_dependencies(
-                mod_key,
-                source,
-                mod_info,
-                [dep.to_dict() for dep in dependencies]
-            )
-
-        return dependencies
-
-    def _resolve_dependency_tree(self, dependency: ModDependency, minecraft_version: str,
-                                 loader: str, visited: Set[str], depth: int, max_depth: int = 5) -> List[ModDependency]:
-        """Рекурсивно строит дерево зависимостей"""
-        if depth >= max_depth:
-            logger.warning(f"Достигнута максимальная глубина рекурсии: {max_depth}")
-            return []
-
-        mod_key = f"{dependency.source}:{dependency.mod_id or dependency.project_id}:{minecraft_version}:{loader}"
-
-        if mod_key in visited:
-            logger.debug(f"Обнаружен цикл: {mod_key}")
-            return []
-
-        visited.add(mod_key)
-
-        # Получаем зависимости для этой зависимости
-        sub_deps = self.resolve_dependencies_for_mod(
-            {
-                'source': dependency.source,
-                'mod_id': dependency.mod_id,
-                'project_id': dependency.project_id,
-                'name': dependency.name
-            },
-            minecraft_version,
-            loader
-        )
-
-        # Собираем все зависимости
-        all_deps = [dependency]
-        for sub_dep in sub_deps:
-            if sub_dep.dependency_type == 'required':
-                all_deps.extend(self._resolve_dependency_tree(
-                    sub_dep, minecraft_version, loader, visited, depth + 1, max_depth
-                ))
-
-        return all_deps
-
-    def _fetch_dependencies_from_api(self, source: str, mod_id: str,
-                                     minecraft_version: str, loader: str) -> List[ModDependency]:
-        """Получает зависимости из API"""
-        try:
-            if source == 'modrinth':
-                return self._get_modrinth_dependencies(mod_id, minecraft_version, loader)
-            elif source == 'curseforge' and self.curseforge_api:
-                return self._get_curseforge_dependencies(mod_id, minecraft_version, loader)
-        except Exception as e:
-            logger.error(f"Ошибка получения зависимостей для {source}:{mod_id}: {e}")
+        if source == 'modrinth':
+            return self._get_modrinth_dependencies(mod_id, minecraft_version, loader)
+        elif source == 'curseforge':
+            return self._get_curseforge_dependencies(mod_id, minecraft_version, loader)
 
         return []
 
     def _get_modrinth_dependencies(self, project_id: str, minecraft_version: str, loader: str) -> List[ModDependency]:
-        """Получает зависимости из Modrinth API - как в старом коде"""
+        """Получение зависимостей из Modrinth API"""
         try:
-            logger.info(f"🔍 Получаем зависимости Modrinth для {project_id}")
+            api = self._get_modrinth_api()
+            logger.info(f"🔍 Modrinth: получаем версии для {project_id}")
 
-            # Получаем версии для указанной версии Minecraft и загрузчика
-            versions = self.modrinth_api.get_mod_versions(project_id, minecraft_version, loader)
+            versions = api.get_mod_versions(project_id, minecraft_version, loader)
+
             if not versions:
                 logger.warning(f"❌ Нет версий для {project_id} под MC={minecraft_version}, loader={loader}")
                 return []
 
-            # Берем последнюю версию
             latest_version = versions[0]
             logger.info(f"📦 Версия {latest_version.get('version_number')}")
-            logger.info(f"📋 Зависимости в версии: {latest_version.get('dependencies', [])}")
 
-            # Извлекаем зависимости - прямо как в старом коде
             dependencies = []
             for dep in latest_version.get('dependencies', []):
                 dep_type = dep.get('dependency_type')
                 dep_project_id = dep.get('project_id')
 
-                logger.info(f"   - Зависимость: {dep_project_id} (тип: {dep_type})")
+                if not dep_project_id:
+                    continue
 
-                if dep_type in ['required', 'optional'] and dep_project_id:
-                    # Получаем информацию о зависимости
-                    dep_project = self.modrinth_api.get_project(dep_project_id)
-                    if dep_project:
-                        dependencies.append(ModDependency({
-                            'source': 'modrinth',
-                            'project_id': dep_project_id,
-                            'mod_id': dep_project.get('slug'),
-                            'name': dep_project.get('title', 'Unknown'),
-                            'version_range': dep.get('version_range', '*'),
-                            'type': dep_type,
-                            'loader': loader,
-                            'minecraft_version': minecraft_version
-                        }))
-                        logger.info(f"      ✅ Добавлена: {dep_project.get('title')}")
-                    else:
-                        logger.warning(f"      ❌ Не удалось получить информацию о {dep_project_id}")
+                if dep_type in ['required', 'optional']:
+                    logger.info(f"   → Найдена зависимость: {dep_project_id} ({dep_type})")
 
-            logger.info(f"✅ Найдено {len(dependencies)} зависимостей для {project_id}")
+                    dep_project = api.get_project(dep_project_id)
+                    dep_name = dep_project.get('title',
+                                               f"Mod {dep_project_id}") if dep_project else f"Mod {dep_project_id}"
+
+                    dependencies.append(ModDependency({
+                        'source': 'modrinth',
+                        'project_id': dep_project_id,
+                        'mod_id': dep_project_id,
+                        'name': dep_name,
+                        'type': dep_type,
+                        'url': f"https://modrinth.com/mod/{dep_project_id}"
+                    }))
+                    logger.info(f"      ✅ {dep_name}")
+
             return dependencies
 
         except Exception as e:
-            logger.error(f"❌ Ошибка получения зависимостей Modrinth: {e}", exc_info=True)
+            logger.error(f"Ошибка получения зависимостей Modrinth: {e}")
             return []
 
-    def _get_curseforge_dependencies(self, mod_id: str, minecraft_version: str, loader: str) -> List[ModDependency]:
-        """Получает зависимости из CurseForge API через прокси - как в старом коде"""
-        if not self.curseforge_api:
-            logger.warning("❌ CurseForge API недоступен")
-            return []
-
+    def _get_curseforge_dependencies(self, mod_slug: str, minecraft_version: str, loader: str) -> List[ModDependency]:
+        """
+        Получение зависимостей из CurseForge через прокси
+        """
         try:
-            logger.info(f"🔍 Получаем зависимости для CurseForge мода ID={mod_id}")
+            if not self.curseforge_api:
+                logger.warning("CurseForge API недоступен")
+                return self._fallback_dependencies(mod_slug, loader)
 
-            # Получаем информацию о моде
-            mod_info = self.curseforge_api.get_mod_info(str(mod_id))
-            if not mod_info:
-                logger.warning(f"❌ Не найдена информация о моде {mod_id}")
-                return []
+            # 1. Пробуем получить зависимости через API
+            logger.info(f"🔍 CurseForge API: получаем информацию о моде {mod_slug}")
 
-            logger.info(f"📦 Название мода: {mod_info.get('name')}")
-
-            # Получаем версии мода
+            # Получаем версии мода через API
             versions = self.curseforge_api.get_mod_versions(
-                mod_id=str(mod_id),
+                mod_id=mod_slug,
                 minecraft_version=minecraft_version,
                 loader=loader
             )
 
-            if not versions:
-                logger.warning(f"❌ Нет версий для мода {mod_id} под MC={minecraft_version}, loader={loader}")
-                return []
+            if versions:
+                logger.info(f"📦 Найдено {len(versions)} версий для {mod_slug}")
 
-            # Берем последнюю версию
-            latest_version = versions[0]
-            logger.info(f"📦 Версия {latest_version.get('id')} для {mod_info.get('name')}")
-            logger.info(f"📋 Зависимости в версии: {latest_version.get('dependencies', [])}")
+                # Берем последнюю версию
+                latest_version = versions[0]
 
-            # Получаем зависимости из API
-            dependencies = []
+                # Проверяем зависимости в версии
+                if "dependencies" in latest_version and latest_version["dependencies"]:
+                    logger.info(f"🔍 Найдены зависимости в API")
+                    dependencies = []
+                    for dep in latest_version["dependencies"]:
+                        dep_type = dep.get("dependencyType")
+                        dep_mod_id = dep.get("modId")
 
-            if 'dependencies' in latest_version:
-                for dep in latest_version['dependencies']:
-                    dep_type = dep.get('dependencyType')
-                    dep_mod_id = dep.get('modId')
-
-                    # dependencyType: 1=required, 2=optional, 3=incompatible, 4=embedded, 5=tool
-                    is_required = dep_type == 1
-                    is_optional = dep_type == 2
-
-                    logger.info(f"   - Зависимость: modId={dep_mod_id} (тип: {dep_type}, required={is_required})")
-
-                    if (is_required or is_optional) and dep_mod_id:
-                        # Получаем информацию о зависимости
-                        dep_info = self.curseforge_api.get_mod_info(str(dep_mod_id))
-                        if dep_info:
+                        if dep_mod_id and (dep_type == 1 or dep_type == "required"):
+                            logger.info(f"   → Найдена зависимость через API: {dep_mod_id}")
                             dependencies.append(ModDependency({
                                 'source': 'curseforge',
                                 'project_id': str(dep_mod_id),
-                                'mod_id': dep_info.get('slug', str(dep_mod_id)),
-                                'name': dep_info.get('name', f'Mod {dep_mod_id}'),
-                                'version_range': dep.get('versionRange', '*'),
-                                'type': 'required' if is_required else 'optional',
-                                'loader': loader,
-                                'minecraft_version': minecraft_version
+                                'mod_id': str(dep_mod_id),
+                                'name': f"Mod {dep_mod_id}",
+                                'type': 'required',
+                                'url': f"https://www.curseforge.com/minecraft/mc-mods/{dep_mod_id}"
                             }))
-                            logger.info(f"      ✅ Добавлена зависимость: {dep_info.get('name')}")
-                        else:
-                            logger.warning(f"      ❌ Не удалось получить информацию о моде {dep_mod_id}")
+                    if dependencies:
+                        return dependencies
 
-            logger.info(f"✅ Найдено {len(dependencies)} зависимостей для {mod_info.get('name')}")
-            return dependencies
+            # 2. Пробуем получить через HTML парсинг (через прокси)
+            logger.info(f"🌐 Пробуем парсинг через прокси для {mod_slug}")
+
+            # Используем CurseForge API для получения HTML через прокси
+            proxy_url = f"{self.curseforge_api.proxy_url}/api/v1/curseforge/mod/{mod_slug}"
+
+            response = self.curseforge_api._make_proxy_request('GET', f'/api/v1/curseforge/mod/{mod_slug}')
+
+            if response and response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("data"):
+                    mod_data = data["data"]
+                    description = mod_data.get("description", "")
+
+                    # Ищем в описании секцию Requirements
+                    dependencies = self._parse_requirements_from_text(description)
+                    if dependencies:
+                        return dependencies
+
+                    # Ищем в категориях
+                    categories = mod_data.get("categories", [])
+                    for cat in categories:
+                        if "create" in cat.get("name", "").lower():
+                            logger.info(f"   → Мод относится к категории Create")
+                            dependencies.append(ModDependency({
+                                'source': 'curseforge',
+                                'project_id': '328085',
+                                'mod_id': 'create',
+                                'name': 'Create',
+                                'type': 'required',
+                                'url': 'https://www.curseforge.com/minecraft/mc-mods/create'
+                            }))
+
+                    if dependencies:
+                        return dependencies
+
+            # 3. Fallback: для модов, связанных с Create
+            return self._fallback_dependencies(mod_slug, loader)
 
         except Exception as e:
-            logger.error(f"❌ Ошибка получения зависимостей CurseForge: {e}", exc_info=True)
+            logger.error(f"Ошибка получения зависимостей для {mod_slug}: {e}", exc_info=True)
+            return self._fallback_dependencies(mod_slug, loader)
+
+    def _parse_requirements_from_text(self, text: str) -> List[ModDependency]:
+        """Парсит текст описания в поисках зависимостей"""
+        if not text:
             return []
 
-    def _get_dependencies_by_keywords(self, mod_name: str, minecraft_version: str, loader: str) -> List[ModDependency]:
-        """
-        Ищет зависимости по ключевым словам в названии мода
-        Это как в старом коде - ищем по известным зависимостям
-        """
         dependencies = []
-        mod_name_lower = mod_name.lower()
 
-        logger.info(f"🔍 Ищем зависимости по ключевым словам для: {mod_name}")
+        # Ищем секцию "Requirements" в HTML или тексте
+        req_patterns = [
+            r'(?:Requirements|Requires|Dependencies?|Needs):\s*([^\n<]+)',
+            r'<strong>Requirements?</strong>\s*<br/?>\s*([^<]+)',
+            r'<h[23]>Requirements?</h[23]>\s*<ul>\s*<li>([^<]+)</li>',
+            r'Requires\s+([A-Za-z\s]+?)\s+(?:mod|addon)',
+        ]
 
-        # Словарь известных зависимостей
-        known_deps = {
-            # Fabric API - почти для всех Fabric модов
-            'fabric': {
-                'keywords': ['fabric', 'create', 'sodium', 'iris', 'jei', 'emi', 'ae2', 'applied', 'techreborn'],
-                'deps': [{
-                    'name': 'Fabric API',
-                    'source': 'modrinth',
-                    'modrinth_id': 'P7dR8mSH',
-                    'mod_id': 'fabric-api',
-                    'type': 'required'
-                }]
-            },
+        for pattern in req_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                # Разбиваем на отдельные моды
+                items = re.split(r'[,;]', match)
+                for item in items:
+                    item = item.strip()
+                    if not item or len(item) < 3:
+                        continue
 
-            # Для Create
-            'create': {
-                'keywords': ['create', 'steam', 'rail', 'crafts', 'addition', 'deco', 'slice', 'dice'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    },
-                    {
-                        'name': 'Indium',
-                        'source': 'modrinth',
-                        'modrinth_id': 'Orvt0mRa',
-                        'mod_id': 'indium',
-                        'type': 'required'
-                    }
-                ]
-            },
+                    # Очищаем от версий
+                    clean_name = re.sub(r'\d+\.\d+\.\d+.*$', '', item)
+                    clean_name = re.sub(r'\d+\.\d+.*$', '', clean_name)
+                    clean_name = re.sub(r'\([^)]+\)', '', clean_name)
+                    clean_name = clean_name.strip()
 
-            # Sodium и оптимизация
-            'sodium': {
-                'keywords': ['sodium', 'iris', 'indium'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    }
-                ]
-            },
+                    if clean_name and len(clean_name) > 2:
+                        # Проверяем, не является ли это "Minecraft" или "Java"
+                        if clean_name.lower() in ['minecraft', 'java', 'and', 'or']:
+                            continue
 
-            # JEI / EMI
-            'jei': {
-                'keywords': ['jei', 'emi', 'just enough', 'roughly enough'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    }
-                ]
-            },
-
-            # Applied Energistics 2
-            'ae2': {
-                'keywords': ['ae2', 'applied', 'energistics'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    }
-                ]
-            },
-
-            # Tech Reborn
-            'techreborn': {
-                'keywords': ['techreborn', 'tech reborn', 'reborn'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    },
-                    {
-                        'name': 'Reborn Core',
-                        'source': 'curseforge',
-                        'curseforge_id': '237903',
-                        'mod_id': 'reborncore',
-                        'type': 'required'
-                    }
-                ]
-            },
-
-            # Traveler's Backpack
-            'travelersbackpack': {
-                'keywords': ['travelersbackpack', 'traveler', 'backpack'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    },
-                    {
-                        'name': 'Cardinal Components API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'KFTjWFTV',
-                        'mod_id': 'cardinal-components',
-                        'type': 'required'
-                    }
-                ]
-            },
-
-            # Iron Chests
-            'ironchests': {
-                'keywords': ['ironchests', 'iron chest'],
-                'deps': [
-                    {
-                        'name': 'Fabric API',
-                        'source': 'modrinth',
-                        'modrinth_id': 'P7dR8mSH',
-                        'mod_id': 'fabric-api',
-                        'type': 'required'
-                    }
-                ]
-            },
-
-            # Xaero's Maps
-            'xaero': {
-                'keywords': ['xaero', 'minimap', 'worldmap'],
-                'deps': []  # Xaero's maps не требуют зависимостей
-            }
-        }
-
-        # Проверяем, подходит ли мод под какой-то из известных паттернов
-        for key, data in known_deps.items():
-            for keyword in data['keywords']:
-                if keyword in mod_name_lower:
-                    logger.info(f"  ✅ Найдено совпадение по ключевому слову: '{keyword}' для мода '{mod_name}'")
-
-                    for dep_data in data['deps']:
-                        # Проверяем, не добавляли ли уже эту зависимость
-                        already_added = False
-                        for existing in dependencies:
-                            if existing.name == dep_data['name']:
-                                already_added = True
-                                break
-
-                        if not already_added:
-                            if dep_data['source'] == 'modrinth':
-                                dependencies.append(ModDependency({
-                                    'source': 'modrinth',
-                                    'project_id': dep_data['modrinth_id'],
-                                    'mod_id': dep_data['mod_id'],
-                                    'name': dep_data['name'],
-                                    'version_range': '*',
-                                    'type': dep_data.get('type', 'required'),
-                                    'loader': loader,
-                                    'minecraft_version': minecraft_version
-                                }))
-                                logger.info(f"      🔧 Добавлена зависимость: {dep_data['name']} (Modrinth)")
-                            else:
-                                dependencies.append(ModDependency({
-                                    'source': 'curseforge',
-                                    'project_id': dep_data['curseforge_id'],
-                                    'mod_id': dep_data['mod_id'],
-                                    'name': dep_data['name'],
-                                    'version_range': '*',
-                                    'type': dep_data.get('type', 'required'),
-                                    'loader': loader,
-                                    'minecraft_version': minecraft_version
-                                }))
-                                logger.info(f"      🔧 Добавлена зависимость: {dep_data['name']} (CurseForge)")
-
-                    break  # Нашли совпадение, выходим
-
-        # Если это Fabric мод, но не нашли специфических зависимостей, добавляем Fabric API
-        if loader == 'fabric' and not dependencies:
-            # Проверяем, не является ли сам мод Fabric API
-            if 'fabric api' not in mod_name_lower and 'fabric-api' not in mod_name_lower:
-                dependencies.append(ModDependency({
-                    'source': 'modrinth',
-                    'project_id': 'P7dR8mSH',
-                    'mod_id': 'fabric-api',
-                    'name': 'Fabric API',
-                    'version_range': '*',
-                    'type': 'required',
-                    'loader': loader,
-                    'minecraft_version': minecraft_version
-                }))
-                logger.info(f"  🔧 Добавлена общая зависимость: Fabric API")
+                        # Ищем известные моды
+                        mod_info = self._find_known_mod(clean_name)
+                        if mod_info:
+                            logger.info(f"   → Найдена зависимость из описания: {clean_name} -> {mod_info['name']}")
+                            dependencies.append(ModDependency({
+                                'source': mod_info['source'],
+                                'project_id': mod_info['id'],
+                                'mod_id': mod_info['slug'],
+                                'name': mod_info['name'],
+                                'type': 'required',
+                                'url': mod_info.get('url')
+                            }))
+                        else:
+                            logger.info(f"   → Найдена возможная зависимость: {clean_name}")
+                            dependencies.append(ModDependency({
+                                'source': 'curseforge',
+                                'project_id': None,
+                                'mod_id': None,
+                                'name': clean_name,
+                                'type': 'required',
+                                'url': None
+                            }))
 
         return dependencies
 
-    def _get_techreborn_dependencies(self, minecraft_version: str, loader: str) -> List[ModDependency]:
-        """Возвращает зависимости для TechReborn (хардкод для примера)"""
+    def _find_known_mod(self, name: str) -> Optional[Dict]:
+        """Находит известный мод по названию (без базы данных)"""
+        name_lower = name.lower()
+
+        # Популярные моды
+        popular_mods = {
+            'create': ('curseforge', '328085', 'create', 'Create'),
+            'jei': ('curseforge', '238222', 'jei', 'Just Enough Items'),
+            'fabric api': ('modrinth', 'P7dR8mSH', 'fabric-api', 'Fabric API'),
+            'forge': None,
+            'minecraft': None,
+        }
+
+        for key, info in popular_mods.items():
+            if key in name_lower:
+                if info:
+                    return {
+                        'source': info[0],
+                        'id': info[1],
+                        'slug': info[2],
+                        'name': info[3],
+                        'url': f"https://www.curseforge.com/minecraft/mc-mods/{info[2]}" if info[
+                                                                                                0] == 'curseforge' else f"https://modrinth.com/mod/{info[2]}"
+                    }
+                return None
+
+        return None
+
+    def _fallback_dependencies(self, mod_slug: str, loader: str) -> List[ModDependency]:
+        """Fallback зависимости для случаев, когда не удалось найти через API"""
         dependencies = []
 
-        if loader.lower() == "fabric":
-            # TechReborn на Fabric требует эти моды
-            fabric_deps = [
-                {
-                    'name': 'Fabric API',
-                    'modrinth_id': 'P7dR8mSH',
-                    'version': '>=0.86.1'
-                },
-                {
-                    'name': 'Fabric Biome API',
-                    'modrinth_id': 'nZ9dJp6t',  # Это пример, нужен реальный ID
-                    'version': '>=3.0.0'
-                },
-                {
-                    'name': 'Fabric Transfer API',
-                    'modrinth_id': 'B3qOj5VU',  # Пример
-                    'version': '>=3.0.1'
-                },
-                {
-                    'name': 'Reborn Core',
-                    'curseforge_id': '237903',  # TechReborn всегда идет с Reborn Core
-                    'version': '*'
-                }
-            ]
+        # Для модов Create добавляем Create как зависимость
+        if "create" in mod_slug.lower():
+            logger.info(f"🔧 Добавляем Create как зависимость для {mod_slug}")
+            dependencies.append(ModDependency({
+                'source': 'curseforge',
+                'project_id': '328085',
+                'mod_id': 'create',
+                'name': 'Create',
+                'type': 'required',
+                'url': 'https://www.curseforge.com/minecraft/mc-mods/create'
+            }))
 
-            for dep in fabric_deps:
-                if 'modrinth_id' in dep:
-                    dependencies.append(ModDependency({
-                        'source': 'modrinth',
-                        'project_id': dep['modrinth_id'],
-                        'mod_id': dep['name'].lower().replace(' ', '-'),
-                        'name': dep['name'],
-                        'version_range': dep.get('version', '*'),
-                        'type': 'required',
-                        'loader': 'fabric',
-                        'minecraft_version': minecraft_version
-                    }))
-                elif 'curseforge_id' in dep:
-                    dependencies.append(ModDependency({
-                        'source': 'curseforge',
-                        'project_id': str(dep['curseforge_id']),
-                        'mod_id': dep['name'].lower().replace(' ', '-'),
-                        'name': dep['name'],
-                        'version_range': dep.get('version', '*'),
-                        'type': 'required',
-                        'loader': 'fabric',
-                        'minecraft_version': minecraft_version
-                    }))
+        # Для Fabric модов добавляем Fabric API
+        if loader == "fabric":
+            logger.info(f"🔧 Добавляем Fabric API как зависимость для {mod_slug}")
+            dependencies.append(ModDependency({
+                'source': 'modrinth',
+                'project_id': 'P7dR8mSH',
+                'mod_id': 'fabric-api',
+                'name': 'Fabric API',
+                'type': 'required',
+                'url': 'https://modrinth.com/mod/fabric-api'
+            }))
 
         return dependencies
 
     def analyze_collection_dependencies(self, collection_mods: List[Dict],
                                         minecraft_version: str, loader: str) -> Dict:
-        """
-        Анализирует зависимости для всей сборки
-        Возвращает структурированный результат
-        """
-        logger.info(f"Анализируем зависимости для {len(collection_mods)} модов")
+        """Анализирует зависимости всей сборки"""
+        logger.info(f"🔍 Анализируем зависимости для {len(collection_mods)} модов")
 
-        all_mods = {}
-        required_deps = []
-        optional_deps = []
+        all_deps = []
+        seen = set()
 
         for mod in collection_mods:
             mod_source = mod.get('source')
-            mod_id = mod.get('mod_id') or mod.get('project_id')
+            mod_id = mod.get('mod_id') or mod.get('project_id') or mod.get('curseforge_id')
 
             if not mod_source or not mod_id:
+                logger.warning(f"⚠️ Мод {mod.get('name')} пропущен: нет source или id")
                 continue
 
-            mod_key = f"{mod_source}:{mod_id}"
+            logger.info(f"📦 Анализ: {mod.get('name')} (ID: {mod_id}, источник: {mod_source})")
 
-            # Получаем зависимости для мода
-            dependencies = self.resolve_dependencies_for_mod(
-                mod, minecraft_version, loader
-            )
-
-            # Группируем зависимости
-            for dep in dependencies:
-                dep_key = f"{dep.source}:{dep.mod_id or dep.project_id}"
-
-                if dep_key not in all_mods:
-                    all_mods[dep_key] = dep
-
-                    if dep.dependency_type == 'required':
-                        required_deps.append(dep)
-                    elif dep.dependency_type == 'optional':
-                        optional_deps.append(dep)
-
-        return {
-            'total_mods': len(all_mods),
-            'required_dependencies': required_deps,
-            'optional_dependencies': optional_deps,
-            'all_dependencies': list(all_mods.values()),
-            'dependency_tree': self._build_dependency_tree(collection_mods, minecraft_version, loader)
-        }
-
-    def _build_dependency_tree(self, mods: List[Dict], minecraft_version: str, loader: str) -> Dict:
-        """Строит дерево зависимостей для визуализации"""
-        tree = {}
-
-        for mod in mods:
-            mod_key = f"{mod.get('source')}:{mod.get('mod_id') or mod.get('project_id')}"
             dependencies = self.resolve_dependencies_for_mod(mod, minecraft_version, loader)
 
-            tree[mod_key] = {
-                'mod': mod,
-                'dependencies': [dep.to_dict() for dep in dependencies],
-                'children': []
-            }
-
-            # Рекурсивно строим дерево
             for dep in dependencies:
-                if dep.dependency_type == 'required':
-                    dep_key = f"{dep.source}:{dep.mod_id or dep.project_id}"
-                    if dep_key not in tree:
-                        tree[dep_key] = {
-                            'mod': dep.to_dict(),
-                            'dependencies': [],
-                            'children': []
-                        }
+                if dep.project_id:
+                    dep_key = f"{dep.source}:{dep.project_id}"
+                elif dep.name:
+                    dep_key = f"name:{dep.name}"
+                else:
+                    dep_key = f"unknown:{dep.mod_id}"
 
-                    tree[mod_key]['children'].append(dep_key)
+                if dep_key not in seen:
+                    seen.add(dep_key)
+                    all_deps.append(dep)
+                    logger.info(f"   + Добавлена зависимость: {dep.name} ({dep.source})")
 
-        return tree
+        required = [d for d in all_deps if d.dependency_type == 'required']
+        optional = [d for d in all_deps if d.dependency_type == 'optional']
 
-    def deduplicate_mods(self, mods: List[ModDependency]) -> List[ModDependency]:
-        """Удаляет дубликаты модов из списка"""
-        seen = set()
-        unique_mods = []
+        logger.info(f"📊 Результат: обязательных={len(required)}, опциональных={len(optional)}")
 
-        for mod in mods:
-            mod_key = f"{mod.source}:{mod.mod_id or mod.project_id}"
-            if mod_key not in seen:
-                seen.add(mod_key)
-                unique_mods.append(mod)
-
-        return unique_mods
+        return {
+            'total_mods': len(
+                [m for m in collection_mods if m.get('mod_id') or m.get('project_id') or m.get('curseforge_id')]),
+            'required_dependencies': required,
+            'optional_dependencies': optional,
+            'all_dependencies': all_deps,
+        }

@@ -463,7 +463,7 @@ essential_mods = [
                 },
                 {
                     "url": "https://disk.yandex.ru/d/IHBo3qyqAjR3fQ",
-                    "file": "fabric-language-kotlin-1.13.6+kotlin.2.2.20.jarr",
+                    "file": "fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar",
                 },
                 {
                     "url": "https://disk.yandex.ru/d/r8gwsUQF7Wy9BQ",

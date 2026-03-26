@@ -43,9 +43,7 @@ class SearchWorker(QThread):
                     self.finished.emit([], "modrinth")
 
             elif self.source == "curseforge":
-                # Создаем API с увеличенным таймаутом
                 api = CurseForgeAPI()
-                # Увеличиваем таймаут для сессии
                 api.timeout = 60
                 api.session.timeout = 60
 
@@ -80,7 +78,6 @@ class CollectionCreator(QDialog):
         self.setModal(True)
 
         self.selected_mods = []
-
         self.setup_ui()
         self.setup_styles()
 
@@ -180,7 +177,6 @@ class CollectionCreator(QDialog):
         save_layout = QHBoxLayout()
         save_layout.addStretch()
 
-        # Кнопка анализа зависимостей
         self.analyze_btn = QPushButton("🔍 Анализ зависимостей")
         self.analyze_btn.clicked.connect(self.analyze_dependencies)
         save_layout.addWidget(self.analyze_btn)
@@ -195,54 +191,6 @@ class CollectionCreator(QDialog):
         save_layout.addWidget(self.save_btn)
         save_layout.addWidget(self.cancel_btn)
         layout.addLayout(save_layout)
-
-    def analyze_dependencies(self):
-        """Анализирует зависимости выбранных модов"""
-        if not self.selected_mods:
-            QMessageBox.warning(self, "Анализ", "Добавьте моды для анализа")
-            return
-
-        # Выводим информацию о модах для анализа
-        print("=" * 60)
-        print("🔍 Анализ зависимостей для модов:")
-        for i, mod in enumerate(self.selected_mods, 1):
-            source = mod.get('source', 'unknown')
-            name = mod.get('name', 'Unknown')
-            mod_id = mod.get('modrinth_id') or mod.get('curseforge_id')
-            print(f"  {i}. [{source.upper()}] {name} (ID: {mod_id})")
-        print("=" * 60)
-
-        # Создаем анализатор
-        analyzer = DependencyAnalyzerUI(
-            parent=self,
-            minecraft_version=self.version_combo.currentText(),
-            loader=self.loader_combo.currentText(),
-            tree_widget=self.selected_tree
-        )
-
-        def on_analysis_complete(result):
-            required_count = len(result.get('required_dependencies', []))
-            optional_count = len(result.get('optional_dependencies', []))
-
-            print(f"\n📊 Результат анализа:")
-            print(f"   - Обязательных зависимостей: {required_count}")
-            print(f"   - Опциональных зависимостей: {optional_count}")
-
-            for dep in result.get('required_dependencies', []):
-                print(f"      🔴 Обязательная: {dep.name} ({dep.source})")
-            for dep in result.get('optional_dependencies', []):
-                print(f"      🟡 Опциональная: {dep.name} ({dep.source})")
-
-            QMessageBox.information(
-                self,
-                "Анализ завершен",
-                f"Найдено зависимостей:\n"
-                f"• Обязательных: {required_count}\n"
-                f"• Опциональных: {optional_count}\n\n"
-                f"Проверьте консоль для деталей."
-            )
-
-        analyzer.show_analyzer(self.selected_mods, on_analysis_complete)
 
     def create_search_tab(self, source):
         """Создает вкладку поиска"""
@@ -406,13 +354,17 @@ class CollectionCreator(QDialog):
                 item.setText(1, mod.get("author", "Unknown"))
                 item.setText(2, f"{mod.get('downloads', 0):,}")
                 item.setText(3, "✅")
-                # Сохраняем project_id
+
+                # Сохраняем ВСЮ информацию о моде
                 mod_data = {
+                    "source": "modrinth",
                     "project_id": mod.get("project_id"),
+                    "mod_id": mod.get("project_id"),
                     "slug": mod.get("slug"),
                     "title": mod.get("title"),
                     "author": mod.get("author"),
-                    "downloads": mod.get("downloads")
+                    "downloads": mod.get("downloads"),
+                    "filename": f"{mod.get('slug', mod.get('project_id'))}.jar"
                 }
                 item.setData(0, Qt.ItemDataRole.UserRole, mod_data)
                 self.modrinth_tree.addTopLevelItem(item)
@@ -432,9 +384,12 @@ class CollectionCreator(QDialog):
                 item.setText(2, f"{mod.get('downloads', 0):,}")
                 compatible = mod.get("compatible", True)
                 item.setText(3, "✅" if compatible else "❌")
-                # Сохраняем project_id как строку
+
+                # Сохраняем ВСЮ информацию о моде — ЭТО КЛЮЧЕВОЕ!
                 mod_data = {
-                    "project_id": mod.get("project_id"),
+                    "source": "curseforge",  # ← ОБЯЗАТЕЛЬНО!
+                    "project_id": str(mod.get("project_id")),  # ← ID МОДА!
+                    "mod_id": str(mod.get("project_id")),  # ← ДЛЯ ЕДИНООБРАЗИЯ!
                     "slug": mod.get("slug", ""),
                     "title": mod.get("title"),
                     "author": mod.get("author"),
@@ -456,8 +411,11 @@ class CollectionCreator(QDialog):
             self.curseforge_status.setStyleSheet("color: #ff8888;")
 
     def add_mod(self, item, source):
-        """Добавляет мод в выбранные"""
+        """Добавляет мод в выбранные — ЭТО САМОЕ ВАЖНОЕ МЕСТО!"""
         mod_data = item.data(0, Qt.ItemDataRole.UserRole)
+
+        if not mod_data:
+            return
 
         # Проверяем, не добавлен ли уже
         for existing in self.selected_mods:
@@ -474,83 +432,35 @@ class CollectionCreator(QDialog):
                 "modrinth_id": mod_data.get("project_id"),
                 "modrinth_slug": mod_data.get("slug"),
                 "name": mod_data.get("title"),
-                "filename": f"{mod_data.get('slug', mod_data.get('project_id'))}.jar"
+                "filename": mod_data.get("filename"),
+                # ВАЖНО: добавляем поля для анализатора
+                "project_id": mod_data.get("project_id"),
+                "mod_id": mod_data.get("project_id")
             }
-        else:
+        else:  # curseforge
+            curseforge_id = str(mod_data.get("project_id"))
             mod_info = {
-                "source": "curseforge",
-                "curseforge_id": str(mod_data.get("project_id")),
+                "source": "curseforge",  # ← КЛЮЧЕВОЕ!
+                "curseforge_id": curseforge_id,
                 "curseforge_slug": mod_data.get("slug", ""),
                 "name": mod_data.get("title"),
-                "filename": mod_data.get("filename", f"{mod_data.get('slug', mod_data.get('project_id'))}.jar")
+                "filename": mod_data.get("filename"),
+                # ВАЖНО: добавляем поля для анализатора
+                "project_id": curseforge_id,
+                "mod_id": curseforge_id
             }
 
         self.selected_mods.append(mod_info)
         self.update_selected_list()
 
-        # Показываем сообщение об успешном добавлении
         QMessageBox.information(
             self,
             "Мод добавлен",
             f"✅ Мод '{mod_info['name']}' добавлен в сборку.\n\n"
+            f"ID: {mod_info.get('mod_id')}\n"
+            f"Источник: {mod_info['source']}\n\n"
             f"Теперь вы можете проанализировать зависимости через кнопку 'Анализ зависимостей'."
         )
-
-    def _analyze_and_add_dependencies(self, mod_info: Dict):
-        """Анализирует зависимости добавленного мода и добавляет их в список"""
-        from Network.DependencyManager import DependencyManager
-
-        print(f"\n🔍 Анализ зависимостей для добавленного мода: {mod_info.get('name')}")
-
-        # Создаем менеджер зависимостей
-        dep_manager = DependencyManager()
-
-        # Получаем зависимости
-        dependencies = dep_manager.resolve_dependencies_for_mod(
-            mod_info,
-            self.version_combo.currentText(),
-            self.loader_combo.currentText()
-        )
-
-        print(f"📊 Найдено зависимостей: {len(dependencies)}")
-
-        # Добавляем обязательные зависимости в список
-        added_count = 0
-        for dep in dependencies:
-            if dep.dependency_type == 'required':
-                # Проверяем, нет ли уже такой зависимости
-                exists = False
-                for existing in self.selected_mods:
-                    existing_id = existing.get('modrinth_id') or existing.get('curseforge_id')
-                    dep_id = dep.mod_id or dep.project_id
-                    if existing_id == dep_id or existing.get('name') == dep.name:
-                        exists = True
-                        break
-
-                if not exists:
-                    # Создаем данные для зависимости
-                    dep_data = {
-                        "source": dep.source,
-                        "name": dep.name,
-                        "filename": f"{dep.mod_id or dep.project_id}.jar"
-                    }
-
-                    if dep.source == "modrinth":
-                        dep_data["modrinth_id"] = dep.project_id
-                        dep_data["modrinth_slug"] = dep.mod_id or dep.project_id
-                    else:
-                        dep_data["curseforge_id"] = dep.project_id
-                        dep_data["curseforge_slug"] = dep.mod_id or dep.project_id
-
-                    self.selected_mods.append(dep_data)
-                    added_count += 1
-                    print(f"  ✅ Добавлена зависимость: {dep.name} ({dep.source})")
-
-        if added_count > 0:
-            self.update_selected_list()
-            print(f"✅ Добавлено {added_count} зависимостей")
-        else:
-            print(f"ℹ️ Нет новых зависимостей для добавления")
 
     def remove_selected(self):
         """Удаляет выбранный мод"""
@@ -580,6 +490,54 @@ class CollectionCreator(QDialog):
 
         self.selected_count_label.setText(f"Всего: {len(self.selected_mods)}")
 
+    def analyze_dependencies(self):
+        """Анализирует зависимости выбранных модов"""
+        if not self.selected_mods:
+            QMessageBox.warning(self, "Анализ", "Добавьте моды для анализа")
+            return
+
+        # Выводим информацию о модах для анализа
+        print("=" * 60)
+        print("🔍 Анализ зависимостей для модов:")
+        for i, mod in enumerate(self.selected_mods, 1):
+            source = mod.get('source', 'unknown')
+            name = mod.get('name', 'Unknown')
+            mod_id = mod.get('mod_id') or mod.get('project_id') or mod.get('curseforge_id')
+            print(f"  {i}. [{source.upper()}] {name} (ID: {mod_id})")
+        print("=" * 60)
+
+        # Создаем анализатор
+        analyzer = DependencyAnalyzerUI(
+            parent=self,
+            minecraft_version=self.version_combo.currentText(),
+            loader=self.loader_combo.currentText(),
+            tree_widget=self.selected_tree
+        )
+
+        def on_analysis_complete(result):
+            required_count = len(result.get('required_dependencies', []))
+            optional_count = len(result.get('optional_dependencies', []))
+
+            print(f"\n📊 Результат анализа:")
+            print(f"   - Обязательных зависимостей: {required_count}")
+            print(f"   - Опциональных зависимостей: {optional_count}")
+
+            for dep in result.get('required_dependencies', []):
+                print(f"      🔴 Обязательная: {dep.name} ({dep.source})")
+            for dep in result.get('optional_dependencies', []):
+                print(f"      🟡 Опциональная: {dep.name} ({dep.source})")
+
+            QMessageBox.information(
+                self,
+                "Анализ завершен",
+                f"Найдено зависимостей:\n"
+                f"• Обязательных: {required_count}\n"
+                f"• Опциональных: {optional_count}\n\n"
+                f"Проверьте консоль для деталей."
+            )
+
+        analyzer.show_analyzer(self.selected_mods, on_analysis_complete)
+
     def save_collection(self):
         """Сохраняет сборку"""
         name = self.name_input.text().strip()
@@ -591,7 +549,6 @@ class CollectionCreator(QDialog):
             QMessageBox.warning(self, "Ошибка", "Добавьте хотя бы один мод!")
             return
 
-        # Собираем данные
         collection_data = {
             "name": name,
             "minecraft_version": self.version_combo.currentText(),
@@ -602,8 +559,7 @@ class CollectionCreator(QDialog):
             "source": "local"
         }
 
-        # Сохраняем
-        success, result = save_collection(collection_data)  # из Core.collection_loader
+        success, result = save_collection(collection_data)
 
         if success:
             QMessageBox.information(

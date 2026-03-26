@@ -1,9 +1,8 @@
 # Ui/DependencyAnalyzer.py
-import threading
-from typing import List, Dict, Callable
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QProgressBar, QMessageBox, QApplication
+    QTreeWidget, QTreeWidgetItem, QProgressBar, QMessageBox,
+    QApplication, QHeaderView
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
@@ -35,14 +34,23 @@ class DependencyAnalyzerWorker(QThread):
             all_dependencies = []
 
             for i, mod in enumerate(self.mods):
-                self.progress.emit(f"Анализ: {mod.get('name', 'Unknown')} ({i + 1}/{len(self.mods)})")
+                mod_name = mod.get('name', 'Unknown')
+                mod_source = mod.get('source')
+                mod_id = mod.get('mod_id') or mod.get('project_id')
 
-                # Получаем зависимости для мода
+                # Критическая проверка: если нет ID, пропускаем
+                if not mod_source or not mod_id:
+                    logger.warning(f"⚠️ Мод {mod_name} пропущен: нет source={mod_source} или id={mod_id}")
+                    self.progress.emit(f"⚠️ {mod_name} - нет ID, пропускаем")
+                    continue
+
+                self.progress.emit(f"Анализ: {mod_name} ({i + 1}/{len(self.mods)})")
+
                 dependencies = self.dependency_manager.resolve_dependencies_for_mod(
                     mod, self.minecraft_version, self.loader
                 )
 
-                logger.info(f"Для мода {mod.get('name')} найдено {len(dependencies)} зависимостей")
+                logger.info(f"Для мода {mod_name} найдено {len(dependencies)} зависимостей")
                 all_dependencies.extend(dependencies)
 
             # Разделяем на обязательные и опциональные
@@ -60,7 +68,7 @@ class DependencyAnalyzerWorker(QThread):
                         optional.append(dep)
 
             result = {
-                'total_mods': len(self.mods),
+                'total_mods': len([m for m in self.mods if m.get('mod_id') or m.get('project_id')]),
                 'required_dependencies': required,
                 'optional_dependencies': optional,
                 'all_dependencies': required + optional
@@ -101,9 +109,7 @@ class DependencyAnalyzerUI:
         self.analyzer_window.setModal(True)
         self._is_window_open = True
 
-        # Обработчик закрытия
         self.analyzer_window.finished.connect(self._on_close)
-
         self._create_ui()
         self._start_analysis(mods)
         self.analyzer_window.exec()
@@ -172,7 +178,6 @@ class DependencyAnalyzerUI:
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
 
-        # Очищаем дерево
         self.deps_tree.clear()
 
         # Добавляем обязательные зависимости
@@ -220,10 +225,8 @@ class DependencyAnalyzerUI:
         self.status_label.setText(status_text)
         logger.info(status_text)
 
-        # Активируем кнопку если есть обязательные зависимости
         self.add_button.setEnabled(required > 0)
 
-        # Вызываем callback
         if self.on_complete_callback:
             self.on_complete_callback(result)
 
@@ -253,7 +256,6 @@ class DependencyAnalyzerUI:
             QMessageBox.information(self.analyzer_window, "Информация", "Нет обязательных зависимостей для добавления")
             return
 
-        # Спрашиваем подтверждение
         reply = QMessageBox.question(
             self.analyzer_window,
             "Добавление зависимостей",
@@ -266,7 +268,6 @@ class DependencyAnalyzerUI:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # Добавляем зависимости, не удаляя существующие
         added_count = 0
         for dep in required_deps:
             if self._add_dependency_to_tree(dep):
@@ -288,28 +289,24 @@ class DependencyAnalyzerUI:
             )
 
     def _add_dependency_to_tree(self, dep: ModDependency) -> bool:
-        """Добавляет зависимость в Treeview, если её там нет"""
+        """Добавляет зависимость в Treeview И В selected_mods родительского окна"""
         if not self.tree_widget:
             return False
 
-        # Проверяем, нет ли уже этого мода
+        # Проверяем, нет ли уже этого мода в tree_widget
         for i in range(self.tree_widget.topLevelItemCount()):
             item = self.tree_widget.topLevelItem(i)
             if item.text(1) == dep.name:
                 return False
 
-        # Добавляем новый мод
         source_icon = "🌐" if dep.source == "modrinth" else "⚡"
-        item = QTreeWidgetItem()
-        item.setText(0, f"{source_icon} {dep.source.capitalize()}")
-        item.setText(1, dep.name)
-        item.setText(2, f"{dep.mod_id or dep.project_id}.jar")
-
-        # Сохраняем данные для последующего использования
         mod_data = {
             'source': dep.source,
             'name': dep.name,
-            'filename': f"{dep.mod_id or dep.project_id}.jar"
+            'filename': f"{dep.mod_id or dep.project_id}.jar",
+            # Важно: сохраняем ID для последующего анализа
+            'mod_id': dep.mod_id,
+            'project_id': dep.project_id
         }
 
         if dep.source == 'modrinth':
@@ -319,8 +316,25 @@ class DependencyAnalyzerUI:
             mod_data['curseforge_id'] = dep.mod_id or dep.project_id
             mod_data['curseforge_slug'] = dep.mod_id or dep.project_id
 
+        # Добавляем в Treeview
+        item = QTreeWidgetItem()
+        item.setText(0, f"{source_icon} {dep.source.capitalize()}")
+        item.setText(1, dep.name)
+        item.setText(2, mod_data['filename'])
         item.setData(0, Qt.ItemDataRole.UserRole, mod_data)
         self.tree_widget.addTopLevelItem(item)
+
+        # Добавляем в selected_mods родительского окна
+        parent = self.analyzer_window.parent() or self.parent
+        while parent:
+            if hasattr(parent, 'selected_mods') and isinstance(parent.selected_mods, list):
+                parent.selected_mods.append(mod_data)
+                if hasattr(parent, 'update_selected_list'):
+                    parent.update_selected_list()
+                logger.info(f"✅ Добавлена зависимость в selected_mods: {dep.name} (ID: {dep.mod_id or dep.project_id})")
+                break
+            parent = parent.parent()
+
         return True
 
     def _on_close(self):

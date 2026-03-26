@@ -1,3 +1,4 @@
+# Network/CurseForgeLoader.py
 import requests
 import json
 import os
@@ -6,12 +7,13 @@ import urllib.parse
 from typing import List, Dict, Optional, Any
 import logging
 from datetime import datetime
+import re
 
 logger = logging.getLogger(__name__)
 
 
 class CurseForgeAPI:
-    """Клиент для работы с CurseForge с приоритетом прямых скачиваний"""
+    """Клиент для работы с CurseForge с улучшенным поиском по ID"""
 
     # Единый API ключ для доступа к прокси
     API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
@@ -22,77 +24,54 @@ class CurseForgeAPI:
         self.session.headers.update({
             'User-Agent': 'YamalPixelLauncher/1.0',
             'Accept': 'application/json',
-            'X-API-Key': self.API_KEY  # Добавляем ключ по умолчанию
+            'X-API-Key': self.API_KEY
         })
-        self.timeout = 30  # увеличиваем с 10 до 30
+        self.timeout = 30
         self.direct_timeout = 30
-        self.proxy_timeout = 60  # увеличиваем с 30 до 60
+        self.proxy_timeout = 60
+
+        # Кэш для информации о модах
+        self.mod_info_cache = {}
 
         logger.info(f"Инициализирован CurseForge API с прокси: {self.proxy_url}")
 
     def _make_proxy_request(self, method: str, endpoint: str, **kwargs) -> Optional[requests.Response]:
-        """Универсальный метод для запросов к прокси с проверкой авторизации"""
+        """Универсальный метод для запросов к прокси"""
         url = f"{self.proxy_url}{endpoint}"
 
         try:
-            # Убеждаемся, что ключ есть в заголовках
             headers = kwargs.get('headers', {})
             headers['X-API-Key'] = self.API_KEY
             kwargs['headers'] = headers
 
             response = self.session.request(method, url, timeout=self.timeout, **kwargs)
 
-            # Логируем статусы авторизации
-            if response.status_code == 401:
-                logger.error("❌ Ошибка авторизации: неверный или отсутствующий API ключ")
-                return None
-            elif response.status_code == 403:
-                logger.error("❌ Доступ запрещен: неверный API ключ")
-                return None
-            elif response.status_code == 200:
+            if response.status_code == 200:
                 return response
             else:
-                logger.error(f"❌ Ошибка {response.status_code} для {endpoint}")
+                logger.debug(f"Прокси вернул {response.status_code} для {endpoint}")
                 return None
 
         except requests.exceptions.ConnectionError:
-            logger.error(f"🔌 Не удалось подключиться к прокси: {self.proxy_url}")
+            logger.debug(f"🔌 Не удалось подключиться к прокси: {self.proxy_url}")
             return None
         except Exception as e:
-            logger.error(f"❌ Ошибка запроса к {endpoint}: {e}")
+            logger.debug(f"❌ Ошибка запроса к {endpoint}: {e}")
             return None
 
     def test_connection(self) -> bool:
         """Проверка соединения с прокси-сервером"""
         try:
-            # Проверяем доступность прокси-сервера
             health_response = self._make_proxy_request('GET', '/api/v1/health')
-
-            if not health_response or health_response.status_code != 200:
-                logger.error(f"Прокси-сервер недоступен (health)")
+            if not health_response:
                 return False
 
-            # Проверяем CurseForge API через прокси
             ping_response = self._make_proxy_request('GET', '/api/v1/curseforge/ping')
-
             if ping_response and ping_response.status_code == 200:
                 data = ping_response.json()
-                success = data.get("success", False)
-
-                if success:
-                    logger.info("✅ CurseForge прокси доступен")
-                else:
-                    error_msg = data.get("error", "Неизвестная ошибка")
-                    logger.warning(f"⚠️ CurseForge API проблема: {error_msg}")
-
-                return success
-            else:
-                logger.error(f"Ошибка ping")
-                return False
-
-        except requests.exceptions.Timeout:
-            logger.error("Таймаут при проверке прокси-сервера")
+                return data.get("success", False)
             return False
+
         except Exception as e:
             logger.error(f"Ошибка проверки соединения: {e}")
             return False
@@ -115,107 +94,207 @@ class CurseForgeAPI:
                 return response.json()
             return None
 
-        except requests.exceptions.Timeout:
-            logger.error("Таймаут при поиске модов")
-            return None
         except Exception as e:
             logger.error(f"Ошибка поиска: {e}")
             return None
 
+    def get_mod_info(self, mod_id: str, force_refresh: bool = False) -> Optional[Dict]:
+        """
+        Получение информации о моде с улучшенной обработкой ошибок.
+        Использует кэш, пробует альтернативные методы если прокси не работает.
+        """
+        # Проверяем кэш
+        if not force_refresh and mod_id in self.mod_info_cache:
+            return self.mod_info_cache[mod_id]
+
+        # 1. Пробуем через прокси
+        response = self._make_proxy_request('GET', f'/api/v1/curseforge/mod/{mod_id}')
+        if response:
+            try:
+                data = response.json()
+                if data.get("success") and data.get("data"):
+                    self.mod_info_cache[mod_id] = data["data"]
+                    logger.info(f"✅ Получена информация о моде {mod_id} через прокси")
+                    return data["data"]
+            except:
+                pass
+
+        # 2. Пробуем получить через поиск (если прокси не вернул)
+        logger.info(f"🔄 Пробуем найти мод {mod_id} через поиск...")
+        search_result = self._get_mod_by_search(mod_id)
+        if search_result:
+            self.mod_info_cache[mod_id] = search_result
+            return search_result
+
+        # 3. Создаём базовую заглушку с минимальной информацией
+        logger.warning(f"⚠️ Используем заглушку для мода {mod_id}")
+        fallback_info = self._create_fallback_mod_info(mod_id)
+        self.mod_info_cache[mod_id] = fallback_info
+        return fallback_info
+
+    def _get_mod_by_search(self, query: str) -> Optional[Dict]:
+        """Пытается найти мод через поиск по имени или ID"""
+        try:
+            # Если query - это число, пробуем искать по ID
+            if query.isdigit():
+                # Делаем поиск по пустому запросу и фильтруем? Не работает.
+                # Лучше пробуем прямой запрос к старому API
+                old_api_url = f"https://www.curseforge.com/api/v1/mods/{query}"
+                try:
+                    response = self.session.get(old_api_url, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('id'):
+                            return {
+                                'id': data['id'],
+                                'name': data.get('name', f'Mod {query}'),
+                                'slug': data.get('slug', str(query)),
+                                'summary': data.get('summary', ''),
+                                'downloads': data.get('downloadCount', 0),
+                                'date_created': data.get('dateCreated'),
+                                'date_modified': data.get('dateModified'),
+                            }
+                except:
+                    pass
+
+            # Пробуем поиск по имени
+            search_response = self._make_proxy_request(
+                'GET', '/api/v1/curseforge/search',
+                params={'query': query, 'limit': 5}
+            )
+            if search_response:
+                data = search_response.json()
+                if data.get("success") and data.get("data"):
+                    # Берём первый результат
+                    first_result = data["data"][0]
+                    logger.info(f"🔍 Найден мод через поиск: {first_result.get('title')}")
+                    return {
+                        'id': first_result.get('project_id'),
+                        'name': first_result.get('title'),
+                        'slug': first_result.get('slug'),
+                        'summary': first_result.get('summary', ''),
+                        'downloads': first_result.get('downloads', 0),
+                    }
+
+            return None
+
+        except Exception as e:
+            logger.debug(f"Ошибка поиска мода {query}: {e}")
+            return None
+
+    def _create_fallback_mod_info(self, mod_id: str) -> Dict:
+        """Создаёт базовую информацию о моде для fallback"""
+        return {
+            'id': mod_id,
+            'name': f'Mod {mod_id}',
+            'slug': str(mod_id),
+            'summary': f'CurseForge mod with ID {mod_id}',
+            'downloads': 0,
+            'is_fallback': True
+        }
+
     def get_mod_versions(self, mod_id: str, minecraft_version: str, loader: str) -> Optional[List[Dict]]:
         """Получение версий мода с зависимостями"""
         try:
+            # Убеждаемся, что запрашиваем зависимости
             response = self._make_proxy_request(
                 'GET',
                 f'/api/v1/curseforge/mod/{mod_id}/versions',
                 params={
                     'minecraft_version': minecraft_version,
                     'loader': loader.lower(),
-                    'include_dependencies': 'true'  # <-- добавить этот параметр
+                    'include_dependencies': 'true'  # ← ЭТОТ ПАРАМЕТР КЛЮЧЕВОЙ!
                 }
             )
 
             if response:
                 data = response.json()
                 if data.get("success"):
-                    return data.get("data", [])
+                    versions = data.get("data", [])
+
+                    # Логируем найденные зависимости для отладки
+                    for v in versions[:1]:  # Только последнюю версию
+                        deps = v.get('dependencies', [])
+                        if deps:
+                            logger.info(f"📦 Найдено {len(deps)} зависимостей для версии {v.get('id')}")
+                            for dep in deps:
+                                logger.debug(f"  → {dep}")
+
+                    return versions
             return None
 
         except Exception as e:
             logger.error(f"Ошибка получения версий: {e}")
             return None
 
-    def get_mod_info(self, mod_id: str) -> Optional[Dict]:
-        """Получает информацию о моде по ID"""
+    def _get_versions_alternative(self, mod_id: str, minecraft_version: str, loader: str) -> List[Dict]:
+        """Альтернативный метод получения версий через прямой парсинг"""
         try:
-            response = self._make_proxy_request(
-                'GET',
-                f'/api/v1/curseforge/mod/{mod_id}'
-            )
+            # Пробуем получить страницу мода на CurseForge
+            url = f"https://www.curseforge.com/minecraft/mc-mods/{mod_id}/files"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml',
+            }
+            response = requests.get(url, headers=headers, timeout=15)
 
-            if response:
-                data = response.json()
-                if data.get("success"):
-                    return data.get("data", {})
+            if response.status_code == 200:
+                # Ищем ссылки на файлы в HTML
+                # Простой парсинг: ищем паттерны file-{id}
+                file_pattern = r'/files/(\d+)/download'
+                file_ids = re.findall(file_pattern, response.text)
 
-            logger.warning(f"Не удалось получить информацию о моде {mod_id}")
-            return None
+                versions = []
+                for file_id in file_ids[:10]:  # Берем первые 10
+                    versions.append({
+                        'id': file_id,
+                        'name': f'Version {file_id}',
+                        'version_number': file_id,
+                        'files': [{
+                            'filename': f'mod-{mod_id}-{file_id}.jar',
+                            'url': f'https://www.curseforge.com/minecraft/mc-mods/{mod_id}/files/{file_id}/download'
+                        }],
+                        'dependencies': [],
+                        'game_versions': [minecraft_version],
+                        'loaders': [loader]
+                    })
+
+                return versions
 
         except Exception as e:
-            logger.error(f"Ошибка получения информации о моде {mod_id}: {e}")
-            return None
+            logger.debug(f"Альтернативный метод получения версий не сработал: {e}")
+
+        return []
 
     def download_mod(self, mod_id: str, version_id: str, filename: str, destination_dir: str) -> bool:
-        """
-        Скачивание мода с приоритетом прямого источника
-
-        Стратегия:
-        1. Пытаемся скачать напрямую с CurseForge CDN
-        2. При успехе - уведомляем прокси о файле (фоновое кеширование)
-        3. При неудаче - скачиваем через прокси как fallback
-        """
+        """Скачивание мода с приоритетом прямого источника"""
         logger.info(f"📥 Начинаем скачивание мода: {filename}")
 
-        # 1. ПРЯМОЙ ИСТОЧНИК (Primary): Пробуем скачать с CurseForge CDN напрямую
+        # 1. ПРЯМОЙ ИСТОЧНИК: Пробуем скачать с CurseForge CDN напрямую
         direct_url = self._build_direct_cdn_url(version_id, filename)
 
         if self._download_direct(direct_url, filename, destination_dir):
             logger.info(f"✅ Файл {filename} скачан напрямую с CDN")
-
-            # 2. ФОНОВАЯ СИНХРОНИЗАЦИЯ: Уведомляем прокси о файле (не блокируя пользователя)
             self._notify_proxy_to_cache(mod_id, version_id, filename, direct_url)
             return True
 
-        # 3. ПРОКСИ (Fallback): Если прямой источник недоступен
+        # 2. ПРОКСИ (Fallback)
         logger.warning(f"⚠️ Прямой источник недоступен, пробуем через прокси...")
         return self._download_via_proxy(mod_id, version_id, filename, destination_dir)
 
     def _build_direct_cdn_url(self, file_id: str, filename: str) -> str:
-        """
-        Формирование прямой ссылки на CurseForge CDN
-
-        Структура ссылок CurseForge:
-        https://edge.forgecdn.net/files/{folder1}/{folder2}/{filename}
-        где folder1 = первые 4 символа file_id, folder2 = символы 5-7
-        """
+        """Формирование прямой ссылки на CurseForge CDN"""
         if len(file_id) >= 7:
             folder1 = file_id[:4]
             folder2 = file_id[4:7]
             return f"https://edge.forgecdn.net/files/{folder1}/{folder2}/{filename}"
-
-        # Fallback для коротких ID
         return f"https://media.forgecdn.net/files/{file_id}/{filename}"
 
     def _download_direct(self, url: str, filename: str, destination_dir: str) -> bool:
-        """Прямое скачивание с источника без использования прокси"""
+        """Прямое скачивание с источника"""
         try:
-            logger.debug(f"🔄 Пробуем прямое скачивание: {url}")
-
-            # Используем отдельную сессию без прокси
             direct_session = requests.Session()
-            direct_session.headers.update({
-                'User-Agent': 'YamalPixelLauncher/1.0',
-            })
+            direct_session.headers.update({'User-Agent': 'YamalPixelLauncher/1.0'})
 
             response = direct_session.get(url, stream=True, timeout=self.direct_timeout)
 
@@ -223,41 +302,25 @@ class CurseForgeAPI:
                 os.makedirs(destination_dir, exist_ok=True)
                 filepath = os.path.join(destination_dir, filename)
 
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded = 0
-
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                            downloaded += len(chunk)
 
-                # Проверяем целостность файла
                 if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
-                    logger.debug(f"✅ Прямое скачивание успешно: {filename} ({os.path.getsize(filepath)} байт)")
                     return True
-                else:
-                    logger.warning(f"❌ Файл скачался с ошибкой (маленький размер): {filename}")
-                    if os.path.exists(filepath):
-                        os.remove(filepath)
-                    return False
-            else:
-                logger.debug(f"❌ Прямой источник недоступен: HTTP {response.status_code}")
-                return False
 
-        except requests.exceptions.Timeout:
-            logger.debug(f"⏰ Таймаут прямого скачивания: {filename}")
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+
             return False
-        except requests.exceptions.ConnectionError:
-            logger.debug(f"🔌 Ошибка подключения к прямому источнику: {filename}")
-            return False
+
         except Exception as e:
-            logger.debug(f"⚠️ Ошибка прямого скачивания {filename}: {e}")
+            logger.debug(f"Ошибка прямого скачивания: {e}")
             return False
 
     def _notify_proxy_to_cache(self, mod_id: str, file_id: str, filename: str, source_url: str):
-        """Уведомление прокси о необходимости кэширования файла (асинхронно)"""
-
+        """Уведомление прокси о необходимости кэширования"""
         def _send_notification():
             try:
                 cache_url = f"{self.proxy_url}/api/v1/cache/request"
@@ -269,38 +332,20 @@ class CurseForgeAPI:
                     "source": "curseforge",
                     "timestamp": datetime.now().isoformat()
                 }
-
-                # Отправляем запрос с API ключом
                 headers = {'X-API-Key': self.API_KEY}
-                response = requests.post(cache_url, json=payload, headers=headers, timeout=5)
+                requests.post(cache_url, json=payload, headers=headers, timeout=5)
+            except:
+                pass
 
-                if response.status_code == 200:
-                    logger.debug(f"📤 Прокси уведомлен о файле {filename}")
-                elif response.status_code in [401, 403]:
-                    logger.debug(f"🔒 Прокси отклонил уведомление: неверный ключ")
-                else:
-                    logger.debug(f"⚠️ Прокси не ответил на уведомление: {response.status_code}")
-
-            except Exception as e:
-                # Молча игнорируем ошибки уведомления - это не критично
-                logger.debug(f"📴 Ошибка уведомления прокси: {e}")
-
-        # Запускаем в отдельном потоке, чтобы не блокировать пользователя
         threading.Thread(target=_send_notification, daemon=True).start()
 
     def _download_via_proxy(self, mod_id: str, version_id: str, filename: str, destination_dir: str) -> bool:
-        """Резервное скачивание через прокси"""
+        """Скачивание через прокси"""
         try:
-            logger.info(f"🔄 Пробуем скачать через прокси: {filename}")
-
-            # Получаем информацию о файле с прокси
             response = self._make_proxy_request(
                 'GET',
                 f'/api/v1/curseforge/download/{version_id}',
-                params={
-                    'filename': filename,
-                    'mod_id': mod_id
-                }
+                params={'filename': filename, 'mod_id': mod_id}
             )
 
             if not response:
@@ -308,166 +353,31 @@ class CurseForgeAPI:
 
             data = response.json()
             if not data.get("success"):
-                logger.error(f"❌ Ошибка в ответе прокси: {data.get('error')}")
                 return False
 
             download_url = data.get("download_url")
             if not download_url:
-                logger.error("❌ Нет ссылки для скачивания с прокси")
                 return False
 
-            # Скачиваем файл с прокси
             os.makedirs(destination_dir, exist_ok=True)
             file_response = self.session.get(download_url, stream=True, timeout=60)
             file_response.raise_for_status()
 
             destination_path = os.path.join(destination_dir, filename)
-
-            # Скачиваем файл
-            total_size = int(file_response.headers.get('content-length', 0))
-            downloaded = 0
-
             with open(destination_path, 'wb') as f:
                 for chunk in file_response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-                        downloaded += len(chunk)
 
-            # Проверяем что файл скачался
-            if os.path.exists(destination_path) and os.path.getsize(destination_path) > 1000:
-                logger.info(f"✅ Успешно скачан через прокси: {filename}")
-                return True
-            else:
-                logger.error(f"❌ Файл с прокси скачался с ошибкой: {filename}")
-                if os.path.exists(destination_path):
-                    os.remove(destination_path)
-                return False
+            return os.path.exists(destination_path) and os.path.getsize(destination_path) > 1000
 
-        except requests.exceptions.Timeout:
-            logger.error(f"⏰ Таймаут при скачивании с прокси: {filename}")
-            return False
-        except requests.exceptions.ConnectionError:
-            logger.error(f"🔌 Не удалось подключиться к прокси для скачивания: {filename}")
-            return False
         except Exception as e:
-            logger.error(f"❌ Ошибка скачивания с прокси: {e}")
+            logger.error(f"Ошибка скачивания с прокси: {e}")
             return False
 
     def get_supported_loaders(self, minecraft_version: str) -> List[str]:
         """Получение списка поддерживаемых загрузчиков"""
-        # Для CurseForge всегда доступны основные загрузчики
         return ["fabric", "forge", "quilt", "neoforge"]
-
-    def get_mod_info(self, mod_id: str) -> Optional[Dict]:
-        """Упрощенное получение информации о моде"""
-        try:
-            # Используем поиск для получения информации о моде
-            response = self._make_proxy_request('GET', f'/api/v1/curseforge/mod/{mod_id}')
-
-            if response:
-                data = response.json()
-                if data.get("success"):
-                    return data.get("data", {})
-
-            # Если не сработало, пробуем через поиск
-            logger.warning(f"Не удалось получить информацию о моде {mod_id}, используем заглушку")
-
-            # Заглушка с базовой информацией
-            return {
-                "id": mod_id,
-                "name": f"Mod {mod_id}",
-                "slug": mod_id,
-                "dependencies": []  # Прокси не предоставляет зависимости
-            }
-
-        except Exception as e:
-            logger.error(f"Ошибка получения информации о моде: {e}")
-            return None
-
-    def download_mod_with_fallback(self, mod_id: str, version_id: str, filename: str, destination_dir: str) -> bool:
-        """
-        Скачивание мода с приоритетом прямого источника и резервным прокси
-
-        Стратегия:
-        1. Пытаемся скачать напрямую с официального источника
-        2. При успехе - уведомляем прокси о файле (фоновое кеширование)
-        3. При неудаче - пытаемся скачать через прокси-кэш
-        """
-        logger.info(f"📥 Начинаем скачивание мода: {filename}")
-
-        # Определяем тип источника по параметрам
-        source_type = "curseforge"  # по умолчанию
-
-        # 1. ПРЯМОЙ ИСТОЧНИК: Пробуем скачать напрямую
-        direct_url = self._build_direct_url(mod_id, version_id, filename)
-
-        if self._download_direct(direct_url, filename, destination_dir):
-            logger.info(f"✅ Файл {filename} скачан напрямую")
-
-            # 2. ФОНОВАЯ СИНХРОНИЗАЦИЯ: Уведомляем прокси о файле
-            self._notify_proxy_to_cache(mod_id, version_id, filename, direct_url, source_type)
-            return True
-
-        # 3. ПРОКСИ КЭШ (Fallback): Если прямой источник недоступен
-        logger.warning(f"⚠️ Прямой источник недоступен, пробуем через прокси-кэш...")
-        return self._download_from_proxy_cache(mod_id, version_id, filename, destination_dir)
-
-    def _build_direct_url(self, mod_id: str, version_id: str, filename: str) -> str:
-        """
-        Формирование прямой ссылки в зависимости от типа мода
-        """
-        # Здесь нужно определить, какой это источник
-        # Можно по переданным параметрам или по контексту
-        # Для примера - если mod_id похож на Modrinth ID (короткий)
-        if len(mod_id) <= 10 and len(version_id) <= 10:
-            # Вероятно Modrinth
-            return f"https://cdn.modrinth.com/data/{mod_id}/versions/{version_id}/{filename}"
-        else:
-            # Вероятно CurseForge
-            if len(version_id) >= 7:
-                folder1 = version_id[:4]
-                folder2 = version_id[4:7]
-                return f"https://edge.forgecdn.net/files/{folder1}/{folder2}/{filename}"
-            return f"https://media.forgecdn.net/files/{version_id}/{filename}"
-
-    def _download_from_proxy_cache(self, mod_id: str, version_id: str, filename: str, destination_dir: str) -> bool:
-        """
-        Скачивание файла из кэша прокси (резервный метод)
-        """
-        try:
-            logger.info(f"🔄 Пробуем скачать из прокси-кэша: {filename}")
-
-            proxy_url = f"{self.proxy_url}/api/v1/cache/file/{mod_id}/{version_id}"
-
-            # Используем сессию с API ключом
-            response = self.session.get(proxy_url, stream=True, timeout=30)
-
-            if response.status_code == 200:
-                os.makedirs(destination_dir, exist_ok=True)
-                filepath = os.path.join(destination_dir, filename)
-
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-
-                # Проверяем целостность файла
-                if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
-                    file_size = os.path.getsize(filepath)
-                    logger.info(f"✅ Успешно скачан из прокси-кэша: {filename} ({file_size} байт)")
-                    return True
-                else:
-                    logger.error(f"❌ Файл с прокси скачался с ошибкой: {filename}")
-                    if os.path.exists(filepath):
-                        os.remove(filepath)
-                    return False
-            else:
-                logger.error(f"❌ Прокси вернул ошибку: {response.status_code}")
-                return False
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка скачивания из прокси-кэша: {e}")
-            return False
 
     def test_auth(self) -> Optional[Dict]:
         """Тестирование авторизации"""
