@@ -1250,11 +1250,20 @@ class CollectionInstallWorker(QThread):
         self.collection_data = collection_data
 
     def run(self):
-        def callback(current, total, mod_name):
-            self.progress.emit(current, total, mod_name)
-            self.log.emit(f"📥 Загрузка: {mod_name} ({current + 1}/{total})")
+        from Core.backup import ModsBackupManager
 
-        success = install_collection(self.collection_data, callback)
+        backup_manager = ModsBackupManager(CONFIG["minecraft_dir"])
+
+        def callback(current, total, mod_name, status="loading", reason=None):
+            self.progress.emit(current, total, mod_name)
+            if status == "skipped":
+                self.log.emit(f"⏭️ Пропущен {mod_name}: {reason}")
+            else:
+                self.log.emit(f"📥 Загрузка: {mod_name} ({current + 1}/{total})")
+
+        # Передаём флаг create_backup=True
+        success = install_collection(self.collection_data, callback, create_backup=True)
+
         total = len(self.collection_data.get('mods', []))
         success_count = total if success else 0
 

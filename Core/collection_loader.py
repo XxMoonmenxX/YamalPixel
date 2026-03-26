@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from ConfDir.Configs import COLLECTIONS_CONFIG, CONFIG
 from Network.Downloader import download_single_mod_turbo_sync
+from Core.backup import ModsBackupManager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -141,88 +142,138 @@ def delete_collection(filename: str) -> bool:
         return False
 
 
-def install_collection(collection_data: Dict, progress_callback=None) -> bool:
+def install_collection(collection_data: Dict, progress_callback=None, create_backup=True) -> bool:
     """
-    Устанавливает сборку (скачивает моды)
-    Использует универсальную функцию загрузки с поддержкой прокси
+    Устанавливает сборку с бэкапом и проверкой совместимости
     """
-    try:
-        from Core.run import set_current_collection
+    from Core.run import set_current_collection
+    from Core.backup import ModsBackupManager
 
-        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-        os.makedirs(mods_dir, exist_ok=True)
+    mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
+    os.makedirs(mods_dir, exist_ok=True)
 
-        total_mods = len(collection_data.get('mods', []))
-        success_count = 0
+    backup_manager = ModsBackupManager(CONFIG["minecraft_dir"])
 
-        # Сохраняем информацию о сборке для callback
-        collection_name = collection_data.get('name', 'Unknown')
-        minecraft_version = collection_data.get('minecraft_version', '1.20.1')
-        loader = collection_data.get('loader', 'fabric')
-
-        logger.info(f"📦 Установка сборки: {collection_name}")
-        logger.info(f"   Версия: {minecraft_version}, Загрузчик: {loader}")
-        logger.info(f"   Модов: {total_mods}")
-
-        for i, mod in enumerate(collection_data.get('mods', [])):
-            if progress_callback:
-                progress_callback(i, total_mods, mod.get('name', 'Unknown'))
-
-            source = mod.get('source', 'modrinth')
-            mod_name = mod.get('name', 'Unknown')
-
-            logger.debug(f"   [{i + 1}/{total_mods}] Загрузка: {mod_name} (источник: {source})")
-
-            try:
-                # Подготавливаем информацию о моде для загрузчика
-                mod_info = {
-                    "file": mod.get('filename', f"{mod.get('modrinth_slug', mod_name)}.jar"),
-                    "name": mod_name,
-                    "source": source,
-                }
-
-                # Добавляем URL в зависимости от источника
-                if source == 'modrinth':
-                    mod_info["modrinth_id"] = mod.get('modrinth_id')
-                    mod_info["project_id"] = mod.get('modrinth_id')
-                    mod_info["version_id"] = mod.get('version_id')  # может быть None
-                elif source == 'curseforge':
-                    mod_info["curseforge_id"] = str(mod.get('curseforge_id'))
-                    mod_info["project_id"] = str(mod.get('curseforge_id'))
-                elif source == 'yandex' or source == 'local':
-                    mod_info["url"] = mod.get('url', '')
-
-                # Используем универсальную функцию загрузки с передачей версии и загрузчика
-                success = download_single_mod_turbo_sync(
-                    mod_info=mod_info,
-                    minecraft_dir=CONFIG["minecraft_dir"],
-                    source=source,
-                    minecraft_version=minecraft_version,  # ← передаём версию Minecraft
-                    loader=loader  # ← передаём тип загрузчика
-                )
-
-                if success:
-                    success_count += 1
-                    logger.info(f"   ✅ {mod_name} - установлен")
-                else:
-                    logger.warning(f"   ❌ {mod_name} - не удалось загрузить")
-
-            except Exception as e:
-                logger.error(f"   💥 Ошибка установки мода {mod_name}: {e}")
-
-        # Сохраняем текущую сборку если успешно загружено больше половины
-        if success_count >= total_mods // 2:
-            set_current_collection(collection_name)
-            logger.info(f"✅ Сборка '{collection_name}' установлена ({success_count}/{total_mods})")
+    # 1. Создаём бэкап
+    if create_backup:
+        backup_path = backup_manager.create_backup()
+        if backup_path:
+            logger.info(f"📦 Создан бэкап: {os.path.basename(backup_path)}")
         else:
-            logger.warning(f"⚠️ Сборка '{collection_name}' установлена частично ({success_count}/{total_mods})")
+            logger.warning("⚠️ Бэкап не создан, продолжаем...")
+    else:
+        logger.info("⏭️ Создание бэкапа пропущено")
 
-        return success_count == total_mods
+    # 2. Очищаем папку модов
+    removed_count = backup_manager.clear_mods()
+    logger.info(f"🗑️ Очищено {removed_count} модов")
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка установки сборки: {e}")
+    total_mods = len(collection_data.get('mods', []))
+    success_count = 0
+    skipped_count = 0
+
+    minecraft_version = collection_data.get('minecraft_version', '1.20.1')
+    loader = collection_data.get('loader', 'fabric')
+
+    for i, mod in enumerate(collection_data.get('mods', [])):
+        mod_name = mod.get('name', 'Unknown')
+
+        if progress_callback:
+            progress_callback(i, total_mods, mod_name)
+
+        # 3. Проверка совместимости
+        is_compatible, reason = check_mod_compatibility(mod, minecraft_version, loader)
+
+        if not is_compatible:
+            logger.warning(f"⚠️ Пропущен {mod_name}: {reason}")
+            skipped_count += 1
+            if progress_callback:
+                progress_callback(i, total_mods, mod_name, status="skipped", reason=reason)
+            continue
+
+        source = mod.get('source', 'modrinth')
+
+        logger.debug(f"   [{i + 1}/{total_mods}] Загрузка: {mod_name} (источник: {source})")
+
+        try:
+            mod_info = {
+                "file": mod.get('filename', f"{mod.get('modrinth_slug', mod_name)}.jar"),
+                "name": mod_name,
+                "source": source,
+                "minecraft_version": minecraft_version,
+                "loader": loader
+            }
+
+            if source == 'modrinth':
+                mod_info["modrinth_id"] = mod.get('modrinth_id')
+                mod_info["project_id"] = mod.get('modrinth_id')
+                mod_info["version_id"] = mod.get('version_id')
+            elif source == 'curseforge':
+                mod_info["curseforge_id"] = str(mod.get('curseforge_id'))
+                mod_info["project_id"] = str(mod.get('curseforge_id'))
+            elif source == 'yandex' or source == 'local':
+                mod_info["url"] = mod.get('url', '')
+
+            success = download_single_mod_turbo_sync(
+                mod_info=mod_info,
+                minecraft_dir=CONFIG["minecraft_dir"],
+                source=source,
+                minecraft_version=minecraft_version,
+                loader=loader
+            )
+
+            if success:
+                success_count += 1
+                logger.info(f"   ✅ {mod_name} - установлен")
+            else:
+                logger.warning(f"   ❌ {mod_name} - не удалось загрузить")
+
+        except Exception as e:
+            logger.error(f"   💥 Ошибка установки мода {mod_name}: {e}")
+
+    # 4. Итог
+    logger.info(f"📊 Итог: установлено {success_count}/{total_mods} модов (пропущено {skipped_count})")
+
+    if success_count >= total_mods // 2:
+        set_current_collection(collection_data.get('name'))
+        logger.info(f"✅ Сборка '{collection_data.get('name')}' установлена")
+        return True
+    else:
+        logger.warning(f"⚠️ Сборка '{collection_data.get('name')}' установлена частично")
+
+        # Предлагаем восстановить бэкап при неудаче
+        if create_backup and backup_path:
+            logger.info("💡 Для восстановления используйте кнопку 'Восстановить бэкап'")
+
         return False
 
+
+def check_mod_compatibility(mod, minecraft_version: str, loader: str) -> tuple:
+    """
+    Проверяет совместимость мода с версией Minecraft и загрузчиком
+    Возвращает (is_compatible, reason)
+    """
+    # Проверка версии Minecraft из названия файла
+    filename = mod.get('filename', '')
+    filename_lower = filename.lower()
+
+    # Ищем версию в имени файла
+    if '1.20.1' in filename_lower and minecraft_version != '1.20.1':
+        return False, f"Мод для 1.20.1, а игра на {minecraft_version}"
+    if '1.21' in filename_lower and not minecraft_version.startswith('1.21'):
+        return False, f"Мод для 1.21.x, а игра на {minecraft_version}"
+
+    # Проверка загрузчика
+    if 'forge' in filename_lower and loader != 'forge':
+        return False, f"Мод для Forge, а выбран {loader}"
+    if 'fabric' in filename_lower and loader != 'fabric':
+        return False, f"Мод для Fabric, а выбран {loader}"
+    if 'neoforge' in filename_lower and loader != 'neoforge':
+        return False, f"Мод для NeoForge, а выбран {loader}"
+    if 'quilt' in filename_lower and loader != 'quilt':
+        return False, f"Мод для Quilt, а выбран {loader}"
+
+    return True, "OK"
 
 def get_collection_mods_info(collection_data: Dict) -> List[Dict]:
     """Получает информацию о модах в сборке"""
