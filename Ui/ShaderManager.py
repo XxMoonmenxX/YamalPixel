@@ -7,10 +7,10 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem, QApplication, QMessageBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor
+from PyQt6.QtGui import QFont, QTextCursor, QColor
 
 from ConfDir.Configs import SHADERS_CONFIG, CONFIG
-from Network.Downloader import download_single_shader_turbo, TurboDownloader
+from Network.Downloader import TurboDownloader
 import asyncio
 
 

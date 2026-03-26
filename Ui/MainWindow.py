@@ -37,14 +37,11 @@ from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo_sync, download_mods_turbo_ui, TurboDownloader, LauncherCache
 from Network.ModrinthLoader import ModrinthAPI
 from Network.CurseForgeLoader import CurseForgeAPI
-from Network.CommunityCollections import show_community_collections
+
 from Network.shader_manager import show_shader_manager
 from Network.Downloader import download_shaders_turbo_ui
 
-from Ui.UiComponents import (
-    ModernButton, ModernCheckbutton, ModernCloseButton,
-    ModernEntry, ModernOnlineButton, ModernVersionSelector
-)
+
 from Ui.DependencyAnalyzer import DependencyAnalyzerUI
 
 import minecraft_launcher_lib
