@@ -34,7 +34,7 @@ from Core.run import is_game_running, set_current_collection, get_current_collec
 
 from Network.java_checker import check_java_on_startup, check_java_version
 from Network.Updates import check_for_updates_local
-from Network.Downloader import download_single_mod_turbo, download_mods_turbo_ui, TurboDownloader, LauncherCache
+from Network.Downloader import download_single_mod_turbo_sync, download_mods_turbo_ui, TurboDownloader, LauncherCache
 from Network.ModrinthLoader import ModrinthAPI
 from Network.CurseForgeLoader import CurseForgeAPI
 from Network.CommunityCollections import show_community_collections
@@ -185,10 +185,11 @@ def check_forge_installed(minecraft_version, minecraft_directory):
         return False
 
 
-def download_single_mod_turbo_wrapper(mod):
+def download_single_mod_turbo_wrapper(self, mod):
     """Обертка для загрузки одного мода"""
     try:
-        return download_single_mod_turbo(mod)
+        # Правильный вызов с передачей minecraft_dir
+        return download_single_mod_turbo_sync(mod, CONFIG["minecraft_dir"])
     except Exception as e:
         print(f"Ошибка загрузки мода {mod.get('file', 'unknown')}: {e}")
         return False
@@ -569,198 +570,119 @@ class MainWindow(QMainWindow):
         print(f"Используется шрифт: {self.default_font_family}")
 
     def old_repair_with_ui(self):
-        """Полная версия починки с UI (перенесено из YamalPixel_Launcher.py)"""
+        """Упрощенная автопочинка - без сложного UI"""
         try:
-            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QTextEdit, QPushButton, QHBoxLayout
-            from PyQt6.QtCore import QThread, pyqtSignal
-            from PyQt6.QtGui import QTextCursor
+            # Показываем, что начали
+            self.status_label.setText("🔧 Выполняется автопочинка...")
+            self.status_label.setStyleSheet("color: #ffaa00;")
+            QApplication.processEvents()
 
-            class RepairWorker(QThread):
-                status_updated = pyqtSignal(str, str)
-                progress_updated = pyqtSignal(int)
-                finished = pyqtSignal(dict)
+            issues = []
+            fixes = []
 
-                def __init__(self):
-                    super().__init__()
-                    self.issues_found = []
-                    self.fixes_applied = []
+            minecraft_dir = CONFIG["minecraft_dir"]
 
-                def run(self):
-                    try:
-                        minecraft_dir = CONFIG["minecraft_dir"]
-                        mods_dir = os.path.join(minecraft_dir, "mods")
-                        versions_dir = os.path.join(minecraft_dir, "versions")
-                        config_dir = os.path.join(minecraft_dir, "config")
+            # 1. Проверка папок
+            print("📁 Проверка папок...")
+            for folder in ["mods", "versions", "config", "shaderpacks"]:
+                path = os.path.join(minecraft_dir, folder)
+                if not os.path.exists(path):
+                    print(f"  ❌ Папка {folder} отсутствует, создаем...")
+                    os.makedirs(path, exist_ok=True)
+                    fixes.append(f"Создана папка {folder}")
 
-                        # Проверка папок
-                        self.status_updated.emit("Проверка папок...", "cyan")
-                        self.progress_updated.emit(10)
+            # 2. Проверка модов (только для YamalPixel)
+            selected_version = self.version_combo.currentText()
+            if selected_version == "YamalPixel":
+                print("📦 Проверка модов...")
+                mods_dir = os.path.join(minecraft_dir, "mods")
 
-                        for folder, path in [
-                            ("mods", mods_dir),
-                            ("versions", versions_dir),
-                            ("config", config_dir),
-                        ]:
-                            if not os.path.exists(path):
-                                self.issues_found.append(f"Папка {folder} отсутствует")
-                                self.status_updated.emit(f"❌ Папка {folder} отсутствует", "red")
-                                os.makedirs(path, exist_ok=True)
-                                self.fixes_applied.append(f"Создана папка {folder}")
-                                self.status_updated.emit(f"✅ Создана папка {folder}", "green")
+                missing_mods = []
+                for mod in CONFIG["mods"]:
+                    mod_path = os.path.join(mods_dir, mod["file"])
+                    if not os.path.exists(mod_path):
+                        missing_mods.append(mod)
 
-                        # Проверка модов
-                        self.progress_updated.emit(50)
-                        self.status_updated.emit("Проверка модов...", "cyan")
+                if missing_mods:
+                    print(f"  ❌ Отсутствует {len(missing_mods)} модов")
 
-                        missing_mods = []
-                        for mod in CONFIG["mods"]:
-                            mod_path = os.path.join(mods_dir, mod["file"])
-                            if not os.path.exists(mod_path):
-                                missing_mods.append(mod)
+                    from Network.Downloader import download_single_mod_turbo_sync
 
-                        if missing_mods:
-                            self.issues_found.append(f"Отсутствуют {len(missing_mods)} модов")
-                            self.status_updated.emit(f"❌ Отсутствует модов: {len(missing_mods)}", "red")
+                    for i, mod in enumerate(missing_mods):
+                        print(f"  ⬇️ Загружаем {mod['file']} ({i + 1}/{len(missing_mods)})...")
 
-                            for i, mod in enumerate(missing_mods):
-                                self.status_updated.emit(
-                                    f"Загружаем мод: {mod['file']} ({i + 1}/{len(missing_mods)})",
-                                    "yellow"
-                                )
-                                self.progress_updated.emit(50 + (i * 30 // len(missing_mods)))
+                        try:
+                            success = download_single_mod_turbo_sync(mod, minecraft_dir)
+                            if success:
+                                fixes.append(f"Загружен {mod['file']}")
+                                print(f"    ✅ Успешно")
+                            else:
+                                print(f"    ❌ Ошибка загрузки")
+                        except Exception as e:
+                            print(f"    💥 Ошибка: {e}")
+                else:
+                    print("  ✅ Все моды на месте")
 
-                                if download_single_mod_turbo_wrapper(mod):
-                                    self.fixes_applied.append(f"Загружен {mod['file']}")
-                                    self.status_updated.emit(f"✅ Загружен {mod['file']}", "green")
-                                else:
-                                    self.status_updated.emit(f"❌ Ошибка загрузки {mod['file']}", "red")
+            # 3. Проверка Fabric
+            print("🧵 Проверка Fabric...")
+            try:
+                from Core.run import check_fabric_installed, install_fabric_silent
+                if not check_fabric_installed():
+                    print("  ❌ Fabric не установлен, устанавливаем...")
+                    if install_fabric_silent():
+                        fixes.append("Установлен Fabric")
+                        print("  ✅ Fabric установлен")
+                    else:
+                        print("  ❌ Ошибка установки Fabric")
+                else:
+                    print("  ✅ Fabric установлен")
+            except Exception as e:
+                print(f"  ⚠️ Ошибка проверки Fabric: {e}")
 
-                        # Проверка Fabric
-                        self.progress_updated.emit(80)
-                        self.status_updated.emit("Проверка Fabric...", "cyan")
+            # 4. Проверка Quilt для выбранной версии
+            if selected_version in quilt_supported_versions:
+                print("🛋️ Проверка Quilt...")
+                try:
+                    from Core.run import check_quilt_installed, install_quilt_silent
+                    if not check_quilt_installed():
+                        print("  ❌ Quilt не установлен, устанавливаем...")
+                        if install_quilt_silent():
+                            fixes.append("Установлен Quilt")
+                            print("  ✅ Quilt установлен")
+                        else:
+                            print("  ❌ Ошибка установки Quilt")
+                    else:
+                        print("  ✅ Quilt установлен")
+                except Exception as e:
+                    print(f"  ⚠️ Ошибка проверки Quilt: {e}")
 
-                        if not check_fabric_installed():
-                            self.issues_found.append("Fabric не установлен")
-                            self.status_updated.emit("❌ Fabric не установлен", "red")
-                            if install_fabric_silent():
-                                self.fixes_applied.append("Установлен Fabric")
-                                self.status_updated.emit("✅ Установлен Fabric", "green")
+            # Формируем результат
+            result = "🔧 Автопочинка завершена!\n\n"
 
-                        # Проверка Quilt
-                        self.progress_updated.emit(85)
-                        self.status_updated.emit("Проверка Quilt...", "cyan")
+            if fixes:
+                result += "✅ Исправления:\n"
+                for fix in fixes:
+                    result += f"• {fix}\n"
+                result += "\n"
 
-                        selected_version = self.version_combo.currentText()
-                        if selected_version in quilt_supported_versions and not check_quilt_installed():
-                            self.issues_found.append("Quilt не установлен")
-                            self.status_updated.emit("❌ Quilt не установлен", "red")
-                            if install_quilt_silent():
-                                self.fixes_applied.append("Установлен Quilt")
-                                self.status_updated.emit("✅ Установлен Quilt", "green")
+            if not fixes and not issues:
+                result += "✅ Проблем не обнаружено! Все файлы в порядке.\n"
 
-                        self.progress_updated.emit(100)
-                        self.status_updated.emit("Проверка завершена!", "green")
+            # Показываем результат
+            self.status_label.setText("✅ Автопочинка завершена")
+            self.status_label.setStyleSheet("color: #00ff88;")
 
-                        self.finished.emit({
-                            "issues": self.issues_found,
-                            "fixes": self.fixes_applied
-                        })
+            MessageDialog.show_info(self, "Автопочинка", result)
 
-                    except Exception as e:
-                        self.status_updated.emit(f"❌ Ошибка: {str(e)}", "red")
-                        self.finished.emit({
-                            "issues": [str(e)],
-                            "fixes": [],
-                            "error": str(e)
-                        })
-
-            class RepairDialog(QDialog):
-                def __init__(self, parent=None):
-                    super().__init__(parent)
-                    self.setWindowTitle("🔧 Автопочинка файлов")
-                    self.setMinimumSize(500, 400)
-                    self.setModal(True)
-
-                    layout = QVBoxLayout(self)
-
-                    title = QLabel("🔧 Автопочинка файлов игры")
-                    title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-                    title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    layout.addWidget(title)
-
-                    subtitle = QLabel("Проверяем и восстанавливаем игровые файлы")
-                    subtitle.setFont(QFont("Segoe UI", 11))
-                    subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    layout.addWidget(subtitle)
-
-                    self.progress_bar = QProgressBar()
-                    self.progress_bar.setRange(0, 100)
-                    layout.addWidget(self.progress_bar)
-
-                    self.status_label = QLabel("Начинаем проверку...")
-                    self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    layout.addWidget(self.status_label)
-
-                    self.log_text = QTextEdit()
-                    self.log_text.setReadOnly(True)
-                    self.log_text.setFont(QFont("Consolas", 9))
-                    layout.addWidget(self.log_text)
-
-                    button_layout = QHBoxLayout()
-                    self.close_btn = QPushButton("Закрыть")
-                    self.close_btn.clicked.connect(self.close)
-                    self.close_btn.setEnabled(False)
-                    button_layout.addStretch()
-                    button_layout.addWidget(self.close_btn)
-                    layout.addLayout(button_layout)
-
-                    self.worker = RepairWorker()
-                    self.worker.status_updated.connect(self.add_log)
-                    self.worker.progress_updated.connect(self.progress_bar.setValue)
-                    self.worker.finished.connect(self.on_finished)
-                    self.worker.start()
-
-                def add_log(self, message, color="white"):
-                    color_map = {
-                        "green": "#00ff88",
-                        "red": "#ff4444",
-                        "yellow": "#ffaa00",
-                        "cyan": "#00ccff",
-                        "white": "#ffffff"
-                    }
-                    hex_color = color_map.get(color, "#ffffff")
-
-                    self.log_text.moveCursor(QTextCursor.MoveOperation.End)
-                    self.log_text.setTextColor(QColor(hex_color))
-                    self.log_text.insertPlainText(f"• {message}\n")
-                    self.log_text.moveCursor(QTextCursor.MoveOperation.End)
-
-                def on_finished(self, result):
-                    self.progress_bar.setValue(100)
-                    self.close_btn.setEnabled(True)
-
-                    issues = result.get("issues", [])
-                    fixes = result.get("fixes", [])
-
-                    report = "🔧 Автопочинка завершена!\n\n"
-
-                    if issues:
-                        report += "📋 Найдены проблемы:\n• " + "\n• ".join(issues) + "\n\n"
-
-                    if fixes:
-                        report += "✅ Исправления:\n• " + "\n• ".join(fixes) + "\n\n"
-
-                    if not issues and not fixes:
-                        report += "✅ Проблем не обнаружено! Все файлы в порядке.\n\n"
-
-                    MessageDialog.show_info(self, "Автопочинка", report)
-
-            dialog = RepairDialog(self)
-            dialog.exec()
+            # ВАЖНО: НЕ открываем диагностику снова
+            # Просто возвращаем управление
 
         except Exception as e:
-            MessageDialog.show_error(self, "Ошибка", f"❌ Не удалось запустить автопочинку: {str(e)}")
-            return False
+            self.status_label.setText("❌ Ошибка автопочинки")
+            self.status_label.setStyleSheet("color: #ff4444;")
+            MessageDialog.show_error(self, "Ошибка", f"❌ Автопочинка не удалась:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def _get_stylesheet(self) -> str:
         return """

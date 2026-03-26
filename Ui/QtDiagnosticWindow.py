@@ -399,61 +399,78 @@ class QtDiagnosticWindow(QMainWindow):
             self.add_result("Игра должна запускаться без проблем", "cyan")
 
     def launch_without_mods(self):
-        """Используем Tkinter messagebox для совместимости"""
-        import __main__
-        if hasattr(__main__, 'win') and hasattr(__main__, 'messagebox'):
-            # Используем Tkinter messagebox
-            __main__.messagebox.askyesno(
-                "Запуск без модов",
-                "Запустить игру БЕЗ ВСЕХ модов?\n\n"
-                "Это поможет определить:\n"
-                "• Проблема в модах или в игре\n"
-                "• Конфликтующие моды\n\n"
-                "После проверки можно включить моды обратно."
-            )
-        if hasattr(__main__, 'launch_without_mods'):
-            __main__.launch_without_mods()
+        """Запуск без модов"""
+        reply = QMessageBox.question(
+            self,
+            "Запуск без модов",
+            "Запустить игру БЕЗ ВСЕХ модов?\n\n"
+            "Это поможет определить:\n"
+            "• Проблема в модах или в игре\n"
+            "• Конфликтующие моды\n\n"
+            "После проверки можно включить моды обратно.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Находим главное окно
+            main_window = self._find_main_window()
+            if main_window and hasattr(main_window, 'launch_without_mods'):
+                self.close()  # Закрываем диагностику
+                main_window.launch_without_mods()
+            else:
+                QMessageBox.warning(self, "Ошибка", "Не удалось найти главное окно")
 
     def complete_reinstall(self):
-        """Используем Tkinter messagebox для совместимости"""
-        import __main__
-        if hasattr(__main__, 'win') and hasattr(__main__, 'messagebox'):
-            result = __main__.messagebox.askyesno(
-                "Полная переустановка",
-                "⚠️ ВНИМАНИЕ! Это удалит ВСЕ файлы игры и настроек.\n\n"
-                "Будет выполнено:\n"
-                "• Удаление папки YamalPixel\n"
-                "• Удаление всех модов и конфигов\n"
-                "• Удаление миров и сохранений\n"
-                "• Создание чистых бэкапов\n\n"
-                "Продолжить?",
-                icon='warning'
-            )
-            if result:
-                if hasattr(__main__, 'complete_reinstall'):
-                    __main__.complete_reinstall()
+        """Полная переустановка"""
+        reply = QMessageBox.question(
+            self,
+            "Полная переустановка",
+            "⚠️ ВНИМАНИЕ! Это удалит ВСЕ файлы игры и настроек.\n\n"
+            "Будет выполнено:\n"
+            "• Удаление папки YamalPixel\n"
+            "• Удаление всех модов и конфигов\n"
+            "• Удаление миров и сохранений\n"
+            "• Создание чистых бэкапов\n\n"
+            "Продолжить?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            main_window = self._find_main_window()
+            if main_window and hasattr(main_window, 'complete_reinstall'):
+                self.close()
+                main_window.complete_reinstall()
+            else:
+                QMessageBox.warning(self, "Ошибка", "Не удалось найти главное окно")
 
     def auto_repair(self):
-        """Запускаем автопочинку с Tkinter UI"""
-        import __main__
-        if hasattr(__main__, 'win') and hasattr(__main__, 'messagebox'):
-            result = __main__.messagebox.askyesno(
-                "Автопочинка",
-                "🔧 Запустить автоматическую починку файлов игры?\n\n"
-                "Будет выполнено:\n"
-                "• Проверка и создание недостающих папок\n"
-                "• Проверка и загрузка отсутствующих модов\n"
-                "• Проверка и установка Fabric/Forge\n"
-                "• Восстановление поврежденных файлов\n\n"
-                "Это может занять несколько минут."
-            )
-            if result:
+        """Автопочинка"""
+        reply = QMessageBox.question(
+            self,
+            "Автопочинка",
+            "🔧 Запустить автоматическую починку файлов игры?\n\n"
+            "Будет выполнено:\n"
+            "• Проверка и создание недостающих папок\n"
+            "• Проверка и загрузка отсутствующих модов\n"
+            "• Проверка и установка Fabric/Forge\n"
+            "• Восстановление поврежденных файлов\n\n"
+            "Это может занять несколько минут.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Находим главное окно
+            main_window = self._find_main_window()
+            if main_window and hasattr(main_window, 'old_repair_with_ui'):
+                # Закрываем диагностику ПЕРЕД запуском автопочинки
                 self.close()
-                if hasattr(__main__, 'old_repair_with_ui'):
-                    threading.Thread(target=__main__.old_repair_with_ui, daemon=True).start()
+                # Запускаем автопочинку
+                main_window.old_repair_with_ui()
+            else:
+                QMessageBox.warning(self, "Ошибка", "Не удалось найти главное окно")
 
     def create_report(self):
-        """Создает отчет о диагностике"""
+        """Создает отчет"""
         report_path = os.path.join(CONFIG["minecraft_dir"], "diagnostic_report.txt")
 
         try:
@@ -470,22 +487,34 @@ class QtDiagnosticWindow(QMainWindow):
                 f.write("\n\n" + "=" * 60 + "\n")
                 f.write("Конец отчета\n")
 
-            # Используем Tkinter messagebox для отчета
-            import __main__
-            if hasattr(__main__, 'messagebox'):
-                __main__.messagebox.showinfo(
-                    "Отчет создан",
-                    f"📄 Отчет сохранен в:\n{report_path}\n\n"
-                    f"Вы можете отправить этот файл разработчику для помощи в решении проблем."
-                )
+            QMessageBox.information(
+                self,
+                "Отчет создан",
+                f"📄 Отчет сохранен в:\n{report_path}\n\n"
+                f"Вы можете отправить этот файл разработчику для помощи в решении проблем."
+            )
 
         except Exception as e:
-            import __main__
-            if hasattr(__main__, 'messagebox'):
-                __main__.messagebox.showerror(
-                    "Ошибка",
-                    f"Не удалось сохранить отчет:\n{str(e)}"
-                )
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось сохранить отчет:\n{str(e)}"
+            )
+
+    def _find_main_window(self):
+        """Находит главное окно лаунчера"""
+        parent = self.parent()
+        while parent:
+            if parent.__class__.__name__ == "MainWindow":
+                return parent
+            parent = parent.parent()
+
+        # Если не нашли через parent, ищем среди всех окон
+        for widget in QApplication.topLevelWidgets():
+            if widget.__class__.__name__ == "MainWindow":
+                return widget
+
+        return None
 
     def closeEvent(self, event):
         if hasattr(self, 'worker') and self.worker.isRunning():

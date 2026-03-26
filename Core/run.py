@@ -20,7 +20,7 @@ from ConfDir.Versions import (
     forge_supported_versions, neoforge_supported_versions,
     get_minecraft_version, version_configs
 )
-from Network.Downloader import download_single_mod_turbo
+from Network.Downloader import download_single_mod_turbo_sync
 
 # Глобальные переменные для состояния
 LAUNCH_IN_PROGRESS = False
