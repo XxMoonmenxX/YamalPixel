@@ -26,7 +26,7 @@ from PyQt6.QtGui import QFont, QIcon, QPixmap, QPalette, QBrush, QColor, QFontDa
 
 # Импорты из проекта
 from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods, get_minecraft_version, version_configs, messages, CURSEFORGE_CONFIG, set_window_icon, setup_environment
-from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions, get_all_versions
+from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions, get_all_versions
 from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds, find_closest_resolution
 from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
 
@@ -53,7 +53,8 @@ logger = logging.getLogger("YamalPixel.MainWindow")
 LAUNCH_IN_PROGRESS = False
 LAUNCH_START_TIME = None
 
-
+from ConfDir.Versions import get_all_versions
+ALL_VERSIONS = get_all_versions()
 
 
 def create_backup(folder_path, backup_type):

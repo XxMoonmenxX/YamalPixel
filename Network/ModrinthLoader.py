@@ -39,6 +39,25 @@ class ModrinthAPI:
 
         logger.info(f"Инициализирован Modrinth API с прокси: {self.proxy_url}")
 
+    def search_mods(self, query: str, limit: int = 50) -> Optional[Dict]:
+        """
+        Поиск модов на Modrinth
+        """
+        try:
+            # Используем v2 API для поиска
+            url = f"{self.base_url}/search"
+            params = {
+                "query": query,
+                "limit": limit,
+                "facets": '[]'  # можно добавить фильтры
+            }
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Ошибка поиска модов: {e}")
+            return None
+
     def _get_latest_version_id(self, project_slug: str, minecraft_version: str, loader: str) -> Optional[tuple]:
         """
         Получает ID последней версии мода для указанной версии Minecraft и загрузчика
@@ -82,6 +101,7 @@ class ModrinthAPI:
         Скачивание мода с автоматическим обновлением версии если указанная не существует
         """
         # Если version_id указан, пробуем скачать с ним
+        print("try1")
         if version_id and version_id != "latest":
             logger.info(f"📥 Пробуем скачать {filename} с указанной версией {version_id}")
             direct_url = self._build_direct_cdn_url(project_slug, version_id, filename)
@@ -114,6 +134,7 @@ class ModrinthAPI:
         return f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{encoded_filename}"
 
     def _download_direct(self, url: str, filename: str, mods_dir: str) -> bool:
+        print('try2')
         try:
             logger.debug(f"🔄 Прямое скачивание: {url}")
 
@@ -150,6 +171,7 @@ class ModrinthAPI:
             return False
 
     def download_mod_alternative(self, project_slug: str, version_id: str, filename: str, mods_dir: str) -> bool:
+        print ('try3')
         try:
             logger.debug(f"🔄 Альтернативный метод для: {filename}")
 
@@ -184,6 +206,7 @@ class ModrinthAPI:
             return False
 
     def _notify_proxy_to_cache(self, mod_id: str, file_id: str, filename: str, source_url: str):
+        print ('try4')
         def _send_notification():
             try:
                 cache_url = f"{self.proxy_url}/api/v1/cache/request"

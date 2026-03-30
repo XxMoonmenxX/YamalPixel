@@ -466,7 +466,7 @@ def is_modloader_needed(selected_version):
     return None
 
 # === ИНИЦИАЛИЗАЦИЯ СПИСКОВ ПОСЛЕ ЗАГРУЗКИ ===
-versions = get_all_versions()
+#versions = get_all_versions()
 
 
 # Versions.py - добавить в конец файла

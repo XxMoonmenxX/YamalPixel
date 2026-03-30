@@ -265,6 +265,7 @@ def _download_from_yandex(mod_info, file_path, mods_dir):
 
 def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=None, loader=None):
     """Прямая загрузка с Modrinth"""
+    print(f"🔄 Прямая загрузка Modrinth")
     try:
         from Network.ModrinthLoader import ModrinthAPI
 
