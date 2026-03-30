@@ -31,6 +31,67 @@ except ImportError:
     CollectionCreator = None
     print("⚠️ CollectionCreator не найден")
 
+
+print("=== IMPORTING collection_manager.py ===")
+import sys
+sys.stdout.flush()
+
+print("  Import 1: os")
+import os
+sys.stdout.flush()
+
+print("  Import 2: json")
+import json
+sys.stdout.flush()
+
+print("  Import 3: threading")
+import threading
+sys.stdout.flush()
+
+print("  Import 4: requests")
+import requests
+sys.stdout.flush()
+
+print("  Import 5: datetime")
+from datetime import datetime
+sys.stdout.flush()
+
+print("  Import 6: PyQt6.QtWidgets")
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTreeWidget, QTreeWidgetItem, QMessageBox, QWidget, QSplitter,
+    QTextEdit, QFrame, QTabWidget, QLineEdit, QComboBox,
+    QProgressBar, QApplication
+)
+sys.stdout.flush()
+
+print("  Import 7: PyQt6.QtCore")
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, pyqtSlot
+sys.stdout.flush()
+
+print("  Import 8: PyQt6.QtGui")
+from PyQt6.QtGui import QFont, QIcon, QColor
+sys.stdout.flush()
+
+print("  Import 9: Core.collection_loader")
+from Core.collection_loader import (
+    load_all_collections, delete_collection, install_collection,
+    get_collections_dir, get_collection_mods_info, save_collection
+)
+sys.stdout.flush()
+
+print("  Import 10: ConfDir.Configs")
+from ConfDir.Configs import COLLECTIONS_CONFIG
+sys.stdout.flush()
+
+print("  Import 11: ConfDir.Versions")
+from ConfDir.Versions import CURRENT_VERSION, all_versions
+sys.stdout.flush()
+
+print("=== collection_manager.py imports complete ===")
+sys.stdout.flush()
+
+
 class CommunityAPI:
     """API для работы с общедоступными сборками"""
 
@@ -1032,8 +1093,13 @@ class LocalCollectionsTab(QWidget):
             self.mods_list.addTopLevelItem(item)
 
     def install_collection(self):
+        """Установка сборки"""
         if not self.current_collection:
             return
+
+        print("=== install_collection button clicked ===")
+        import sys
+        sys.stdout.flush()
 
         reply = QMessageBox.question(
             self,
@@ -1046,10 +1112,28 @@ class LocalCollectionsTab(QWidget):
         )
 
         if reply != QMessageBox.StandardButton.Yes:
+            print("User cancelled")
             return
 
-        progress = CollectionInstallProgress(self, self.current_collection)
-        progress.exec()
+        print("Creating CollectionInstallProgress...")
+        sys.stdout.flush()
+
+        try:
+            progress = CollectionInstallProgress(self, self.current_collection)
+            print("CollectionInstallProgress created, calling exec()...")
+            sys.stdout.flush()
+
+            progress.exec()
+            print("CollectionInstallProgress.exec() finished")
+            sys.stdout.flush()
+
+        except Exception as e:
+            print(f"ERROR in install_collection: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
+
+
 
     def delete_collection(self):
         if not self.current_filename:
@@ -1111,15 +1195,97 @@ class LocalCollectionsTab(QWidget):
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть создание сборки: {e}")
 
 
+class CollectionInstallWorker(QThread):
+    """Поток для установки сборки"""
+    progress = pyqtSignal(int, int, str)
+    finished = pyqtSignal(bool, int, int)
+    log = pyqtSignal(str)
+
+    def __init__(self, collection_data):
+        print("=== CollectionInstallWorker.__init__ ===")
+        import sys
+        sys.stdout.flush()
+        super().__init__()
+        self.collection_data = collection_data
+        self._cancelled = False
+        print(f"collection_data name: {collection_data.get('name', 'Unknown')}")
+        sys.stdout.flush()
+
+    def cancel(self):
+        """Отмена установки"""
+        print("CollectionInstallWorker.cancel called")
+        self._cancelled = True
+
+    def run(self):
+        print("=== CollectionInstallWorker.run START ===")
+        import sys
+        sys.stdout.flush()
+
+        try:
+            from Core.backup import ModsBackupManager
+
+            # Создаем список для отслеживания
+            installed_mods = []
+
+            def callback(current, total, mod_name, status="loading", reason=None):
+                if self._cancelled:
+                    return
+                print(f"CALLBACK: {current}/{total} - {mod_name} - status={status}")
+                sys.stdout.flush()
+                self.progress.emit(current, total, mod_name)
+                if status == "skipped":
+                    self.log.emit(f"⏭️ Пропущен {mod_name}: {reason}")
+                elif status == "loading":
+                    self.log.emit(f"📥 Загрузка: {mod_name} ({current + 1}/{total})")
+                elif status == "success":
+                    self.log.emit(f"✅ Установлен: {mod_name}")
+                    installed_mods.append(mod_name)
+
+            print("Calling install_collection...")
+            sys.stdout.flush()
+
+            success = install_collection(self.collection_data, callback, create_backup=True)
+
+            print(f"install_collection returned: {success}")
+            print(f"Installed mods count: {len(installed_mods)}")
+            sys.stdout.flush()
+
+            total = len(self.collection_data.get('mods', []))
+            success_count = len(installed_mods)
+
+            print(f"Success count: {success_count} / {total}")
+            sys.stdout.flush()
+
+            self.finished.emit(success, success_count, total)
+
+        except Exception as e:
+            print(f"ERROR in CollectionInstallWorker.run: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
+            self.finished.emit(False, 0, 0)
+
 class CollectionInstallProgress(QDialog):
     """Диалог прогресса установки сборки"""
 
     def __init__(self, parent, collection_data):
+        print("=== CollectionInstallProgress.__init__ START ===")
+        import sys
+        sys.stdout.flush()
+
         super().__init__(parent)
         self.collection_data = collection_data
+        self.cancelled = False
+        self.worker = None
+
+        print(f"collection_data: {collection_data.get('name', 'Unknown')}")
+        sys.stdout.flush()
+
         self.setWindowTitle(f"Установка сборки: {collection_data['name']}")
         self.setFixedSize(500, 300)
         self.setModal(True)
+        print("Window setup complete")
+        sys.stdout.flush()
 
         self.setStyleSheet("""
             QDialog {
@@ -1149,57 +1315,101 @@ class CollectionInstallProgress(QDialog):
                 font-family: monospace;
                 font-size: 10px;
             }
+            QPushButton {
+                background-color: #3a3a4a;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4a4a5a;
+            }
         """)
+        print("Stylesheet applied")
+        sys.stdout.flush()
 
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
+        print("Layout created")
+        sys.stdout.flush()
 
         title = QLabel(f"📦 Установка сборки: {collection_data['name']}")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #4ECDC4;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
+        print("Title added")
+        sys.stdout.flush()
 
         info = QLabel(f"Модов: {len(collection_data.get('mods', []))}")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(info)
+        print("Info added")
+        sys.stdout.flush()
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         layout.addWidget(self.progress_bar)
+        print("Progress bar added")
+        sys.stdout.flush()
 
         self.status_label = QLabel("Подготовка к установке...")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
+        print("Status label added")
+        sys.stdout.flush()
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumHeight(120)
         layout.addWidget(self.log_text)
+        print("Log text added")
+        sys.stdout.flush()
 
         self.cancel_btn = QPushButton("Отмена")
         self.cancel_btn.clicked.connect(self.cancel_install)
         layout.addWidget(self.cancel_btn)
+        print("Cancel button added")
+        sys.stdout.flush()
+
+        print("Creating CollectionInstallWorker...")
+        sys.stdout.flush()
 
         self.worker = CollectionInstallWorker(collection_data)
+        print("Worker created")
+        sys.stdout.flush()
+
         self.worker.progress.connect(self.update_progress)
         self.worker.log.connect(self.add_log)
         self.worker.finished.connect(self.on_finished)
-        self.worker.start()
+        print("Signals connected")
+        sys.stdout.flush()
 
-        self.cancelled = False
+        print("Starting worker...")
+        sys.stdout.flush()
+        self.worker.start()
+        print("Worker started")
+        sys.stdout.flush()
+
+        print("=== CollectionInstallProgress.__init__ END ===")
+        sys.stdout.flush()
 
     def add_log(self, message):
+        """Добавляет сообщение в лог"""
         self.log_text.append(message)
         self.log_text.ensureCursorVisible()
 
     def update_progress(self, current, total, mod_name):
+        """Обновляет прогресс"""
         if total > 0:
             percent = int((current + 1) * 100 / total)
             self.progress_bar.setValue(percent)
             self.status_label.setText(f"Установка: {mod_name} ({current + 1}/{total})")
 
     def on_finished(self, success, success_count, total):
+        """Обработка завершения установки"""
         if self.cancelled:
             return
 
@@ -1232,39 +1442,10 @@ class CollectionInstallProgress(QDialog):
         self.cancel_btn.clicked.connect(self.accept)
 
     def cancel_install(self):
+        """Отмена установки"""
+        print("Cancel install called")
         self.cancelled = True
-        if hasattr(self, 'worker') and self.worker.isRunning():
+        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
             self.worker.terminate()
             self.worker.wait(1000)
         self.accept()
-
-
-class CollectionInstallWorker(QThread):
-    """Поток для установки сборки"""
-    progress = pyqtSignal(int, int, str)
-    finished = pyqtSignal(bool, int, int)
-    log = pyqtSignal(str)
-
-    def __init__(self, collection_data):
-        super().__init__()
-        self.collection_data = collection_data
-
-    def run(self):
-        from Core.backup import ModsBackupManager
-
-        backup_manager = ModsBackupManager(CONFIG["minecraft_dir"])
-
-        def callback(current, total, mod_name, status="loading", reason=None):
-            self.progress.emit(current, total, mod_name)
-            if status == "skipped":
-                self.log.emit(f"⏭️ Пропущен {mod_name}: {reason}")
-            else:
-                self.log.emit(f"📥 Загрузка: {mod_name} ({current + 1}/{total})")
-
-        # Передаём флаг create_backup=True
-        success = install_collection(self.collection_data, callback, create_backup=True)
-
-        total = len(self.collection_data.get('mods', []))
-        success_count = total if success else 0
-
-        self.finished.emit(success, success_count, total)

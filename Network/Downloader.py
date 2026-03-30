@@ -181,6 +181,8 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
     Синхронная загрузка одного мода
     source: "yandex", "modrinth", "curseforge", "shader", "local"
     """
+    import traceback
+    logger.info(f"🚀 download_single_mod_turbo_sync: {mod_info.get('name', 'unknown')}")
     try:
         # Определяем имя файла - пробуем разные ключи
         filename = mod_info.get('file') or mod_info.get('filename') or mod_info.get('file_name')
