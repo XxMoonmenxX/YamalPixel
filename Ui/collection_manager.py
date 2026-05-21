@@ -1,4 +1,4 @@
-# Ui/collection_manager.py
+## Ui/collection_manager.py
 import os
 import json
 import threading

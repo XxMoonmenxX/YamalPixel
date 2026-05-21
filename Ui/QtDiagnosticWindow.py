@@ -1,4 +1,4 @@
-# Ui/QtDiagnosticWindow.py
+## Ui/QtDiagnosticWindow.py
 """
 Окно диагностики на PyQt6
 """

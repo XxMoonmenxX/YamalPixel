@@ -1,4 +1,4 @@
-# Ui/CollectionCreator.py
+## Ui/CollectionCreator.py
 import os
 import json
 import threading

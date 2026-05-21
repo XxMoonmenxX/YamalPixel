@@ -1,4 +1,4 @@
-# Ui/DownloadProgress.py
+## Ui/DownloadProgress.py
 import os
 import threading
 import asyncio

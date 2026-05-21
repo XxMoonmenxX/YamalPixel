@@ -1,4 +1,4 @@
-# ConfDir/Configs.py
+## ConfDir/Configs.py
 from pathlib import Path # Для работы с путями
 import os
 import sys

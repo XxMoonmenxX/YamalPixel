@@ -1,4 +1,4 @@
-# ConfDir/ScaleRes.py
+## ConfDir/ScaleRes.py
 import os
 
 # Получаем путь к папке пользователя

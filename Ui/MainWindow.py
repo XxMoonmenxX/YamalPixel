@@ -1,4 +1,4 @@
-# Ui/MainWindow.py - исправленная версия с работающим фоном
+## Ui/MainWindow.py - исправленная версия с работающим фоном
 
 import os
 import sys

@@ -1,4 +1,4 @@
-# ConfDir/collection_schema.py
+## ConfDir/collection_schema.py
 """
 Схема JSON файла сборки с поддержкой зависимостей
 """

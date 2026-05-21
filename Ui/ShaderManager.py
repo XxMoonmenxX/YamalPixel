@@ -1,4 +1,4 @@
-# Ui/ShaderManager.py
+## Ui/ShaderManager.py
 import os
 import threading
 from PyQt6.QtWidgets import (

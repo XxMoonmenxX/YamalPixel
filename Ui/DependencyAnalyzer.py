@@ -1,4 +1,4 @@
-# Ui/DependencyAnalyzer.py
+## Ui/DependencyAnalyzer.py
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTreeWidget, QTreeWidgetItem, QProgressBar, QMessageBox,

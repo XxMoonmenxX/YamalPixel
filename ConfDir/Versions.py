@@ -1,4 +1,4 @@
-#Version.py
+##Version.py
 CURRENT_VERSION = "0.9.102"
 
 version_configs = {

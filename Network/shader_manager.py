@@ -1,4 +1,4 @@
-## core/shader_manager.py
+# core/shader_manager.py
 """
 Модуль для управления шейдерами
 """
