@@ -22,6 +22,8 @@ from PyQt6.QtGui import QFont, QColor, QTextCursor, QPalette
 from ConfDir.Configs import CONFIG, get_minecraft_version
 from ConfDir.Versions import CURRENT_VERSION
 
+from Ui.BaseWindow import BaseMainWindow
+
 
 class DiagnosticWorker(QThread):
     """Рабочий поток для диагностики"""
@@ -200,7 +202,7 @@ from PyQt6.QtGui import QIcon
 from ConfDir.Configs import resource_path
 
 
-class QtDiagnosticWindow(QMainWindow):
+class QtDiagnosticWindow(BaseMainWindow):
     """Окно диагностики на PyQt6"""
 
     def __init__(self, parent=None, selected_version=None):

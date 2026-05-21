@@ -9,8 +9,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor, QColor
 
+
 from ConfDir.Configs import SHADERS_CONFIG, CONFIG
 from Network.Downloader import TurboDownloader
+from Ui.BaseWindow import BaseDialog
 import asyncio
 
 
@@ -75,7 +77,7 @@ class ShaderDownloadWorker(QThread):
         self.finished.emit(success_count, total)
 
 
-class ShaderManagerDialog(QDialog):
+class ShaderManagerDialog(BaseDialog):
     """Диалог выбора и загрузки шейдеров"""
 
     def __init__(self, parent=None):
@@ -269,7 +271,8 @@ class ShaderManagerDialog(QDialog):
             subprocess.Popen(["xdg-open", shaders_dir])
 
 
-class ShaderDownloadProgressDialog(QDialog):
+class ShaderDownloadProgressDialog(BaseDialog):
+
     """Диалог прогресса загрузки шейдеров"""
 
     def __init__(self, parent, shaders):

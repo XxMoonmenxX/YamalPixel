@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
+from Ui.BaseWindow import BaseDialog
+
 import logging
 
 logger = logging.getLogger("YamalPixel.DependencyAnalyzer")
@@ -103,7 +105,7 @@ class DependencyAnalyzerUI:
             return
 
         self.on_complete_callback = on_complete
-        self.analyzer_window = QDialog(self.parent)
+        self.analyzer_window = BaseDialog(self.parent)
         self.analyzer_window.setWindowTitle("Анализ зависимостей")
         self.analyzer_window.setMinimumSize(800, 600)
         self.analyzer_window.setModal(True)

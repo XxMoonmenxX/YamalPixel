@@ -1,4 +1,5 @@
-# Ui/MainWindow.py
+# Ui/MainWindow.py - исправленная версия с работающим фоном
+
 import os
 import sys
 import threading
@@ -21,14 +22,17 @@ from PyQt6.QtWidgets import (
     QSpinBox, QGroupBox, QScrollArea
 )
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize, QMetaObject, Qt, Q_ARG
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize, QMetaObject, Q_ARG
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QPalette, QBrush, QColor, QFontDatabase
 
 # Импорты из проекта
-from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods, get_minecraft_version, version_configs, messages, CURSEFORGE_CONFIG, set_window_icon, setup_environment
-from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, all_versions, CURRENT_VERSION, quilt_supported_versions, forge_supported_versions, get_all_versions
+from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods, get_minecraft_version, \
+    version_configs, messages, CURSEFORGE_CONFIG, set_window_icon, setup_environment, resource_path
+from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, all_versions, \
+    CURRENT_VERSION, quilt_supported_versions, forge_supported_versions, get_all_versions
 from ConfDir.ScaleRes import RESOLUTION_MAP, ratios, resolution_ratios, backgrounds, find_closest_resolution
-from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, COLLECTIONS_CONFIG
+from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_core_name, MANUAL_MOD_MAPPINGS, \
+    COLLECTIONS_CONFIG
 
 from Core.run import is_game_running, set_current_collection, get_current_collection
 
@@ -41,8 +45,8 @@ from Network.CurseForgeLoader import CurseForgeAPI
 from Network.shader_manager import show_shader_manager
 from Network.Downloader import download_shaders_turbo_ui
 
-
 from Ui.DependencyAnalyzer import DependencyAnalyzerUI
+from Ui.BaseWindow import BaseMainWindow
 
 import minecraft_launcher_lib
 import requests
@@ -54,6 +58,7 @@ LAUNCH_IN_PROGRESS = False
 LAUNCH_START_TIME = None
 
 from ConfDir.Versions import get_all_versions
+
 ALL_VERSIONS = get_all_versions()
 
 
@@ -186,15 +191,10 @@ def check_forge_installed(minecraft_version, minecraft_directory):
 def download_single_mod_turbo_wrapper(self, mod):
     """Обертка для загрузки одного мода"""
     try:
-        # Правильный вызов с передачей minecraft_dir
         return download_single_mod_turbo_sync(mod, CONFIG["minecraft_dir"])
     except Exception as e:
         print(f"Ошибка загрузки мода {mod.get('file', 'unknown')}: {e}")
         return False
-
-
-
-
 
 
 class ServerStatusWorker(QThread):
@@ -232,7 +232,7 @@ class MessageDialog(QMessageBox):
     def show_info(parent, title, text):
         dialog = MessageDialog(parent)
         dialog.setWindowTitle(title)
-        dialog.setText(text)  # <-- Текст должен быть здесь, а не в setInformativeText
+        dialog.setText(text)
         dialog.setIcon(QMessageBox.Icon.Information)
         dialog.exec()
 
@@ -274,26 +274,35 @@ class MainWindow(QMainWindow):
         # Настройка окна
         self.setWindowTitle(f"YamalPixel Launcher v{CURRENT_VERSION}")
         self.setMinimumSize(1200, 800)
+
+        # ВАЖНО: Делаем фон окна прозрачным для отображения фонового изображения
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(self._get_stylesheet())
 
-        # Центральный виджет
+        # Центральный виджет - делаем прозрачным
         central = QWidget()
+        central.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        central.setStyleSheet("background-color: transparent;")
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Верхняя панель
+        # Верхняя панель - с полупрозрачным фоном
         top_panel = QWidget()
         top_panel.setFixedHeight(60)
-        top_panel.setStyleSheet("background-color: rgba(0, 0, 0, 0.5);")
+        top_panel.setStyleSheet("""
+            background-color: rgba(0, 0, 0, 0.6);
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
+        """)
         top_layout = QHBoxLayout(top_panel)
         top_layout.setContentsMargins(20, 10, 20, 10)
 
         # Логотип
         self.logo_label = QLabel("YamalPixel")
         self.logo_label.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        self.logo_label.setStyleSheet("color: #4ECDC4;")
+        self.logo_label.setStyleSheet("color: #4ECDC4; background-color: transparent;")
         top_layout.addWidget(self.logo_label)
 
         top_layout.addStretch()
@@ -305,6 +314,7 @@ class MainWindow(QMainWindow):
             QCheckBox {
                 color: white;
                 spacing: 8px;
+                background-color: transparent;
             }
             QCheckBox::indicator {
                 width: 18px;
@@ -352,14 +362,15 @@ class MainWindow(QMainWindow):
 
         # Контентная область с фоном
         content_widget = QWidget()
+        content_widget.setStyleSheet("background-color: transparent;")
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(40, 40, 40, 40)
 
-        # Карточка с формой
+        # Карточка с формой - полупрозрачная
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
-                background-color: rgba(0, 0, 0, 0.7);
+                background-color: rgba(0, 0, 0, 0.65);
                 border-radius: 30px;
                 padding: 30px;
             }
@@ -371,6 +382,7 @@ class MainWindow(QMainWindow):
         welcome_label = QLabel("Добро пожаловать в YamalPixel!")
         welcome_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
         welcome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        welcome_label.setStyleSheet("background-color: transparent; color: #ffffff;")
         card_layout.addWidget(welcome_label)
 
         # Поле ввода ника
@@ -480,7 +492,7 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Готов к запуску")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setFont(QFont("Segoe UI", 11))
-        self.status_label.setStyleSheet("color: #00ff88;")
+        self.status_label.setStyleSheet("background-color: transparent; color: #00ff88;")
         card_layout.addWidget(self.status_label)
 
         content_layout.addStretch()
@@ -492,7 +504,7 @@ class MainWindow(QMainWindow):
         # Меню
         self.create_menu()
 
-        # Загрузка фона
+        # Загрузка фона (после инициализации всех виджетов)
         self.load_background()
 
         # Загрузка сессии
@@ -512,7 +524,7 @@ class MainWindow(QMainWindow):
         # Рабочий поток для сетевых операций
         self.worker_thread = None
 
-        # Давай-ка чекнем java
+        # Проверяем java
         self.check_java_on_startup()
 
     def check_java_on_startup(self):
@@ -522,7 +534,6 @@ class MainWindow(QMainWindow):
             try:
                 ok, message = check_java_version()
                 if not ok:
-                    # Нужно показать диалог в основном потоке
                     from PyQt6.QtCore import QMetaObject, Q_ARG
                     QMetaObject.invokeMethod(
                         self, "_show_java_dialog",
@@ -538,11 +549,6 @@ class MainWindow(QMainWindow):
     def _show_java_dialog(self):
         """Показывает диалог установки Java (вызывается из основного потока)"""
         from Network.java_checker import JavaCheckDialog
-        dialog = JavaCheckDialog(self)
-        dialog.exec()
-
-    def _show_java_dialog(self):
-        """Показывает диалог установки Java (вызывается из основного потока)"""
         dialog = JavaCheckDialog(self)
         dialog.exec()
 
@@ -567,128 +573,15 @@ class MainWindow(QMainWindow):
 
         print(f"Используется шрифт: {self.default_font_family}")
 
-    def old_repair_with_ui(self):
-        """Упрощенная автопочинка - без сложного UI"""
-        try:
-            # Показываем, что начали
-            self.status_label.setText("🔧 Выполняется автопочинка...")
-            self.status_label.setStyleSheet("color: #ffaa00;")
-            QApplication.processEvents()
-
-            issues = []
-            fixes = []
-
-            minecraft_dir = CONFIG["minecraft_dir"]
-
-            # 1. Проверка папок
-            print("📁 Проверка папок...")
-            for folder in ["mods", "versions", "config", "shaderpacks"]:
-                path = os.path.join(minecraft_dir, folder)
-                if not os.path.exists(path):
-                    print(f"  ❌ Папка {folder} отсутствует, создаем...")
-                    os.makedirs(path, exist_ok=True)
-                    fixes.append(f"Создана папка {folder}")
-
-            # 2. Проверка модов (только для YamalPixel)
-            selected_version = self.version_combo.currentText()
-            if selected_version == "YamalPixel":
-                print("📦 Проверка модов...")
-                mods_dir = os.path.join(minecraft_dir, "mods")
-
-                missing_mods = []
-                for mod in CONFIG["mods"]:
-                    mod_path = os.path.join(mods_dir, mod["file"])
-                    if not os.path.exists(mod_path):
-                        missing_mods.append(mod)
-
-                if missing_mods:
-                    print(f"  ❌ Отсутствует {len(missing_mods)} модов")
-
-                    from Network.Downloader import download_single_mod_turbo_sync
-
-                    for i, mod in enumerate(missing_mods):
-                        print(f"  ⬇️ Загружаем {mod['file']} ({i + 1}/{len(missing_mods)})...")
-
-                        try:
-                            success = download_single_mod_turbo_sync(mod, minecraft_dir)
-                            if success:
-                                fixes.append(f"Загружен {mod['file']}")
-                                print(f"    ✅ Успешно")
-                            else:
-                                print(f"    ❌ Ошибка загрузки")
-                        except Exception as e:
-                            print(f"    💥 Ошибка: {e}")
-                else:
-                    print("  ✅ Все моды на месте")
-
-            # 3. Проверка Fabric
-            print("🧵 Проверка Fabric...")
-            try:
-                from Core.run import check_fabric_installed, install_fabric_silent
-                if not check_fabric_installed():
-                    print("  ❌ Fabric не установлен, устанавливаем...")
-                    if install_fabric_silent():
-                        fixes.append("Установлен Fabric")
-                        print("  ✅ Fabric установлен")
-                    else:
-                        print("  ❌ Ошибка установки Fabric")
-                else:
-                    print("  ✅ Fabric установлен")
-            except Exception as e:
-                print(f"  ⚠️ Ошибка проверки Fabric: {e}")
-
-            # 4. Проверка Quilt для выбранной версии
-            if selected_version in quilt_supported_versions:
-                print("🛋️ Проверка Quilt...")
-                try:
-                    from Core.run import check_quilt_installed, install_quilt_silent
-                    if not check_quilt_installed():
-                        print("  ❌ Quilt не установлен, устанавливаем...")
-                        if install_quilt_silent():
-                            fixes.append("Установлен Quilt")
-                            print("  ✅ Quilt установлен")
-                        else:
-                            print("  ❌ Ошибка установки Quilt")
-                    else:
-                        print("  ✅ Quilt установлен")
-                except Exception as e:
-                    print(f"  ⚠️ Ошибка проверки Quilt: {e}")
-
-            # Формируем результат
-            result = "🔧 Автопочинка завершена!\n\n"
-
-            if fixes:
-                result += "✅ Исправления:\n"
-                for fix in fixes:
-                    result += f"• {fix}\n"
-                result += "\n"
-
-            if not fixes and not issues:
-                result += "✅ Проблем не обнаружено! Все файлы в порядке.\n"
-
-            # Показываем результат
-            self.status_label.setText("✅ Автопочинка завершена")
-            self.status_label.setStyleSheet("color: #00ff88;")
-
-            MessageDialog.show_info(self, "Автопочинка", result)
-
-            # ВАЖНО: НЕ открываем диагностику снова
-            # Просто возвращаем управление
-
-        except Exception as e:
-            self.status_label.setText("❌ Ошибка автопочинки")
-            self.status_label.setStyleSheet("color: #ff4444;")
-            MessageDialog.show_error(self, "Ошибка", f"❌ Автопочинка не удалась:\n{str(e)}")
-            import traceback
-            traceback.print_exc()
-
     def _get_stylesheet(self) -> str:
+        """Стилизация главного окна - фон прозрачный, так как картинка будет через QPalette"""
         return """
             QMainWindow {
-                background-color: #1a1a1a;
+                background-color: transparent;
             }
             QLabel {
                 color: white;
+                background-color: transparent;
             }
             QMenuBar {
                 background-color: rgba(0, 0, 0, 0.5);
@@ -714,6 +607,7 @@ class MainWindow(QMainWindow):
             }
             QMessageBox QLabel {
                 color: white;
+                background-color: transparent;
             }
             QMessageBox QPushButton {
                 background-color: #4a5568;
@@ -729,25 +623,93 @@ class MainWindow(QMainWindow):
         """
 
     def load_background(self):
-        """Загружает фон"""
+        """Загружает фон из папки пользователя"""
         try:
-            screen = QApplication.primaryScreen()
-            screen_rect = screen.availableGeometry()
-            bg_file = find_closest_resolution(screen_rect.width(), screen_rect.height())
-            bg_path = RESOURCE_DIR / bg_file
+            from ConfDir.ScaleRes import (
+                find_closest_resolution,
+                get_background_path,
+                ensure_backgrounds_folder,
+                USER_YAMALPIXEL_RES
+            )
 
-            if bg_path.exists():
-                pixmap = QPixmap(str(bg_path))
-                scaled_pixmap = pixmap.scaled(
-                    self.size(),
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                palette = QPalette()
-                palette.setBrush(QPalette.ColorRole.Window, QBrush(scaled_pixmap))
-                self.setPalette(palette)
+            # Создаем папку для фонов если её нет
+            ensure_backgrounds_folder()
+
+            # Получаем размер окна
+            window_width = self.width()
+            window_height = self.height()
+
+            print(f"🎨 Загрузка фона для окна {window_width}x{window_height}")
+
+            # Выбираем фон под соотношение сторон
+            bg_file = find_closest_resolution(window_width, window_height)
+
+            # Получаем путь к файлу фона
+            bg_path = get_background_path(bg_file)
+
+            # Если конкретный файл не найден, пробуем найти любой PNG в папке пользователя
+            if not bg_path:
+                print("🔍 Ищем любой доступный фон...")
+                if os.path.exists(USER_YAMALPIXEL_RES):
+                    for file in os.listdir(USER_YAMALPIXEL_RES):
+                        if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                            bg_path = os.path.join(USER_YAMALPIXEL_RES, file)
+                            print(f"✅ Найден альтернативный фон: {file}")
+                            break
+
+            if bg_path and os.path.exists(bg_path):
+                pixmap = QPixmap(bg_path)
+                if not pixmap.isNull():
+                    # Масштабируем под размер окна с сохранением пропорций
+                    scaled_pixmap = pixmap.scaled(
+                        window_width,
+                        window_height,
+                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+
+                    # Устанавливаем фон для центрального виджета
+                    palette = self.centralWidget().palette()
+                    palette.setBrush(QPalette.ColorRole.Window, QBrush(scaled_pixmap))
+                    self.centralWidget().setPalette(palette)
+                    self.centralWidget().setAutoFillBackground(True)
+                    print(f"✅ Фон успешно установлен!")
+                    return
+                else:
+                    print(f"❌ Не удалось загрузить изображение: {bg_path}")
+            else:
+                print(f"❌ Фоновые изображения не найдены в: {USER_YAMALPIXEL_RES}")
+                print(f"💡 Положите файлы PNG в папку: {USER_YAMALPIXEL_RES}")
+
+            # Fallback - градиентный фон
+            print("🎨 Устанавливаем градиентный фон (fallback)")
+            self.centralWidget().setStyleSheet("""
+                QWidget {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #1a1a2e, 
+                        stop:0.3 #16213e, 
+                        stop:0.6 #0f3460, 
+                        stop:1 #1a1a2e);
+                }
+            """)
+
         except Exception as e:
-            print(f"Ошибка загрузки фона: {e}")
+            print(f"❌ Ошибка загрузки фона: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Устанавливаем темный фон при ошибке
+            self.centralWidget().setStyleSheet("""
+                QWidget {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #1a1a2e, stop:1 #0f3460);
+                }
+            """)
+
+    def resizeEvent(self, event):
+        """При изменении размера окна перезагружаем фон"""
+        super().resizeEvent(event)
+        self.load_background()
 
     def refresh_versions(self):
         """Обновляет список версий"""
@@ -802,7 +764,7 @@ class MainWindow(QMainWindow):
         self.launch_btn.setEnabled(False)
         self.online_btn.setEnabled(False)
         self.status_label.setText("Запуск игры...")
-        self.status_label.setStyleSheet("color: #ffaa00;")
+        self.status_label.setStyleSheet("background-color: transparent; color: #ffaa00;")
 
         # Переменная для хранения результата
         launch_success = False
@@ -812,7 +774,6 @@ class MainWindow(QMainWindow):
             nonlocal launch_success
 
             if event_type == "status":
-                # Обновляем статус через сигнал
                 QMetaObject.invokeMethod(
                     self.status_label, "setText",
                     Qt.ConnectionType.QueuedConnection,
@@ -828,9 +789,8 @@ class MainWindow(QMainWindow):
                 QMetaObject.invokeMethod(
                     self.status_label, "setStyleSheet",
                     Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "color: #00ff88;")
+                    Q_ARG(str, "background-color: transparent; color: #00ff88;")
                 )
-                # Не показываем блокирующий диалог, только обновляем статус
                 print(f"✅ Игра успешно запущена: {message}")
 
             elif event_type == "error":
@@ -843,9 +803,8 @@ class MainWindow(QMainWindow):
                 QMetaObject.invokeMethod(
                     self.status_label, "setStyleSheet",
                     Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "color: #ff4444;")
+                    Q_ARG(str, "background-color: transparent; color: #ff4444;")
                 )
-                # Показываем ошибку в отдельном потоке
                 QMetaObject.invokeMethod(
                     self, "_show_error_dialog",
                     Qt.ConnectionType.QueuedConnection,
@@ -857,7 +816,6 @@ class MainWindow(QMainWindow):
             try:
                 result = core_launch(selected_version, username, callback)
                 if not result and not launch_success:
-                    # Если запуск не удался, показываем ошибку
                     QMetaObject.invokeMethod(
                         self, "_show_error_dialog",
                         Qt.ConnectionType.QueuedConnection,
@@ -865,7 +823,6 @@ class MainWindow(QMainWindow):
                         Q_ARG(str, "Не удалось запустить игру. Проверьте логи.")
                     )
             finally:
-                # Разблокируем кнопки
                 QMetaObject.invokeMethod(
                     self.launch_btn, "setEnabled",
                     Qt.ConnectionType.QueuedConnection,
@@ -901,23 +858,20 @@ class MainWindow(QMainWindow):
         return True, "OK"
 
     def show_online_players(self):
-        """Показывает онлайн игроков - запускает в отдельном потоке"""
-        # Показываем индикатор загрузки
+        """Показывает онлайн игроков"""
         self.status_label.setText("Проверка статуса сервера...")
-        self.status_label.setStyleSheet("color: #ffaa00;")
+        self.status_label.setStyleSheet("background-color: transparent; color: #ffaa00;")
         self.online_btn.setEnabled(False)
 
-        # Создаем и запускаем рабочий поток
         self.worker_thread = ServerStatusWorker()
         self.worker_thread.finished.connect(self.on_server_status_finished)
         self.worker_thread.error.connect(self.on_server_status_error)
         self.worker_thread.start()
 
     def on_server_status_finished(self, result):
-        """Обработка успешного получения статуса сервера"""
         self.online_btn.setEnabled(True)
         self.status_label.setText("Готов к запуску")
-        self.status_label.setStyleSheet("color: #00ff88;")
+        self.status_label.setStyleSheet("background-color: transparent; color: #00ff88;")
 
         players_online = result["online"]
         max_players = result["max"]
@@ -934,15 +888,13 @@ class MainWindow(QMainWindow):
         MessageDialog.show_info(self, "Статус сервера", msg)
 
     def on_server_status_error(self, error_msg):
-        """Обработка ошибки получения статуса сервера"""
         self.online_btn.setEnabled(True)
         self.status_label.setText("Готов к запуску")
-        self.status_label.setStyleSheet("color: #00ff88;")
-
+        self.status_label.setStyleSheet("background-color: transparent; color: #00ff88;")
         MessageDialog.show_warning(self, "Ошибка", f"Сервер недоступен: {error_msg}")
 
     def init_music(self):
-        """Инициализация музыки (НЕ ВКЛЮЧАЕТ АВТОМАТИЧЕСКИ)"""
+        """Инициализация музыки"""
         try:
             from pygame import mixer
             mixer.init()
@@ -976,6 +928,8 @@ class MainWindow(QMainWindow):
             self.showFullScreen()
         else:
             self.showNormal()
+        # После смены режима обновляем фон
+        QTimer.singleShot(100, self.load_background)
 
     def init_discord_rpc(self):
         """Инициализация Discord RPC"""
@@ -1005,6 +959,7 @@ class MainWindow(QMainWindow):
         """Создает меню"""
         menubar = self.menuBar()
         menubar.setFont(QFont("Segoe UI", 10))
+        menubar.setStyleSheet("background-color: rgba(0, 0, 0, 0.5);")
 
         # Меню Инструменты
         tools_menu = menubar.addMenu("Инструменты")
@@ -1043,8 +998,6 @@ class MainWindow(QMainWindow):
         manager_action = collections_menu.addAction("Менеджер сборок")
         manager_action.triggered.connect(self.show_collection_manager)
 
-
-
         tools_menu.addSeparator()
 
         # Переустановка
@@ -1080,13 +1033,11 @@ class MainWindow(QMainWindow):
             from Network.Downloader import download_shaders_turbo_ui
             from ConfDir.Configs import SHADERS_CONFIG
 
-            # Создаем диалог выбора шейдеров
             dialog = QDialog(self)
             dialog.setWindowTitle("🎨 Выбор шейдеров")
             dialog.setMinimumSize(900, 550)
             dialog.setModal(True)
 
-            # Стилизация диалога
             dialog.setStyleSheet("""
                 QDialog {
                     background-color: #2b2b2b;
@@ -1142,7 +1093,6 @@ class MainWindow(QMainWindow):
             layout.setSpacing(15)
             layout.setContentsMargins(20, 20, 20, 20)
 
-            # Заголовок
             title = QLabel("🎨 Менеджер шейдеров")
             title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1153,7 +1103,6 @@ class MainWindow(QMainWindow):
             subtitle.setStyleSheet("color: #888888; font-size: 12px;")
             layout.addWidget(subtitle)
 
-            # Список шейдеров
             list_widget = QListWidget()
             shader_names = [s["name"] for s in SHADERS_CONFIG["shaders"]]
             for name in shader_names:
@@ -1163,7 +1112,6 @@ class MainWindow(QMainWindow):
 
             layout.addWidget(list_widget)
 
-            # Счетчик выбранных
             counter_label = QLabel("Выбрано: 0 шейдеров")
             counter_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             counter_label.setStyleSheet("color: #cccccc; font-size: 11px;")
@@ -1195,7 +1143,6 @@ class MainWindow(QMainWindow):
 
             list_widget.itemChanged.connect(on_item_changed)
 
-            # Кнопки
             button_layout = QHBoxLayout()
 
             select_all_btn = QPushButton("✅ Выбрать все")
@@ -1247,12 +1194,10 @@ class MainWindow(QMainWindow):
 
                 if reply == QMessageBox.StandardButton.Yes:
                     dialog.accept()
-                    # Запускаем загрузку в отдельном потоке с UI прогресса
                     download_shaders_turbo_ui(selected, self)
 
             download_btn.clicked.connect(download)
 
-            # Центрируем окно
             dialog.move(
                 self.x() + (self.width() - dialog.width()) // 2,
                 self.y() + (self.height() - dialog.height()) // 2
@@ -1311,7 +1256,8 @@ class MainWindow(QMainWindow):
 
         if backups_created:
             MessageDialog.show_info(self, "Бэкапы созданы",
-                                    f"Созданы бэкапы:\n" + "\n".join([f"• {os.path.basename(b)}" for b in backups_created]))
+                                    f"Созданы бэкапы:\n" + "\n".join(
+                                        [f"• {os.path.basename(b)}" for b in backups_created]))
         else:
             MessageDialog.show_info(self, "Бэкапы", "Не удалось создать бэкапы")
 
@@ -1399,13 +1345,11 @@ class MainWindow(QMainWindow):
         mods_dir = os.path.join(minecraft_dir, "mods")
         disabled_dir = os.path.join(minecraft_dir, "mods_disabled_temp")
 
-        # Создаем бэкап модов
         if os.path.exists(mods_dir) and os.listdir(mods_dir):
             backup_path = create_backup(mods_dir, "mods_before_clean_launch")
             if backup_path:
                 print(f"Создан бэкап модов: {backup_path}")
 
-        # Перемещаем ВСЕ моды
         os.makedirs(disabled_dir, exist_ok=True)
 
         moved_count = 0
@@ -1457,7 +1401,6 @@ class MainWindow(QMainWindow):
 
             def run(self):
                 try:
-                    # Создаем бэкапы
                     self.status_updated.emit("Создание бэкапов...")
 
                     mods_dir = os.path.join(minecraft_dir, "mods")
@@ -1478,14 +1421,12 @@ class MainWindow(QMainWindow):
                         if backup_path:
                             self.backups_created.append(f"Настройки: {os.path.basename(backup_path)}")
 
-                    # Удаление
                     self.status_updated.emit("Удаление старых файлов...")
                     self.progress_updated.emit(30)
 
                     if os.path.exists(minecraft_dir):
                         shutil.rmtree(minecraft_dir)
 
-                    # Создание чистой структуры
                     self.status_updated.emit("Создание структуры...")
                     self.progress_updated.emit(50)
 
@@ -1494,17 +1435,14 @@ class MainWindow(QMainWindow):
                     os.makedirs(os.path.join(minecraft_dir, "config"), exist_ok=True)
                     os.makedirs(os.path.join(minecraft_dir, "shaderpacks"), exist_ok=True)
 
-                    # Установка Minecraft
                     self.status_updated.emit("Установка Minecraft...")
                     self.progress_updated.emit(70)
 
-                    # ИСПРАВЛЕНО: version вместо versionid
                     minecraft_launcher_lib.install.install_minecraft_version(
-                        version=CONFIG["version"],  # ← здесь исправлено
+                        version=CONFIG["version"],
                         minecraft_directory=minecraft_dir
                     )
 
-                    # Установка Fabric
                     self.status_updated.emit("Установка Fabric...")
                     self.progress_updated.emit(85)
 
@@ -1514,7 +1452,6 @@ class MainWindow(QMainWindow):
                         minecraft_directory=minecraft_dir,
                     )
 
-                    # Установка основных модов
                     self.status_updated.emit("Установка модов...")
                     self.progress_updated.emit(95)
 
@@ -1701,9 +1638,22 @@ class MainWindow(QMainWindow):
     def load_custom_background(self, filename, show_message=False):
         """Загружает выбранный фон"""
         try:
-            bg_path = RESOURCE_DIR / filename
-            if bg_path.exists():
-                pixmap = QPixmap(str(bg_path))
+            from ConfDir.Configs import resource_path
+
+            bg_path = None
+            possible_paths = [
+                os.path.join("YamalPixelRes", filename),
+                resource_path(os.path.join("YamalPixelRes", filename)),
+                filename
+            ]
+
+            for path in possible_paths:
+                if os.path.exists(path):
+                    bg_path = path
+                    break
+
+            if bg_path and os.path.exists(bg_path):
+                pixmap = QPixmap(bg_path)
                 screen = QApplication.primaryScreen()
                 screen_rect = screen.availableGeometry()
                 scaled_pixmap = pixmap.scaled(
@@ -1712,13 +1662,17 @@ class MainWindow(QMainWindow):
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation
                 )
-                palette = QPalette()
+                palette = self.centralWidget().palette()
                 palette.setBrush(QPalette.ColorRole.Window, QBrush(scaled_pixmap))
-                self.setPalette(palette)
+                self.centralWidget().setPalette(palette)
+                self.centralWidget().setAutoFillBackground(True)
                 self.current_background = filename
 
                 if show_message:
                     MessageDialog.show_info(self, "Успех", f"Фон {filename} применен!")
+            else:
+                print(f"⚠️ Файл фона не найден: {filename}")
+
         except Exception as e:
             print(f"Ошибка загрузки фона: {e}")
 
@@ -1780,27 +1734,22 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        # Основной layout
         main_layout = QVBoxLayout(dialog)
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(30, 30, 30, 30)
 
-        # Заголовок
         title = QLabel("⚙️ Настройки памяти")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #4ECDC4; margin-bottom: 10px;")
         main_layout.addWidget(title)
 
-        # Форма
         form_layout = QFormLayout()
         form_layout.setSpacing(15)
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        # Подпись
         memory_label = QLabel("Выделено памяти (ГБ):")
         memory_label.setStyleSheet("color: #ffffff; font-size: 12px;")
 
-        # SpinBox
         memory_spin = QSpinBox()
         memory_spin.setRange(1, 64)
         memory_spin.setStyleSheet("""
@@ -1814,7 +1763,6 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        # Получаем текущее значение из CONFIG
         current_mem = CONFIG.get("jvm_memory", "-Xmx4G")
         try:
             current_gb = int(current_mem.replace("-Xmx", "").replace("G", ""))
@@ -1825,19 +1773,16 @@ class MainWindow(QMainWindow):
         form_layout.addRow(memory_label, memory_spin)
         main_layout.addLayout(form_layout)
 
-        # Информационная строка
         info_label = QLabel("💡 Рекомендуется выделять 4-8 ГБ для сборки YamalPixel")
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("color: #888888; font-size: 10px; margin-top: 5px;")
         main_layout.addWidget(info_label)
 
-        # Разделитель
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setStyleSheet("background-color: #4ECDC4; max-height: 1px; margin: 10px 0;")
         main_layout.addWidget(line)
 
-        # Кнопки
         button_layout = QHBoxLayout()
         button_layout.setSpacing(15)
         button_layout.addStretch()
@@ -1858,7 +1803,6 @@ class MainWindow(QMainWindow):
             memory_gb = memory_spin.value()
             CONFIG["jvm_memory"] = f"-Xmx{memory_gb}G"
 
-            # Показываем красивое сообщение
             msg = QMessageBox(dialog)
             msg.setWindowTitle("Сохранено")
             msg.setText(f"✅ Память установлена: {memory_gb} ГБ")
@@ -1875,7 +1819,6 @@ class MainWindow(QMainWindow):
         save_btn.clicked.connect(save_settings)
         cancel_btn.clicked.connect(cancel)
 
-        # Центрируем окно относительно родителя
         dialog.move(
             self.x() + (self.width() - dialog.width()) // 2,
             self.y() + (self.height() - dialog.height()) // 2
@@ -1900,7 +1843,6 @@ class MainWindow(QMainWindow):
             from Ui.CollectionCreator import CollectionCreator
             creator = CollectionCreator(self)
             creator.exec()
-            # После создания обновляем список версий
             self.refresh_versions()
         except ImportError as e:
             print(f"Ошибка импорта CollectionCreator: {e}")
@@ -1950,48 +1892,27 @@ class MainWindow(QMainWindow):
         if not data:
             return
 
-        # Загрузка имени пользователя
         if "username" in data:
             self.username_input.setText(data["username"])
 
-        # Загрузка выбранной версии
         if "version" in data:
             idx = self.version_combo.findText(data["version"])
             if idx >= 0:
                 self.version_combo.setCurrentIndex(idx)
 
-        # Загрузка настроек памяти
         if "memory" in data:
             CONFIG["jvm_memory"] = data["memory"]
 
-        # Загрузка полноэкранного режима
         if "fullscreen" in data and data["fullscreen"]:
             self.fullscreen_checkbox.setChecked(True)
             self.showFullScreen()
 
-        # Загрузка музыки
         if "music" in data and data["music"]:
             self.music_checkbox.setChecked(True)
             self.toggle_music(True)
 
-        # Загрузка фона
         if "background" in data:
             self.load_custom_background(data["background"])
-
-        # Загрузка разрешения экрана (для подбора фона)
-        if "screen_resolution" in data:
-            # Можно использовать для автоматического подбора фона при смене разрешения
-            pass
-
-        # Загрузка последней активной сборки
-        if "active_collection" in data:
-            # Сохраняем для восстановления после перезапуска
-            pass
-
-        # Загрузка настроек Discord RPC
-        if "discord_rpc" in data and not data["discord_rpc"]:
-            # Если пользователь отключил RPC
-            pass
 
         print(f"✅ Загружены настройки: {list(data.keys())}")
 
@@ -1999,39 +1920,25 @@ class MainWindow(QMainWindow):
         """Сохраняет все настройки в сессию"""
         session_data = {}
 
-        # Сохраняем имя пользователя
         username = self.username_input.text().strip()
         if username and username != "Введите никнейм":
             session_data["username"] = username
 
-        # Сохраняем выбранную версию
         session_data["version"] = self.version_combo.currentText()
-
-        # Сохраняем настройки памяти
         session_data["memory"] = CONFIG.get("jvm_memory", "-Xmx4G")
-
-        # Сохраняем полноэкранный режим
         session_data["fullscreen"] = self.fullscreen_checkbox.isChecked()
-
-        # Сохраняем настройки музыки
         session_data["music"] = self.music_checkbox.isChecked()
 
-        # Сохраняем текущий фон
         if hasattr(self, 'current_background'):
             session_data["background"] = self.current_background
 
-        # Сохраняем разрешение экрана
         screen = QApplication.primaryScreen()
         if screen:
             session_data["screen_resolution"] = f"{screen.size().width()}x{screen.size().height()}"
 
-        # Сохраняем версию лаунчера
         session_data["launcher_version"] = CURRENT_VERSION
-
-        # Сохраняем временную метку
         session_data["timestamp"] = datetime.now().isoformat()
 
-        # Сохраняем текущую активную сборку (если есть)
         try:
             from Core.run import get_current_collection
             current_collection = get_current_collection()
@@ -2040,10 +1947,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Ошибка получения текущей сборки: {e}")
 
-        # Сохраняем настройки Discord RPC
         session_data["discord_rpc"] = hasattr(self, 'rpc') and self.rpc is not None
 
-        # Сохраняем настройки загрузчика
         if "fabric_loader" in CONFIG:
             session_data["fabric_loader"] = CONFIG["fabric_loader"]
         if "loader_type" in CONFIG:
@@ -2056,7 +1961,6 @@ class MainWindow(QMainWindow):
         """Закрытие окна - безопасная версия"""
         from Core.run import is_game_running, GAME_PROCESS
 
-        # Проверяем, запущена ли игра
         try:
             if is_game_running():
                 reply = QMessageBox.question(
@@ -2072,13 +1976,11 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Ошибка проверки игры: {e}")
 
-        # Сохраняем настройки
         try:
             self.save_session()
         except Exception as e:
             print(f"Ошибка сохранения сессии: {e}")
 
-        # Останавливаем музыку
         if hasattr(self, 'mixer') and self.mixer:
             try:
                 if hasattr(self, 'music_playing') and self.music_playing:
@@ -2087,14 +1989,12 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 print(f"Ошибка остановки музыки: {e}")
 
-        # Закрываем Discord RPC
         if hasattr(self, 'rpc') and self.rpc:
             try:
                 self.rpc.close()
             except Exception as e:
                 print(f"Ошибка закрытия Discord RPC: {e}")
 
-        # Останавливаем все рабочие потоки
         if hasattr(self, 'worker_thread') and self.worker_thread and self.worker_thread.isRunning():
             try:
                 self.worker_thread.terminate()
@@ -2102,54 +2002,8 @@ class MainWindow(QMainWindow):
             except:
                 pass
 
-        # Принимаем событие закрытия
         event.accept()
-
-        # Принудительно завершаем процесс (гарантия выхода)
-        import sys
         sys.exit(0)
-
-
-# Ui/MainWindow.py
-
-def load_background(self):
-    """Загружает фон, масштабируя под размер ЭКРАНА"""
-    try:
-        # Получаем размер ЭКРАНА, а не окна
-        screen = QApplication.primaryScreen()
-        screen_rect = screen.availableGeometry()
-        screen_width = screen_rect.width()
-        screen_height = screen_rect.height()
-
-        # Выбираем фон под разрешение экрана
-        from ConfDir.ScaleRes import find_closest_resolution
-        bg_file = find_closest_resolution(screen_width, screen_height)
-        bg_path = RESOURCE_DIR / bg_file
-
-        if bg_path.exists():
-            pixmap = QPixmap(str(bg_path))
-            # Масштабируем под размер ЭКРАНА
-            scaled_pixmap = pixmap.scaled(
-                screen_width,
-                screen_height,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            # Устанавливаем фон для всего окна
-            palette = self.palette()
-            palette.setBrush(
-                QPalette.ColorRole.Window,
-                QBrush(scaled_pixmap)
-            )
-            self.setPalette(palette)
-            # Делаем фон прозрачным для дочерних виджетов
-            self.setAutoFillBackground(True)
-            print(f"🎨 Фон загружен: {bg_file} ({screen_width}x{screen_height})")
-        else:
-            print(f"⚠️ Файл фона не найден: {bg_path}")
-
-    except Exception as e:
-        print(f"❌ Ошибка загрузки фона: {e}")
 
 
 def run_main_window():
@@ -2161,7 +2015,8 @@ def run_main_window():
     window = MainWindow()
     window.show()
 
-    # Загружаем фон после показа окна
-    window.load_background()
-
     return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(run_main_window())

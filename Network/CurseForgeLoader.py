@@ -1,4 +1,4 @@
-# Network/CurseForgeLoader.py
+## Network/CurseForgeLoader.py
 import requests
 import json
 import os

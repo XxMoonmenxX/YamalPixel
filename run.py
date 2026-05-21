@@ -1,7 +1,16 @@
-# run.py
+## run.py
 import sys
 import os
 import signal
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+# Добавляем путь с учетом onefile
+sys.path.insert(0, resource_path("."))
 
 print("=== STARTUP PHASE 1: Basic imports ===")
 sys.stdout.flush()

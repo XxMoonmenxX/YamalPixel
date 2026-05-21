@@ -6,8 +6,18 @@ import requests
 import logging
 
 
-
 def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for Nuitka onefile"""
+    try:
+        # Nuitka onefile mode
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # Normal mode
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
+#def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     if hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
@@ -38,8 +48,13 @@ def set_window_icon(window):
         print(f"Icon error: {e}")
 
 
-# Конфигурация ресурсов
-RESOURCE_DIR = Path.home() / "YamalPixelRes"
+# Конфигурация ресурсов pyinstaller
+#RESOURCE_DIR = Path.home() / "YamalPixelRes"
+# Конфигурация ресурсов nuitka
+if hasattr(sys, '_MEIPASS'):
+    RESOURCE_DIR = Path(sys._MEIPASS) / "YamalPixelRes"
+else:
+    RESOURCE_DIR = Path.home() / "YamalPixelRes"
 # Обновляем RESOURCES в начале кода
 RESOURCES = {
     "logo.png": "https://disk.yandex.ru/i/XJ1rNloj-EcIGw",
@@ -905,14 +920,26 @@ def delete_user_collection(collection_name):
         print(f"❌ Ошибка удаления сборки: {e}")
         return False
 
+# Конфигурация прокси pyinstaller
+#COLLECTIONS_CONFIG = {
+#    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),
+#    "max_mods_per_collection": 200,
+#    "supported_sources": ["modrinth", "curseforge", "local"],
+#    "curseforge_proxy_url": "http://localhost:8000"
+#}
+
+# Конфигурация прокси nuitka
+if hasattr(sys, '_MEIPASS'):
+    collections_base = os.path.join(sys._MEIPASS, "collections")
+else:
+    collections_base = os.path.join(CONFIG["minecraft_dir"], "collections")
 
 COLLECTIONS_CONFIG = {
-    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),
+    "collections_dir": collections_base,
     "max_mods_per_collection": 200,
     "supported_sources": ["modrinth", "curseforge", "local"],
     "curseforge_proxy_url": "http://localhost:8000"
 }
-
 messages = [
         "Удачи! (она тебе понадобится)",
         "Не удивляйся если всё сломается!",

@@ -1,4 +1,4 @@
-# Ui/QtWindowLauncher.py
+## Ui/QtWindowLauncher.py
 """
 Менеджер для запуска PyQt6 окон из Tkinter
 """

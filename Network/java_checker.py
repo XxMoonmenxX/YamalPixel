@@ -1,4 +1,4 @@
-# core/java_checker.py
+## core/java_checker.py
 """
 Модуль для проверки и установки Java
 """

@@ -1,4 +1,4 @@
-# ConfDir/dependency_utils.py
+## ConfDir/dependency_utils.py
 import os
 from typing import List, Dict
 from ConfDir.Configs import CONFIG, CURSEFORGE_CONFIG

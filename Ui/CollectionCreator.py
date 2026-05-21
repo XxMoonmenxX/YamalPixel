@@ -19,6 +19,7 @@ from Network.CurseForgeLoader import CurseForgeAPI
 from ConfDir.Configs import CURSEFORGE_CONFIG
 from ConfDir.Versions import all_versions
 from Ui.DependencyAnalyzer import DependencyAnalyzerUI
+from Ui.BaseWindow import BaseDialog
 
 
 class SearchWorker(QThread):

@@ -12,6 +12,8 @@ from PyQt6.QtGui import QFont, QTextCursor
 from Network.Downloader import download_single_mod_turbo
 from ConfDir.Configs import CONFIG
 
+from Ui.BaseWindow import BaseDialog
+
 
 class ModDownloadWorker(QThread):
     """Поток для загрузки модов"""
@@ -52,7 +54,7 @@ class ModDownloadWorker(QThread):
         self.finished.emit(success_count, total)
 
 
-class ModDownloadProgressDialog(QDialog):
+class ModDownloadProgressDialog(BaseDialog):
     """Диалог прогресса загрузки модов"""
 
     def __init__(self, parent, mods_list, on_complete=None):

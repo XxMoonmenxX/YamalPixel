@@ -21,6 +21,8 @@ from Core.collection_loader import (
 from ConfDir.Configs import COLLECTIONS_CONFIG
 from ConfDir.Versions import CURRENT_VERSION, all_versions
 
+from Ui.BaseWindow import BaseDialog
+
 # Конфигурация сервера сообщества
 COMMUNITY_SERVER_URL = "http://90.151.59.120:8000"
 SERVER_API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
@@ -484,7 +486,7 @@ class CommunityCollectionsTab(QWidget):
         self.load_collections(self.current_page)
 
 
-class CommunityCollectionDetailsDialog(QDialog):
+class CommunityCollectionDetailsDialog(BaseDialog):
     """Диалог деталей сборки сообщества"""
 
     collection_imported = pyqtSignal()
@@ -649,7 +651,7 @@ class CommunityCollectionDetailsDialog(QDialog):
         QMessageBox.information(self, "Скопировано", f"ID сборки скопирован: {self.collection_id}")
 
 
-class ImportProgressDialog(QDialog):
+class ImportProgressDialog(BaseDialog):
     """Диалог прогресса импорта сборки"""
 
     finished = pyqtSignal()
@@ -849,7 +851,7 @@ class ImportProgressDialog(QDialog):
         self.accept()
 
 
-class CollectionManager(QDialog):
+class CollectionManager(BaseDialog):
     """Менеджер сборок с вкладками"""
 
     def __init__(self, parent=None):

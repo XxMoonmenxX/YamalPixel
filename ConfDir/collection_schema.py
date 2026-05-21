@@ -42,7 +42,7 @@ COLLECTION_SCHEMA = {
 }
 
 
-def validate_collection_schema(data: Dict) -> bool:
+def validate_collection_schema(data:  Dict) -> bool:
     """Проверяет валидность схемы сборки"""
     required_fields = ["name", "minecraft_version", "loader", "mods"]
 

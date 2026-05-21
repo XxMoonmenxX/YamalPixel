@@ -1,4 +1,4 @@
-# ConfDir/known_dependencies.py
+## ConfDir/known_dependencies.py
 """
 Предопределенные зависимости для популярных модов
 """
