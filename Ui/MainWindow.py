@@ -546,6 +546,11 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=check_thread, daemon=True).start()
 
+    def _show_error_dialog(self, title, message):
+        """Показывает диалог ошибки"""
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(self, title, message)
+
     def _show_java_dialog(self):
         """Показывает диалог установки Java (вызывается из основного потока)"""
         from Network.java_checker import JavaCheckDialog
@@ -770,47 +775,20 @@ class MainWindow(QMainWindow):
         launch_success = False
 
         def callback(event_type, message):
-            """Обработчик прогресса (вызывается из потока)"""
             nonlocal launch_success
 
             if event_type == "status":
-                QMetaObject.invokeMethod(
-                    self.status_label, "setText",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, message)
-                )
+                self.status_label.setText(message)
             elif event_type == "success":
                 launch_success = True
-                QMetaObject.invokeMethod(
-                    self.status_label, "setText",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "✅ " + message)
-                )
-                QMetaObject.invokeMethod(
-                    self.status_label, "setStyleSheet",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "background-color: transparent; color: #00ff88;")
-                )
+                self.status_label.setText("✅ " + message)
+                self.status_label.setStyleSheet("background-color: transparent; color: #00ff88;")
                 print(f"✅ Игра успешно запущена: {message}")
-
             elif event_type == "error":
                 launch_success = False
-                QMetaObject.invokeMethod(
-                    self.status_label, "setText",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "❌ " + message)
-                )
-                QMetaObject.invokeMethod(
-                    self.status_label, "setStyleSheet",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "background-color: transparent; color: #ff4444;")
-                )
-                QMetaObject.invokeMethod(
-                    self, "_show_error_dialog",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(str, "Ошибка запуска"),
-                    Q_ARG(str, message)
-                )
+                self.status_label.setText("❌ " + message)
+                self.status_label.setStyleSheet("background-color: transparent; color: #ff4444;")
+                self._show_error_dialog("Ошибка запуска", message)
 
         def launch_thread():
             try:
@@ -836,9 +814,6 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=launch_thread, daemon=True).start()
 
-    def _show_error_dialog(self, title, message):
-        """Показывает диалог ошибки (вызывается из основного потока)"""
-        MessageDialog.show_error(self, title, message)
 
     def _show_info_dialog(self, title, message):
         """Показывает информационный диалог (вызывается из основного потока)"""

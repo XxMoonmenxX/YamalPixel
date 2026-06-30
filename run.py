@@ -2,6 +2,7 @@
 import sys
 import os
 import signal
+
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
@@ -25,13 +26,11 @@ sys.stdout.flush()
 
 try:
     from Ui.MainWindow import run_main_window
-
     print("✅ MainWindow imported")
     sys.stdout.flush()
 except Exception as e:
     print(f"❌ Failed to import MainWindow: {e}")
     import traceback
-
     traceback.print_exc()
     sys.stdout.flush()
     sys.exit(1)
@@ -45,10 +44,14 @@ if __name__ == "__main__":
 
     # Инициализация ресурсов
     try:
-        from ConfDir.Configs import setup_environment
-
+        from ConfDir.Configs import setup_environment, check_and_fix_hosts
         print("✅ Configs imported")
         sys.stdout.flush()
+
+        # ===== ПРОВЕРКА И ОБНОВЛЕНИЕ HOSTS =====
+        print("🔍 Проверяю доступ к Mojang...")
+        check_and_fix_hosts()
+        # ========================================
 
         setup_environment()
         print("✅ Environment setup complete")
@@ -56,7 +59,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Setup environment failed: {e}")
         import traceback
-
         traceback.print_exc()
         sys.stdout.flush()
         sys.exit(1)

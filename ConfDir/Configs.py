@@ -1107,3 +1107,115 @@ def get_yandex_direct_link(public_key):
     except Exception as e:
         logging.error(f"Ошибка получения ссылки: {str(e)}")
         return None
+
+
+# ============================================================
+# АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ HOSTS (ОБХОД БЛОКИРОВКИ MOJANG)
+# ============================================================
+
+def update_hosts_file():
+    """Автоматически добавляет записи для обхода блокировки Mojang"""
+    hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+
+    # Записи, которые нужно добавить
+    entries = [
+        "185.229.106.58 piston-meta.mojang.com",
+        "185.229.106.58 launchermeta.mojang.com",
+        "185.229.106.58 sessionserver.mojang.com",
+        "185.229.106.58 minecraft.net",
+        "185.229.106.58 mojang.com"
+    ]
+
+    try:
+        # Проверяем, есть ли права на запись
+        if not os.access(hosts_path, os.W_OK):
+            # Пытаемся получить права через запрос админа
+            try:
+                import sys
+                if sys.platform == "win32":
+                    import ctypes
+                    if ctypes.windll.shell32.IsUserAnAdmin():
+                        print("✅ Запущено от администратора, обновляю hosts...")
+                    else:
+                        print("⚠️ Нет прав администратора! Запусти лаунчер от имени администратора.")
+                        print("   Или добавь записи вручную в C:\\Windows\\System32\\drivers\\etc\\hosts")
+                        return False
+            except:
+                pass
+
+        # Читаем текущий hosts
+        with open(hosts_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Проверяем, есть ли уже наши записи
+        already_exists = all(entry.split()[1] in content for entry in entries)
+
+        if already_exists:
+            print("✅ Записи для Mojang уже есть в hosts")
+            return True
+
+        # Добавляем записи
+        print("🔄 Добавляю записи в hosts...")
+
+        # Проверяем, есть ли маркер
+        marker = "# YamalPixel Mojang Fix"
+        if marker in content:
+            # Удаляем старые записи YamalPixel
+            lines = content.split('\n')
+            new_lines = []
+            skip = False
+            for line in lines:
+                if marker in line:
+                    skip = True
+                    continue
+                if skip and not line.strip():
+                    skip = False
+                    continue
+                if not skip:
+                    new_lines.append(line)
+            content = '\n'.join(new_lines)
+
+        # Добавляем новые записи
+        with open(hosts_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+            f.write(
+                f"\n\n# YamalPixel Mojang Fix - Добавлено автоматически {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            for entry in entries:
+                f.write(f"{entry}\n")
+            f.write("# Конец записей YamalPixel\n")
+
+        print("✅ Записи успешно добавлены в hosts!")
+        print("   Если не работает - запусти лаунчер от имени администратора")
+        return True
+
+    except PermissionError:
+        print("❌ Нет прав на запись в hosts!")
+        print("   Запусти лаунчер от имени администратора или добавь вручную:")
+        print("\n   Открой файл: C:\\Windows\\System32\\drivers\\etc\\hosts")
+        print("   Добавь строки:")
+        for entry in entries:
+            print(f"   {entry}")
+        return False
+    except Exception as e:
+        print(f"❌ Ошибка обновления hosts: {e}")
+        return False
+
+
+def check_and_fix_hosts():
+    """Проверяет и исправляет hosts при запуске"""
+    try:
+        hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
+
+        # Проверяем доступность Mojang
+        import socket
+        try:
+            socket.gethostbyname("piston-meta.mojang.com")
+            print("✅ Mojang доступен, hosts не требует правки")
+            return True
+        except socket.gaierror:
+            print("⚠️ Mojang недоступен, пробуем исправить hosts...")
+            return update_hosts_file()
+
+    except Exception as e:
+        print(f"⚠️ Ошибка проверки hosts: {e}")
+        return False

@@ -48,6 +48,8 @@ def update_discord_status(state, details):
             )
         except:
             pass
+
+
 def validate_username(username: str) -> tuple:
     """Проверяет корректность имени пользователя"""
     if not username or username == "Введите никнейм":
@@ -417,6 +419,7 @@ def is_game_running():
             pass
     return False
 
+
 def get_minecraft_version_for_fabric(version_name: str) -> str:
     """Получает версию Minecraft для Fabric"""
     return get_minecraft_version(version_name)
@@ -544,8 +547,6 @@ def run_game_launch(selected_version: str, username: str, progress_callback=None
             progress_callback("error", "Игра уже запущена!")
         return False
 
-
-
     try:
         # Валидация имени
         is_valid, error_msg = validate_username(username)
@@ -588,6 +589,24 @@ def run_game_launch(selected_version: str, username: str, progress_callback=None
             if collection_data:
                 minecraft_version = collection_data['minecraft_version']
                 loader_type = collection_data['loader']
+
+        # ========== ПРОВЕРКА И УСТАНОВКА FABRIC ==========
+        if loader_type == "fabric":
+            mc_ver = minecraft_version
+            fabric_version = f"fabric-loader-{CONFIG['fabric_loader']}-{mc_ver}"
+            versions_dir = os.path.join(CONFIG["minecraft_dir"], "versions")
+
+            if not os.path.exists(os.path.join(versions_dir, fabric_version)):
+                print(f"🔄 Устанавливаю Fabric для {mc_ver}...")
+                if progress_callback:
+                    progress_callback("status", f"Установка Fabric для {mc_ver}")
+                minecraft_launcher_lib.fabric.install_fabric(
+                    minecraft_version=mc_ver,
+                    loader_version=CONFIG["fabric_loader"],
+                    minecraft_directory=CONFIG["minecraft_dir"]
+                )
+                print("✅ Fabric установлен")
+        # =================================================
 
         # Формирование команды запуска
         namespace = uuid.UUID('6ba7b811-9dad-11d1-80b4-00c04fd430c8')
@@ -642,6 +661,7 @@ def run_game_launch(selected_version: str, username: str, progress_callback=None
         GAME_PROCESS = None
         return False
 
+
 @atexit.register
 def cleanup_on_exit():
     """Очистка при выходе из программы"""
@@ -656,12 +676,15 @@ def cleanup_on_exit():
             except:
                 pass
 
+
 _current_collection = None
+
 
 def set_current_collection(collection_name):
     """Устанавливает текущую активную сборку"""
     global _current_collection
     _current_collection = collection_name
+
 
 def get_current_collection():
     """Возвращает текущую активную сборку"""
