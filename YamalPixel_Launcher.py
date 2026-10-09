@@ -6,9 +6,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QDialog, QDialogButtonBox)
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QLinearGradient, QPalette, QBrush, QColor # Для стилизации и сообщений
-import minecraft_launcher_lib # Для запуска лаунчера
-import minecraft_launcher_lib.mod_loader
-from minecraft_launcher_lib.mod_loader import get_mod_loader #Кастомная сборка minecraft_launcher_lib, пришлось повозиться с _neoforge.py
+import MCLIB # Для запуска лаунчера
+import MCLIB.mod_loader
+from MCLIB.mod_loader import get_mod_loader #Кастомная сборка MCLIB, пришлось повозиться с _neoforge.py
 import subprocess # Для запуска лаунчера
 import threading # Для асинхронного запуска лаунчера
 import os # Для работы с файлами
@@ -455,38 +455,38 @@ class ParallelDownloader:
         return download_file_through_proxy(url, filepath)
 
 
-# Использование в патчинге minecraft_launcher_lib
+# Использование в патчинге MCLIB
 def patch_for_parallel_downloads():
-    """Патчим minecraft_launcher_lib для параллельной загрузки"""
-    import minecraft_launcher_lib.install
-    import minecraft_launcher_lib._helper
+    """Патчим MCLIB для параллельной загрузки"""
+    import MCLIB.install
+    import MCLIB._helper
 
     # Создаем экземпляр параллельного загрузчика
     downloader = ParallelDownloader(max_workers=3)  # 3 одновременных загрузки
 
     # Патчим функцию install_minecraft_version
-    original_install = minecraft_launcher_lib.install.install_minecraft_version
+    original_install = MCLIB.install.install_minecraft_version
 
     def patched_install(*args, **kwargs):
         print("🎯 Используем параллельную загрузку для Minecraft")
 
         # Временно заменяем download_file на параллельную версию
-        original_download = minecraft_launcher_lib.install.download_file
+        original_download = MCLIB.install.download_file
 
         def parallel_download(url, path, **download_kwargs):
             print(f"🔀 Параллельная загрузка: {os.path.basename(path)}")
             return download_file_through_proxy(url, path)
 
-        minecraft_launcher_lib.install.download_file = parallel_download
+        MCLIB.install.download_file = parallel_download
 
         try:
             result = original_install(*args, **kwargs)
             return result
         finally:
             # Восстанавливаем оригинальную функцию
-            minecraft_launcher_lib.install.download_file = original_download
+            MCLIB.install.download_file = original_download
 
-    minecraft_launcher_lib.install.install_minecraft_version = patched_install
+    MCLIB.install.install_minecraft_version = patched_install
     print("✅ Установлен патч для параллельной загрузки Minecraft")
 
 
@@ -524,11 +524,11 @@ def download_file_through_proxy_fast(original_url: str, filepath: str) -> bool:
         return False
 
 
-# Используйте эту функцию в патчах minecraft_launcher_lib
+# Используйте эту функцию в патчах MCLIB
 def patch_minecraft_downloads_fast():
     """Патчим для использования быстрой загрузки"""
-    import minecraft_launcher_lib._helper
-    import minecraft_launcher_lib.install
+    import MCLIB._helper
+    import MCLIB.install
 
     def fast_download_wrapper(url, path, *args, **kwargs):
         print(f"⚡ БЫСТРАЯ ЗАГРУЗКА: {os.path.basename(path)}")
@@ -544,16 +544,16 @@ def patch_minecraft_downloads_fast():
         else:
             # Fallback на обычную функцию
             print(f"🔄 Fallback на обычную загрузку: {os.path.basename(path)}")
-            if hasattr(minecraft_launcher_lib.install, 'download_file'):
-                return minecraft_launcher_lib.install.download_file(url, path, **kwargs)
+            if hasattr(MCLIB.install, 'download_file'):
+                return MCLIB.install.download_file(url, path, **kwargs)
             return False
 
     # Патчим основные функции
-    if hasattr(minecraft_launcher_lib._helper, 'download_file'):
-        minecraft_launcher_lib._helper.download_file = fast_download_wrapper
+    if hasattr(MCLIB._helper, 'download_file'):
+        MCLIB._helper.download_file = fast_download_wrapper
 
-    if hasattr(minecraft_launcher_lib.install, 'download_file'):
-        minecraft_launcher_lib.install.download_file = fast_download_wrapper
+    if hasattr(MCLIB.install, 'download_file'):
+        MCLIB.install.download_file = fast_download_wrapper
 
     print("✅ Установлен патч для быстрой загрузки")
 
@@ -616,11 +616,11 @@ def download_direct_fallback(original_url: str, filepath: str) -> bool:
 
 def patch_minecraft_downloads():
     """
-    Патчим ВСЕ функции download_file в minecraft_launcher_lib
+    Патчим ВСЕ функции download_file в MCLIB
     С ФИЛЬТРАЦИЕЙ - проксируем только ресурсы, НЕ библиотеки!
     """
-    import minecraft_launcher_lib._helper
-    import minecraft_launcher_lib.install
+    import MCLIB._helper
+    import MCLIB.install
 
     # Функция для определения, нужно ли проксировать
     def should_proxy_download(url: str, filename: str) -> bool:
@@ -684,8 +684,8 @@ def patch_minecraft_downloads():
         return True
 
     # ---- 1. ПАТЧ ГЛАВНОГО МОДУЛЯ _helper.py ----
-    if hasattr(minecraft_launcher_lib._helper, 'download_file'):
-        original_helper_download = minecraft_launcher_lib._helper.download_file
+    if hasattr(MCLIB._helper, 'download_file'):
+        original_helper_download = MCLIB._helper.download_file
 
         def patched_helper_download(url, path, *args, **kwargs):
             filename = os.path.basename(path)
@@ -713,12 +713,12 @@ def patch_minecraft_downloads():
                 print(f"📡 Прямая загрузка: {filename}")
                 return original_helper_download(url, path, **kwargs)
 
-        minecraft_launcher_lib._helper.download_file = patched_helper_download
+        MCLIB._helper.download_file = patched_helper_download
         print("✅ Запатчен download_file в _helper.py")
 
     # ---- 2. ПАТЧ МОДУЛЯ install.py ----
-    if hasattr(minecraft_launcher_lib.install, 'download_file'):
-        original_install_download = minecraft_launcher_lib.install.download_file
+    if hasattr(MCLIB.install, 'download_file'):
+        original_install_download = MCLIB.install.download_file
 
         def patched_install_download(url, path, *args, **kwargs):
             filename = os.path.basename(path)
@@ -746,7 +746,7 @@ def patch_minecraft_downloads():
                 print(f"📡 Прямая загрузка: {filename}")
                 return original_install_download(url, path, **kwargs)
 
-        minecraft_launcher_lib.install.download_file = patched_install_download
+        MCLIB.install.download_file = patched_install_download
         print("✅ Запатчен download_file в install.py")
 
     # ---- 3. ПАТЧ ДЛЯ КОНКРЕТНЫХ МОДЛОАДЕРОВ ----
@@ -754,36 +754,36 @@ def patch_minecraft_downloads():
 
     # Патч для Fabric
     try:
-        import minecraft_launcher_lib.mod_loader._fabric as fabric_module
+        import MCLIB.mod_loader._fabric as fabric_module
         if hasattr(fabric_module, 'download_file'):
-            fabric_module.download_file = minecraft_launcher_lib._helper.download_file
+            fabric_module.download_file = MCLIB._helper.download_file
             print("✅ Запатчен Fabric")
     except:
         pass
 
     # Патч для Quilt
     try:
-        import minecraft_launcher_lib.mod_loader._quilt as quilt_module
+        import MCLIB.mod_loader._quilt as quilt_module
         if hasattr(quilt_module, 'download_file'):
-            quilt_module.download_file = minecraft_launcher_lib._helper.download_file
+            quilt_module.download_file = MCLIB._helper.download_file
             print("✅ Запатчен Quilt")
     except:
         pass
 
     # Патч для Forge
     try:
-        import minecraft_launcher_lib.mod_loader._forge as forge_module
+        import MCLIB.mod_loader._forge as forge_module
         if hasattr(forge_module, 'download_file'):
-            forge_module.download_file = minecraft_launcher_lib._helper.download_file
+            forge_module.download_file = MCLIB._helper.download_file
             print("✅ Запатчен Forge")
     except:
         pass
 
     # Патч для NeoForge
     try:
-        import minecraft_launcher_lib.mod_loader._neoforge as neoforge_module
+        import MCLIB.mod_loader._neoforge as neoforge_module
         if hasattr(neoforge_module, 'download_file'):
-            neoforge_module.download_file = minecraft_launcher_lib._helper.download_file
+            neoforge_module.download_file = MCLIB._helper.download_file
             print("✅ Запатчен NeoForge")
     except:
         pass
@@ -1616,7 +1616,7 @@ def install_fabric_silent():
     """Тихая установка Fabric"""
     try:
         print("🔧 Устанавливаем Fabric...")
-        minecraft_launcher_lib.fabric.install_fabric(
+        MCLIB.fabric.install_fabric(
             minecraft_version=CONFIG["version"],
             loader_version=CONFIG["fabric_loader"],
             minecraft_directory=CONFIG["minecraft_dir"],
@@ -1635,7 +1635,7 @@ def check_quilt_installed():
         versions_dir = os.path.join(minecraft_dir, "versions")
 
         # Проверяем наличие папки версии Quilt
-        installed_versions = minecraft_launcher_lib.utils.get_installed_versions(minecraft_dir)
+        installed_versions = MCLIB.utils.get_installed_versions(minecraft_dir)
         for version in installed_versions:
             if version["id"].startswith("quilt-loader-"):
                 return True
@@ -1683,7 +1683,7 @@ def install_quilt_silent():
     """Тихая установка Quilt"""
     try:
         print("🔧 Устанавливаем Quilt...")
-        minecraft_launcher_lib.quilt.install_quilt(
+        MCLIB.quilt.install_quilt(
             minecraft_version=CONFIG["version"],
             loader_version=None,  # Автоматически выберет последнюю версию
             minecraft_directory=CONFIG["minecraft_dir"],
@@ -1710,7 +1710,7 @@ def install_fabric_silent():
     """Тихая установка Fabric"""
     try:
         print("🔧 Устанавливаем Fabric...")
-        minecraft_launcher_lib.fabric.install_fabric(
+        MCLIB.fabric.install_fabric(
             minecraft_version=CONFIG["version"],
             loader_version=CONFIG["fabric_loader"],
             minecraft_directory=CONFIG["minecraft_dir"],
@@ -3568,14 +3568,14 @@ def complete_reinstall():
             progress_label.config(text="Установка Minecraft...")
 
             # Чистая установка Minecraft
-            minecraft_launcher_lib.install.install_minecraft_version(
+            MCLIB.install.install_minecraft_version(
                 versionid=CONFIG["version"], minecraft_directory=minecraft_dir
             )
 
             progress_label.config(text="Установка Fabric...")
 
             # Чистая установка Fabric
-            minecraft_launcher_lib.fabric.install_fabric(
+            MCLIB.fabric.install_fabric(
                 minecraft_version=CONFIG["version"],
                 loader_version=CONFIG["fabric_loader"],
                 minecraft_directory=minecraft_dir,
@@ -4375,7 +4375,7 @@ def install_minecraft_version(version, progress_callback=None):
         print(f"Версия {version} не найдена. Начинаем установку...")
         try:
             # ИСПРАВЛЕНО: правильное имя параметра 'version' вместо 'versionid'
-            minecraft_launcher_lib.install.install_minecraft_version(
+            MCLIB.install.install_minecraft_version(
                 version=version,  # ПРАВИЛЬНОЕ имя параметра
                 minecraft_directory=CONFIG["minecraft_dir"],
                 callback=progress_callback
@@ -4469,7 +4469,7 @@ def set_launch_state(launching=False):
         # Разблокируем кнопки
         launch_btn.config(state="normal")  # Разблокируем кастомную кнопку
 
-quilt = minecraft_launcher_lib.mod_loader.get_mod_loader("quilt")
+quilt = MCLIB.mod_loader.get_mod_loader("quilt")
 def runn():
     global LAUNCH_IN_PROGRESS, LAUNCH_START_TIME
     import uuid
@@ -5357,7 +5357,7 @@ def proceed_with_launch(selected_version, collection_data=None):
                             return check_forge_installed(minecraft_version, CONFIG["minecraft_dir"])
 
                         elif loader_type == "neoforge":
-                            neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+                            neoforge_versions = MCLIB.neoforge.get_versions(minecraft_version)
                             if neoforge_versions:
                                 latest = neoforge_versions[0]
                                 version_dir = os.path.join(versions_dir, f"neoforge-{latest}")
@@ -5371,7 +5371,7 @@ def proceed_with_launch(selected_version, collection_data=None):
                     update_ui_log(f"🔧 Устанавливаем {loader_type.capitalize()}...")
                     try:
                         if loader_type == "fabric":
-                            minecraft_launcher_lib.fabric.install_fabric(
+                            MCLIB.fabric.install_fabric(
                                 minecraft_version=minecraft_version,
                                 loader_version="0.17.2",
                                 minecraft_directory=CONFIG["minecraft_dir"],
@@ -5387,11 +5387,11 @@ def proceed_with_launch(selected_version, collection_data=None):
                             update_ui_log(f"✅ Forge установлен для {minecraft_version}")
 
                         elif loader_type == "neoforge":
-                            neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+                            neoforge_versions = MCLIB.neoforge.get_versions(minecraft_version)
                             if not neoforge_versions:
                                 raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
                             latest = neoforge_versions[0]
-                            minecraft_launcher_lib.neoforge.install(
+                            MCLIB.neoforge.install(
                                 minecraft_version=minecraft_version,
                                 loader_version=latest,
                                 minecraft_directory=CONFIG["minecraft_dir"],
@@ -5443,7 +5443,7 @@ def proceed_with_launch(selected_version, collection_data=None):
                 mc_ver = get_minecraft_version(selected_version)
 
                 # Получаем список всех установленных версий
-                installed_versions = minecraft_launcher_lib.utils.get_installed_versions(CONFIG["minecraft_dir"])
+                installed_versions = MCLIB.utils.get_installed_versions(CONFIG["minecraft_dir"])
 
                 # Ищем версию Quilt для указанной версии Minecraft
                 quilt_version = None
@@ -5475,7 +5475,7 @@ def proceed_with_launch(selected_version, collection_data=None):
                     if not install_forge_sync(mc_ver, CONFIG["minecraft_dir"]):
                         raise Exception("Не удалось установить Forge")
                 # Ищем установленную версию Forge
-                installed_versions = minecraft_launcher_lib.utils.get_installed_versions(CONFIG["minecraft_dir"])
+                installed_versions = MCLIB.utils.get_installed_versions(CONFIG["minecraft_dir"])
                 forge_version = None
                 for version in installed_versions:
                     version_id = version["id"]
@@ -5494,7 +5494,7 @@ def proceed_with_launch(selected_version, collection_data=None):
                 mc_ver = get_minecraft_version(selected_version)
                 # Получаем версии NeoForge
                 try:
-                    neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(mc_ver)
+                    neoforge_versions = MCLIB.neoforge.get_versions(mc_ver)
                     if not neoforge_versions:
                         raise Exception(f"Не найдены версии NeoForge для {mc_ver}")
                     latest = neoforge_versions[0]
@@ -5509,7 +5509,7 @@ def proceed_with_launch(selected_version, collection_data=None):
                 launch_version = get_minecraft_version(selected_version)
                 update_ui_log(f"🎯 Vanilla версия: {launch_version}")
 
-            command = minecraft_launcher_lib.command.get_minecraft_command(
+            command = MCLIB.command.get_minecraft_command(
                 version=launch_version,
                 minecraft_directory=CONFIG["minecraft_dir"],
                 options=options,
@@ -5776,7 +5776,7 @@ def repair_version_file():
 
         # Переустанавливаем версию Minecraft
         print("🔄 Переустанавливаем версию Minecraft...")
-        minecraft_launcher_lib.install.install_minecraft_version(
+        MCLIB.install.install_minecraft_version(
             versionid=problem_version,
             minecraft_directory=minecraft_dir
         )
@@ -5858,7 +5858,7 @@ def repair_single_version(version_name):
         print(f"🔄 Исправляем версию: {version_name}")
 
         # Переустанавливаем версию
-        minecraft_launcher_lib.install.install_minecraft_version(
+        MCLIB.install.install_minecraft_version(
             versionid=version_name,
             minecraft_directory=minecraft_dir
         )
@@ -5933,7 +5933,7 @@ def install_required_components_sync(version_name):
             print(f"🔄 Устанавливаем Minecraft {minecraft_version}...")
             try:
                 # ОЧЕНЬ ВАЖНО: Используем правильные параметры
-                minecraft_launcher_lib.install.install_minecraft_version(
+                MCLIB.install.install_minecraft_version(
                     version=minecraft_version,  # Правильный параметр
                     minecraft_directory=CONFIG["minecraft_dir"]
                 )
@@ -5979,7 +5979,7 @@ def install_minecraft_version_with_retry(minecraft_version, max_retries=3):
 
             try:
                 # Пробуем установить во временную папку
-                minecraft_launcher_lib.install.install_minecraft_version(
+                MCLIB.install.install_minecraft_version(
                     version=minecraft_version,
                     minecraft_directory=temp_dir
                 )
@@ -6114,7 +6114,7 @@ def check_modloader_installed(minecraft_version, loader_type, loader_version=Non
 
             # Альтернативная проверка через minecraft-launcher-lib
             try:
-                installed_versions = minecraft_launcher_lib.utils.get_installed_versions(CONFIG["minecraft_dir"])
+                installed_versions = MCLIB.utils.get_installed_versions(CONFIG["minecraft_dir"])
                 for version in installed_versions:
                     if "neoforge" in version["id"].lower():
                         return True
@@ -6134,7 +6134,7 @@ def install_modloader_sync(minecraft_version, loader_type, loader_version=None):
     try:
         if loader_type == "fabric":
             fabric_loader = loader_version or "0.17.2"
-            minecraft_launcher_lib.fabric.install_fabric(
+            MCLIB.fabric.install_fabric(
                 minecraft_version=minecraft_version,
                 loader_version=fabric_loader,
                 minecraft_directory=CONFIG["minecraft_dir"]
@@ -6170,7 +6170,7 @@ def install_quilt_sync(minecraft_version, minecraft_directory):
         print(f"🔧 Устанавливаем Quilt для {minecraft_version}...")
 
         # Используем новый API mod_loader
-        quilt_loader = minecraft_launcher_lib.mod_loader.get_mod_loader("quilt")
+        quilt_loader = MCLIB.mod_loader.get_mod_loader("quilt")
 
         # Получаем доступные версии Quilt
         quilt_versions = quilt_loader.get_loader_versions(minecraft_version, stable_only=True)
@@ -6200,7 +6200,7 @@ def get_latest_quilt_loader_version():
     """Получает последнюю версию Quilt loader"""
     try:
         # Используем новый API mod_loader
-        quilt_loader = minecraft_launcher_lib.mod_loader.get_mod_loader("quilt")
+        quilt_loader = MCLIB.mod_loader.get_mod_loader("quilt")
         versions = quilt_loader.get_loader_versions()
         if versions:
             return versions[0]  # Последняя версия
@@ -6243,12 +6243,12 @@ create_fake_launcher_profile(CONFIG["minecraft_dir"])
 
 
 def install_forge_sync(minecraft_version, minecraft_directory):
-    """Установка Forge через minecraft_launcher_lib с новым API"""
+    """Установка Forge через MCLIB с новым API"""
     try:
         print(f"🔧 Устанавливаем Forge для {minecraft_version}...")
 
         # Используем новый API через mod_loader
-        from minecraft_launcher_lib.mod_loader import get_mod_loader
+        from MCLIB.mod_loader import get_mod_loader
 
         forge_loader = get_mod_loader("forge")
 
@@ -6289,7 +6289,7 @@ def install_forge_alternative(minecraft_version, minecraft_directory):
         print(f"🔄 Альтернативная установка Forge для {minecraft_version}")
 
         # Используем find_forge_version для получения правильной версии
-        forge_version = minecraft_launcher_lib.forge.find_forge_version(minecraft_version)
+        forge_version = MCLIB.forge.find_forge_version(minecraft_version)
 
         if not forge_version:
             raise Exception(f"Не удалось найти версию Forge для {minecraft_version}")
@@ -6297,7 +6297,7 @@ def install_forge_alternative(minecraft_version, minecraft_directory):
         print(f"📦 Найдена версия Forge: {forge_version}")
 
         # Пробуем установить через run_forge_installer (запускает инсталлятор)
-        minecraft_launcher_lib.forge.run_forge_installer(forge_version)
+        MCLIB.forge.run_forge_installer(forge_version)
 
         print(f"✅ Forge установлен альтернативным методом!")
         return True
@@ -6381,7 +6381,7 @@ def install_neoforge_sync(minecraft_version, minecraft_directory):
         print(f"🔧 Устанавливаем NeoForge для {minecraft_version}...")
 
         # Прямой вызов API NeoForge вместо mod_loader
-        neoforge_versions = minecraft_launcher_lib.neoforge.get_versions(minecraft_version)
+        neoforge_versions = MCLIB.neoforge.get_versions(minecraft_version)
 
         if not neoforge_versions:
             raise Exception(f"Не найдены версии NeoForge для {minecraft_version}")
@@ -6391,7 +6391,7 @@ def install_neoforge_sync(minecraft_version, minecraft_directory):
         print(f"📦 Используем NeoForge {latest_neoforge}")
 
         # Устанавливаем NeoForge
-        minecraft_launcher_lib.neoforge.install(
+        MCLIB.neoforge.install(
             minecraft_version=minecraft_version,
             loader_version=latest_neoforge,
             minecraft_directory=minecraft_directory
@@ -6471,7 +6471,7 @@ def safe_install_minecraft_version(version, minecraft_directory, progress_callba
         socket.setdefaulttimeout(30)
 
         # Пробуем установить с обработкой SSL ошибок
-        minecraft_launcher_lib.install.install_minecraft_version(
+        MCLIB.install.install_minecraft_version(
             version=version,
             minecraft_directory=minecraft_directory,
             callback=progress_callback

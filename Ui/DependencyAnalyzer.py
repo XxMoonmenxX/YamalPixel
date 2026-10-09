@@ -10,6 +10,7 @@ from PyQt6.QtGui import QFont, QColor
 from Ui.BaseWindow import BaseDialog
 
 import logging
+from typing import Callable, Dict, List
 
 logger = logging.getLogger("YamalPixel.DependencyAnalyzer")
 

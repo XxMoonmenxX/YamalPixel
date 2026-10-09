@@ -1,5 +1,6 @@
-## ConfDir/ScaleRes.py
+## ConfDir/ScaleRes.py суук
 import os
+from launcher_paths import resource_path
 
 # Получаем путь к папке пользователя
 USER_YAMALPIXEL_RES = os.path.join(os.path.expanduser("~"), "YamalPixelRes")
@@ -91,7 +92,7 @@ def get_background_path(filename):
         return user_path
 
     # Path in project folder (for development)
-    local_path = os.path.join(os.getcwd(), "YamalPixelRes", filename)
+    local_path = resource_path(os.path.join('YamalPixelRes', filename))
     if os.path.exists(local_path):
         print(f"Background found in project folder: {local_path}")
         return local_path
@@ -103,6 +104,12 @@ def get_background_path(filename):
         print(f"Background found in script folder: {script_path}")
         return script_path
 
+    # A fresh EXE installation may contain fewer backgrounds than the catalogue.
+    for folder in (USER_YAMALPIXEL_RES, resource_path('YamalPixelRes')):
+        if os.path.isdir(folder):
+            for candidate in sorted(os.listdir(folder)):
+                if candidate.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    return os.path.join(folder, candidate)
     print(f"Background not found: {filename}")
     return None
 

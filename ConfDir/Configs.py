@@ -1,29 +1,10 @@
-## ConfDir/Configs.py
-from pathlib import Path # Для работы с путями
+## ConfDir/Configs.py ху
+from pathlib import Path
 import os
 import sys
 import requests
 import logging
-
-
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for Nuitka onefile"""
-    try:
-        # Nuitka onefile mode
-        base_path = sys._MEIPASS
-    except AttributeError:
-        # Normal mode
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-
-#def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    if hasattr(sys, '_MEIPASS'):
-        base_path = sys._MEIPASS
-    else:
-        base_path = Path.home() / "YamalPixelRes"
-    return os.path.join(base_path, relative_path)
+from launcher_paths import resource_path
 
 
 def set_window_icon(window):
@@ -48,14 +29,9 @@ def set_window_icon(window):
         print(f"Icon error: {e}")
 
 
-# Конфигурация ресурсов pyinstaller
-#RESOURCE_DIR = Path.home() / "YamalPixelRes"
-# Конфигурация ресурсов nuitka
-if hasattr(sys, '_MEIPASS'):
-    RESOURCE_DIR = Path(sys._MEIPASS) / "YamalPixelRes"
-else:
-    RESOURCE_DIR = Path.home() / "YamalPixelRes"
-# Обновляем RESOURCES в начале кода
+# Конфигурация ресурсов
+RESOURCE_DIR = Path.home() / "YamalPixelRes"
+
 RESOURCES = {
     "logo.png": "https://disk.yandex.ru/i/XJ1rNloj-EcIGw",
     "logo1.png": "https://disk.yandex.ru/i/IazaA10AvflA2Q",
@@ -69,6 +45,7 @@ RESOURCES = {
     "menu_song.mp3": "https://disk.yandex.ru/d/Ahqnmj2T8YlNKg",
     "icon.ico": "https://disk.yandex.ru/i/nRwZp3AzRI16qQ"
 }
+
 # Конфигурация
 API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
 CONFIG = {
@@ -76,223 +53,9 @@ CONFIG = {
     "fabric_loader": "0.17.2",
     "use_proxy_for_downloads": True,
     "minecraft_dir": os.path.expanduser("~/YamalPixel"),
-    "mods": [
-        {
-            "url": "https://disk.yandex.ru/d/aJHjc2LrzS8ndA",
-            "file": "XaerosWorldMap_1.39.12_Fabric_1.20.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/UzM5BWOXB9S7OA",
-            "file": "AdvancedReborn-1.20.1-1.2.9.jar",
-        },
-        # {'url': 'https://disk.yandex.ru/d/S_m78H3B-N9dCQ', 'file': 'pocket-repose-1.2.7-1.20.1.jar'},
-        {
-            "url": "https://disk.yandex.ru/d/c81POD3HZgp48Q",
-            "file": "cc-tweaked-1.20.1-fabric-1.116.2.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/B48FGIIitm-olA",
-            "file": "ae2-emi-crafting-1.3.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/YXPRt1scCMJ8kQ",
-            "file": "antixray-fabric-1.4.6+1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/ukmqzaHQaTP03g",
-            "file": "appliedenergistics2-fabric-15.4.9.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/aH-BHO05_WeuLw",
-            "file": "architectury-9.2.14-fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/fo5V3PpaLtZ-gw",
-            "file": "areas-1.20.1-6.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/Tif04Xw7_kd8rQ",
-            "file": "cardinal-components-api-5.2.3.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/k5xux5BX_T9-7g",
-            "file": "choicetheorems-overhauled-village-friends-and-foes-add-on-1.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/378xaPNzlblGFA",
-            "file": "cloth-config-11.1.136-fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/5AivLjfk6Wgbog",
-            "file": "collective-1.20.1-8.12.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/nSspzPB5G5ReWA",
-            "file": "crafting_enchanted_golden_apple-1.0.0-fabric-1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/Ox5-1T4a9qkXHg",
-            "file": "ctov-beautify-compat-2.0.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/o2kPxeHul4byng",
-            "file": "emi-1.1.22+1.20.1+fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/PNZi_54Tj4HP3Q",
-            "file": "entityculling-fabric-1.9.1-mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/GNW5lwib5Xq9Eg",
-            "file": "extra-mod-integrations-0.4.7+1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/EHHAo7HSzH2mmg",
-            "file": "fabric-api-0.92.6+1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/IHBo3qyqAjR3fQ",
-            "file": "fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/r8gwsUQF7Wy9BQ",
-            "file": "fallingleaves-1.15.6+1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/pddZ2W8za1yiSQ",
-            "file": "indium-1.0.36+mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/PghcNlFWKcgSeg",
-            "file": "InventoryProfilesNext-fabric-1.20-1.10.19.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/AZHbvFGGX_JAKQ",
-            "file": "iris-1.7.6+mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/wwCGHqSxly5pXg",
-            "file": "ironchests-5.0.2-fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/OrlYw3O3rnSN1A",
-            "file": "lambdynamiclights-4.4.0+1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/Sr4rPWBdFjEZfA",
-            "file": "libIPN-fabric-1.20-4.0.2.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/7G3BPLxK1Dul1g",
-            "file": "lithium-fabric-mc1.20.1-0.11.3.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/yE26wprToTM9hg",
-            "file": "mavapi-1.1.4-mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/Po8eTPEwzDAOpg",
-            "file": "mavm-1.2.6-mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/8luIo8Ygz83BEg",
-            "file": "mcpitanlib-3.3.9-1.20.1-fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/EsACr5Ex3R9Zdg",
-            "file": "modmenu-badges-lib-2023.6.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/6CF52_F3QbnCzQ",
-            "file": "noindium-1.1.0+1.20.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/B10LX8LVEZg0DQ",
-            "file": "Patchouli-1.20.1-84.1-FABRIC.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/fCkZvVrEqlU3Rg",
-            "file": "RebornCore-5.8.3.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/_CgYmn4OYeGnBQ",
-            "file": "servercore-fabric-1.5.2+1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/uI7zlr5Yg-7skQ",
-            "file": "sodium-extra-0.5.9+mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/Mft3dmbdbHjhHA",
-            "file": "sodium-fabric-0.5.13+mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/dncEQy1PhTcgrw",
-            "file": "TechReborn-5.8.3.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/_c-mQTKC4UB1cw",
-            "file": "Terralith_1.20.x_v2.5.4.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ",
-            "file": "Xaeros_Minimap_25.2.10_Fabric_1.20.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/H0dkq2G5XcrZFQ",
-            "file": "moonlight-1.20-2.16.15-fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/uXJYqfjy_aedHQ",
-            "file": "immersive_weathering-1.20.1-2.0.5-fabric.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/5XOEqn8FkypWkg",
-            "file": "create-fabric-6.0.8.0+build.1734-mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/XfzgIDOOzleiTA",
-            "file": "create-structures-0.1.1-1.20.1-FABRIC.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/fMv6pNJFcHOKkA",
-            "file": "createaddition-fabric+1.20.1-1.3.3.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/E_jBP9cQfeVX6g",
-            "file": "Steam_Rails-1.6.14-beta+fabric-mc1.20.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/2bh0oqQsq4INXg",
-            "file": "botarium-fabric-1.20.1-2.3.4.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
-            "file": "travelersbackpack-fabric-1.20.1-9.1.41.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/P2yhjpE96GaH1Q",
-            "file": "carryon-fabric-1.20.1-2.1.2.7.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/g33-cksFAVrbmg",
-            "file": "treeharvester-1.20.1-9.1.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/tG9ulUDXHr53vQ",
-            "file": "framework-fabric-1.20.1-0.7.15.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/lePC1Exc3PrWQA",
-            "file": "refurbished_furniture-fabric-1.20.1-1.0.20.jar",
-        },
-        {
-            "url": "https://disk.yandex.ru/d/_JyuGFFBszGFog",
-            "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
-        },
-    ],
+    "mods_archive_url": "https://disk.yandex.ru/d/3TObVTQaQnF6-Q",
+    "mods": [],
 }
-
 
 # Конфигурация шейдеров
 SHADERS_CONFIG = {
@@ -410,316 +173,12 @@ SHADERS_CONFIG = {
     ]
 }
 
-essential_mods = [
-                {
-                    "url": "https://disk.yandex.ru/d/aJHjc2LrzS8ndA",
-                    "file": "XaerosWorldMap_1.39.12_Fabric_1.20.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/UzM5BWOXB9S7OA",
-                    "file": "AdvancedReborn-1.20.1-1.2.9.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/B48FGIIitm-olA",
-                    "file": "ae2-emi-crafting-1.3.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/YXPRt1scCMJ8kQ",
-                    "file": "antixray-fabric-1.4.6+1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/ukmqzaHQaTP03g",
-                    "file": "appliedenergistics2-fabric-15.4.9.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/aH-BHO05_WeuLw",
-                    "file": "architectury-9.2.14-fabric.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/fo5V3PpaLtZ-gw",
-                    "file": "areas-1.20.1-6.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/Tif04Xw7_kd8rQ",
-                    "file": "cardinal-components-api-5.2.3.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/k5xux5BX_T9-7g",
-                    "file": "choicetheorems-overhauled-village-friends-and-foes-add-on-1.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/378xaPNzlblGFA",
-                    "file": "cloth-config-11.1.136-fabric.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/5AivLjfk6Wgbog",
-                    "file": "collective-1.20.1-8.12.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/nSspzPB5G5ReWA",
-                    "file": "crafting_enchanted_golden_apple-1.0.0-fabric-1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/Ox5-1T4a9qkXHg",
-                    "file": "ctov-beautify-compat-2.0.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/o2kPxeHul4byng",
-                    "file": "emi-1.1.22+1.20.1+fabric.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/PNZi_54Tj4HP3Q",
-                    "file": "entityculling-fabric-1.9.1-mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/GNW5lwib5Xq9Eg",
-                    "file": "extra-mod-integrations-0.4.7+1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/EHHAo7HSzH2mmg",
-                    "file": "fabric-api-0.92.6+1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/IHBo3qyqAjR3fQ",
-                    "file": "fabric-language-kotlin-1.13.6+kotlin.2.2.20.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/r8gwsUQF7Wy9BQ",
-                    "file": "fallingleaves-1.15.6+1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/pddZ2W8za1yiSQ",
-                    "file": "indium-1.0.36+mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/PghcNlFWKcgSeg",
-                    "file": "InventoryProfilesNext-fabric-1.20-1.10.19.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/AZHbvFGGX_JAKQ",
-                    "file": "iris-1.7.6+mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/wwCGHqSxly5pXg",
-                    "file": "ironchests-5.0.2-fabric.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/OrlYw3O3rnSN1A",
-                    "file": "lambdynamiclights-4.4.0+1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/Sr4rPWBdFjEZfA",
-                    "file": "libIPN-fabric-1.20-4.0.2.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/7G3BPLxK1Dul1g",
-                    "file": "lithium-fabric-mc1.20.1-0.11.3.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/yE26wprToTM9hg",
-                    "file": "mavapi-1.1.4-mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/Po8eTPEwzDAOpg",
-                    "file": "mavm-1.2.6-mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/8luIo8Ygz83BEg",
-                    "file": "mcpitanlib-3.3.9-1.20.1-fabric.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/EsACr5Ex3R9Zdg",
-                    "file": "modmenu-badges-lib-2023.6.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/6CF52_F3QbnCzQ",
-                    "file": "noindium-1.1.0+1.20.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/B10LX8LVEZg0DQ",
-                    "file": "Patchouli-1.20.1-84.1-FABRIC.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/fCkZvVrEqlU3Rg",
-                    "file": "RebornCore-5.8.3.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/_CgYmn4OYeGnBQ",
-                    "file": "servercore-fabric-1.5.2+1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/uI7zlr5Yg-7skQ",
-                    "file": "sodium-extra-0.5.9+mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/Mft3dmbdbHjhHA",
-                    "file": "sodium-fabric-0.5.13+mc1.20.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/dncEQy1PhTcgrw",
-                    "file": "TechReborn-5.8.3.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/_c-mQTKC4UB1cw",
-                    "file": "Terralith_1.20.x_v2.5.4.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/trH1NQ3Hw2QjXQ",
-                    "file": "Xaeros_Minimap_25.2.10_Fabric_1.20.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/7ebHrjGobc89Og",
-                    "file": "travelersbackpack-fabric-1.20.1-9.1.41.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/P2yhjpE96GaH1Q",
-                    "file": "carryon-fabric-1.20.1-2.1.2.7.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/g33-cksFAVrbmg",
-                    "file": "treeharvester-1.20.1-9.1.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/tG9ulUDXHr53vQ",
-                    "file": "framework-fabric-1.20.1-0.7.15.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/lePC1Exc3PrWQA",
-                    "file": "refurbished_furniture-fabric-1.20.1-1.0.20.jar",
-                },
-                {
-                    "url": "https://disk.yandex.ru/d/_JyuGFFBszGFog",
-                    "file": "create_structures_arise-156.29.28-fabric-1.20.1.jar",
-                },
-            ]
+essential_mods = []  # Compatibility for the retired Tk entry point.
+
 
 def get_minecraft_version(version_name):
-    if version_name.startswith("📦 "):
-        try:
-            # Пробуем получить информацию из JSON файла сборки
-            import json
-            import os
-
-            collection_name = version_name[2:]
-            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
-
-            if os.path.exists(collections_dir):
-                for filename in os.listdir(collections_dir):
-                    if filename.endswith('.json'):
-                        filepath = os.path.join(collections_dir, filename)
-                        with open(filepath, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
-
-                        if data.get('name') == collection_name:
-                            return data.get('minecraft_version', '1.21.1')
-        except:
-            pass
-    """Получает версию Minecraft для выбранной версии"""
-    version_map = {
-        "YamalPixel": "1.20.1",
-        "Minecraft 1.12.2": "1.12.2",
-        "Minecraft 1.12.2 + Fabric": "1.12.2",
-        "Minecraft 1.12.2 + Forge": "1.12.2",
-        "Minecraft 1.12.2 + Quilt": "1.12.2",
-
-        "Minecraft 1.14.4": "1.14.4",
-        "Minecraft 1.14.4 + Fabric": "1.14.4",
-        "Minecraft 1.14.4 + Forge": "1.14.4",
-        "Minecraft 1.14.4 + Quilt": "1.14.4",
-
-        "Minecraft 1.15.2": "1.15.2",
-        "Minecraft 1.15.2 + Fabric": "1.15.2",
-        "Minecraft 1.15.2 + Forge": "1.15.2",
-        "Minecraft 1.15.2 + Quilt": "1.15.2",
-
-        "Minecraft 1.16.5": "1.16.5",
-        "Minecraft 1.16.5 + Fabric": "1.16.5",
-        "Minecraft 1.16.5 + Forge": "1.16.5",
-        "Minecraft 1.16.5 + Quilt": "1.16.5",
-
-        "Minecraft 1.17.1": "1.17.1",
-        "Minecraft 1.17.1 + Fabric": "1.17.1",
-        "Minecraft 1.17.1 + Forge": "1.17.1",
-        "Minecraft 1.17.1 + Quilt": "1.17.1",
-
-        "Minecraft 1.18.2": "1.18.2",
-        "Minecraft 1.18.2 + Fabric": "1.18.2",
-        "Minecraft 1.18.2 + Forge": "1.18.2",
-        "Minecraft 1.18.2 + Quilt": "1.18.2",
-
-        "Minecraft 1.19.2": "1.19.2",
-        "Minecraft 1.19.2 + Fabric": "1.19.2",
-        "Minecraft 1.19.2 + Forge": "1.19.2",
-        "Minecraft 1.19.2 + Quilt": "1.19.2",
-
-        "Minecraft 1.20.1": "1.20.1",
-        "Minecraft 1.20.1 + Fabric": "1.20.1",
-        "Minecraft 1.20.1 + Forge": "1.20.1",
-        "Minecraft 1.20.1 + Quilt": "1.20.1",
-        "Minecraft 1.20.1 + NeoForge": "1.20.1",
-
-        "Minecraft 1.20.2": "1.20.2",
-        "Minecraft 1.20.2 + Fabric": "1.20.2",
-        "Minecraft 1.20.2 + Forge": "1.20.2",
-        "Minecraft 1.20.2 + Quilt": "1.20.2",
-        "Minecraft 1.20.2 + NeoForge": "1.20.2",
-
-        "Minecraft 1.20.3": "1.20.3",
-        "Minecraft 1.20.3 + Fabric": "1.20.3",
-        "Minecraft 1.20.3 + Forge": "1.20.3",
-        "Minecraft 1.20.3 + Quilt": "1.20.3",
-        "Minecraft 1.20.3 + NeoForge": "1.20.3",
-
-        "Minecraft 1.20.4": "1.20.4",
-        "Minecraft 1.20.4 + Fabric": "1.20.4",
-        "Minecraft 1.20.4 + Forge": "1.20.4",
-        "Minecraft 1.20.4 + Quilt": "1.20.4",
-        "Minecraft 1.20.4 + NeoForge": "1.20.4",
-
-        "Minecraft 1.20.5": "1.20.5",
-        "Minecraft 1.20.5 + Fabric": "1.20.5",
-        "Minecraft 1.20.5 + Forge": "1.20.5",
-        "Minecraft 1.20.5 + Quilt": "1.20.5",
-        "Minecraft 1.20.5 + NeoForge": "1.20.5",
-
-        "Minecraft 1.20.6": "1.20.6",
-        "Minecraft 1.20.6 + Fabric": "1.20.6",
-        "Minecraft 1.20.6 + Forge": "1.20.6",
-        "Minecraft 1.20.6 + Quilt": "1.20.6",
-        "Minecraft 1.20.6 + NeoForge": "1.20.6",
-
-        "Minecraft 1.21": "1.21",
-        "Minecraft 1.21 + Fabric": "1.21",
-        "Minecraft 1.21 + Forge": "1.21",
-        "Minecraft 1.21 + Quilt": "1.21",
-        "Minecraft 1.21 + NeoForge": "1.21",
-
-        "Minecraft 1.21.1": "1.21.1",
-        "Minecraft 1.21.1 + Fabric": "1.21.1",
-        "Minecraft 1.21.1 + Forge": "1.21.1",
-        "Minecraft 1.21.1 + Quilt": "1.21.1",
-        "Minecraft 1.21.1 + NeoForge": "1.21.1",
-
-        "Minecraft 1.21.2": "1.21.2",
-        "Minecraft 1.21.2 + Fabric": "1.21.2",
-        "Minecraft 1.21.2 + Forge": "1.21.2",
-        "Minecraft 1.21.2 + Quilt": "1.21.2",
-        "Minecraft 1.21.2 + NeoForge": "1.21.2",
-
-        "Minecraft 1.21.3": "1.21.3",
-        "Minecraft 1.21.3 + Fabric": "1.21.3",
-        "Minecraft 1.21.3 + Forge": "1.21.3",
-        "Minecraft 1.21.3 + Quilt": "1.21.3",
-        "Minecraft 1.21.3 + NeoForge": "1.21.3",
-
-        "Minecraft 1.21.4": "1.21.4",
-        "Minecraft 1.21.4 + Fabric": "1.21.4",
-        "Minecraft 1.21.4 + Forge": "1.21.4",
-        "Minecraft 1.21.4 + Quilt": "1.21.4",
-        "Minecraft 1.21.4 + NeoForge": "1.21.4",
-    }
-
-    return version_map.get(version_name, "1.20.1")
+    from ConfDir.Versions import get_minecraft_version as resolve
+    return resolve(version_name)
 
 
 version_configs = {
@@ -728,103 +187,79 @@ version_configs = {
     "Minecraft 1.12.2 + Fabric": ("1.12.2", "fabric", "0.17.2"),
     "Minecraft 1.12.2 + Forge": ("1.12.2", "forge", "latest"),
     "Minecraft 1.12.2 + Quilt": ("1.12.2", "quilt", None),
-
     "Minecraft 1.14.4": ("1.14.4", None, None),
     "Minecraft 1.14.4 + Fabric": ("1.14.4", "fabric", "0.17.2"),
     "Minecraft 1.14.4 + Forge": ("1.14.4", "forge", "latest"),
     "Minecraft 1.14.4 + Quilt": ("1.14.4", "quilt", None),
-
-
     "Minecraft 1.15.2": ("1.15.2", None, None),
     "Minecraft 1.15.2 + Fabric": ("1.15.2", "fabric", "0.17.2"),
     "Minecraft 1.15.2 + Forge": ("1.15.2", "forge", "latest"),
     "Minecraft 1.15.2 + Quilt": ("1.15.2", "quilt", None),
-
-
     "Minecraft 1.16.5": ("1.16.5", None, None),
     "Minecraft 1.16.5 + Fabric": ("1.16.5", "fabric", "0.17.2"),
     "Minecraft 1.16.5 + Forge": ("1.16.5", "forge", "latest"),
     "Minecraft 1.16.5 + Quilt": ("1.16.5", "quilt", None),
-
     "Minecraft 1.17.1": ("1.17.1", None, None),
     "Minecraft 1.17.1 + Fabric": ("1.17.1", "fabric", "0.17.2"),
     "Minecraft 1.17.1 + Forge": ("1.17.1", "forge", "latest"),
     "Minecraft 1.17.1 + Quilt": ("1.17.1", "quilt", None),
-
-
     "Minecraft 1.18.2": ("1.18.2", None, None),
     "Minecraft 1.18.2 + Fabric": ("1.18.2", "fabric", "0.17.2"),
     "Minecraft 1.18.2 + Forge": ("1.18.2", "forge", "latest"),
     "Minecraft 1.18.2 + Quilt": ("1.18.2", "quilt", None),
-
-
     "Minecraft 1.19.2": ("1.19.2", None, None),
     "Minecraft 1.19.2 + Fabric": ("1.19.2", "fabric", "0.17.2"),
     "Minecraft 1.19.2 + Forge": ("1.19.2", "forge", "latest"),
     "Minecraft 1.19.2 + Quilt": ("1.19.2", "quilt", None),
-
-
     "Minecraft 1.20.1": ("1.20.1", None, None),
     "Minecraft 1.20.1 + Fabric": ("1.20.1", "fabric", "0.17.2"),
     "Minecraft 1.20.1 + Forge": ("1.20.1", "forge", "latest"),
     "Minecraft 1.20.1 + Quilt": ("1.20.1", "quilt", None),
-
     "Minecraft 1.20.2": ("1.20.2", None, None),
     "Minecraft 1.20.2 + Fabric": ("1.20.2", "fabric", "0.17.2"),
     "Minecraft 1.20.2 + Forge": ("1.20.2", "forge", "latest"),
     "Minecraft 1.20.2 + Quilt": ("1.20.2", "quilt", None),
     "Minecraft 1.20.2 + NeoForge": ("1.20.2", "neoforge", None),
-
     "Minecraft 1.20.3": ("1.20.3", None, None),
     "Minecraft 1.20.3 + Fabric": ("1.20.3", "fabric", "0.17.2"),
     "Minecraft 1.20.3 + Forge": ("1.20.3", "forge", "latest"),
     "Minecraft 1.20.3 + Quilt": ("1.20.3", "quilt", None),
     "Minecraft 1.20.3 + NeoForge": ("1.20.3", "neoforge", None),
-
     "Minecraft 1.20.4": ("1.20.4", None, None),
     "Minecraft 1.20.4 + Fabric": ("1.20.4", "fabric", "0.17.2"),
     "Minecraft 1.20.4 + Forge": ("1.20.4", "forge", "latest"),
     "Minecraft 1.20.4 + Quilt": ("1.20.4", "quilt", None),
     "Minecraft 1.20.4 + NeoForge": ("1.20.4", "neoforge", None),
-
     "Minecraft 1.20.5": ("1.20.5", None, None),
     "Minecraft 1.20.5 + Fabric": ("1.20.5", "fabric", "0.17.2"),
     "Minecraft 1.20.5 + Forge": ("1.20.5", "forge", "latest"),
     "Minecraft 1.20.5 + Quilt": ("1.20.5", "quilt", None),
     "Minecraft 1.20.5 + NeoForge": ("1.20.5", "neoforge", None),
-
     "Minecraft 1.20.6": ("1.20.6", None, None),
     "Minecraft 1.20.6 + Fabric": ("1.20.6", "fabric", "0.17.2"),
     "Minecraft 1.20.6 + Forge": ("1.20.6", "forge", "latest"),
     "Minecraft 1.20.6 + Quilt": ("1.20.6", "quilt", None),
     "Minecraft 1.20.6 + NeoForge": ("1.20.6", "neoforge", None),
-
-
     "Minecraft 1.21": ("1.21", None, None),
     "Minecraft 1.21 + Fabric": ("1.21", "fabric", "0.17.2"),
     "Minecraft 1.21 + Forge": ("1.21", "forge", "latest"),
     "Minecraft 1.21 + Quilt": ("1.21", "quilt", None),
     "Minecraft 1.21 + NeoForge": ("1.21", "neoforge", None),
-
     "Minecraft 1.21.1": ("1.21.1", None, None),
     "Minecraft 1.21.1 + Fabric": ("1.21.1", "fabric", "0.17.2"),
     "Minecraft 1.21.1 + Forge": ("1.21.1", "forge", "latest"),
     "Minecraft 1.21.1 + Quilt": ("1.21.1", "quilt", None),
     "Minecraft 1.21.1 + NeoForge": ("1.21.1", "neoforge", None),
-
     "Minecraft 1.21.2": ("1.21.2", None, None),
     "Minecraft 1.21.2 + Fabric": ("1.21.2", "fabric", "0.17.2"),
     "Minecraft 1.21.2 + Forge": ("1.21.2", "forge", "latest"),
     "Minecraft 1.21.2 + Quilt": ("1.21.2", "quilt", None),
     "Minecraft 1.21.2 + NeoForge": ("1.21.2", "neoforge", None),
-
     "Minecraft 1.21.3": ("1.21.3", None, None),
     "Minecraft 1.21.3 + Fabric": ("1.21.3", "fabric", "0.17.2"),
     "Minecraft 1.21.3 + Forge": ("1.21.3", "forge", "latest"),
     "Minecraft 1.21.3 + Quilt": ("1.21.3", "quilt", None),
     "Minecraft 1.21.3 + NeoForge": ("1.21.3", "neoforge", None),
-
-
     "Minecraft 1.21.4": ("1.21.4", None, None),
     "Minecraft 1.21.4 + Fabric": ("1.21.4", "fabric", "0.17.2"),
     "Minecraft 1.21.4 + Forge": ("1.21.4", "forge", "latest"),
@@ -832,9 +267,9 @@ version_configs = {
     "Minecraft 1.21.4 + NeoForge": ("1.21.4", "neoforge", None),
 }
 
-
 QUILT_CONFIG = {
-    "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.20.3", "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
+    "supported_versions": ["1.14.4", "1.15.2", "1.16.5", "1.17.1", "1.18.2", "1.19.2", "1.20.1", "1.20.2", "1.20.3",
+                           "1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4"]
 }
 
 import json
@@ -859,7 +294,6 @@ def load_user_collections():
                 with open(filepath, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
-                # Проверяем обязательные поля
                 if all(key in data for key in ['name', 'minecraft_version', 'loader']):
                     collections.append({
                         'name': data['name'],
@@ -881,18 +315,15 @@ def load_user_collections():
 def save_user_collection(collection_data):
     """Сохраняет пользовательскую сборку"""
     try:
-        # Создаем безопасное имя файла
         safe_name = "".join(c for c in collection_data['name'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
         safe_name = safe_name[:50]
 
         filename = f"{safe_name}.json"
         filepath = os.path.join(USER_COLLECTIONS_DIR, filename)
 
-        # Добавляем метаданные
         collection_data['created_at'] = datetime.now().isoformat()
         collection_data['updated_at'] = datetime.now().isoformat()
 
-        # Сохраняем файл
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(collection_data, f, indent=2, ensure_ascii=False)
 
@@ -904,7 +335,6 @@ def save_user_collection(collection_data):
 def delete_user_collection(collection_name):
     """Удаляет пользовательскую сборку"""
     try:
-        # Ищем файл по имени сборки
         for filename in os.listdir(USER_COLLECTIONS_DIR):
             if filename.endswith('.json'):
                 filepath = os.path.join(USER_COLLECTIONS_DIR, filename)
@@ -920,172 +350,161 @@ def delete_user_collection(collection_name):
         print(f"❌ Ошибка удаления сборки: {e}")
         return False
 
-# Конфигурация прокси pyinstaller
-#COLLECTIONS_CONFIG = {
-#    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),
-#    "max_mods_per_collection": 200,
-#    "supported_sources": ["modrinth", "curseforge", "local"],
-#    "curseforge_proxy_url": "http://localhost:8000"
-#}
 
-# Конфигурация прокси nuitka
+# Конфигурация коллекций
 if hasattr(sys, '_MEIPASS'):
     collections_base = os.path.join(sys._MEIPASS, "collections")
 else:
     collections_base = os.path.join(CONFIG["minecraft_dir"], "collections")
 
 COLLECTIONS_CONFIG = {
-    "collections_dir": collections_base,
+    "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),  # ← Теперь всегда в папке игры
     "max_mods_per_collection": 200,
     "supported_sources": ["modrinth", "curseforge", "local"],
-    "curseforge_proxy_url": "http://localhost:8000"
+    "curseforge_proxy_url": "http://90.151.59.120:8000"
 }
-messages = [
-        "Удачи! (она тебе понадобится)",
-        "Не удивляйся если всё сломается!",
-        "Твой компьютер уже ненавидит тебя...",
-        "Помни: это твой выбор!",
-        "RIP твоему FPS.",
-        "Скажи привет майнеру.",
-        "Спасибо за удаленный доступ.",
-        "Ого сколько у тебя денег...Мало...",
-        "Потрогай траву...",
-        "А ты знаешь как выглядит небо?",
-        "Выпил пива уже?",
-        "Добро пожаловать!",
-        "Люби аксолотлей.",
-        "Может быть всё напрасно?",
-        "У Артёмов нет детей.",
-        "У меня есть дискорд сервер:)",
-        "Sludge life тоже круто!",
-        "Купи мне словарь Русского и Могучего!",
-        "Твой FPS: да.",
-        "Гречка дорожает, а ты в майнкрафт играешь...",
-        "Пахнет жареным... (твой видеокартой)",
-        "Системные требования: иметь систему (необязательно)",
-        "Твой ПК: 🔥🔥🔥",
-        "Запускаю криптоферму... шучу... наверное...",
-        "Твоя мамка гордится тобой! (нет)",
-        "Поздравляю! Ты 1000-й пользователь! (приз: вирус)",
-        "Оптимизация? Не, не слышал.",
-        "Добро пожаловать в ад, выбери свой котел!",
-        "Твой скин такой же кринжовый, как и твой вкус",
-        "Сервер просит не тыкать в него палкой",
-        "Загрузка успешна! (это ложь)",
-        "Ты знал что трава зеленая? Вот и я нет",
-        "Рекомендуется: выключить монитор для лучшего FPS",
-        "Твои моды конфликтуют сильнее, чем родители в разводе",
-        "Чиним неисправность... шучу, идем пить чай",
-        "Это не баг, это фича (ха-ха)",
-        "Твой процессор плачет кровавыми слезами",
-        "Памяти: мало. Проблем: много. Настроение: ахуенно",
-        "Запускаю NASA... ой, это же майнкрафт",
-        "Твоя видеокарта: 💀 RIP 💀",
-        "Совет: не дыши на компьютер, он пугается",
-        "Готовься к слайд-шоу вместо игры!",
-        "Твои настройки графики: УЛЬТРА КРИНЖ",
-        "Модпак загружен! (и твоя душа продана)",
-        "Добро пожаловать в цифровой дурдом!",
-        "Твой логин: анон. Пароль: ******** (все равно '12345')",
-        "Система: работает. Разум: на перезагрузке",
-        "Запускаю... стоп, а что это за кнопка?",
-        "Все сломалось! Шучу... пока что...",
-        "Твоя ОС: Windows (мне жаль)",
-        "Рекомендуемое время игры: никогда",
-        "Чекни свой FPS: ㋡ ㋡ ㋡ (это смайлики, не цифры)",
-        "Твоя сборка модов: шедевр (психбольницы)",
-        "Готово! Теперь можешь идти плакать в угол",
-        "Установка завершена! (шутка, это только начало)",
-        "Добро пожаловать в симулятор слабого ПК!",
-        "Твоя мышь: жирная. Клавиатура: липкая. Настроение: gaming",
-        "Запускаю... ой, подожди, нужно перекреститься",
-        "Системные требования: терпение и алкоголь",
-        "Твой ПК издает звуки? Это нормально! (нет)",
-        "Готово! Теперь ты официально NEET",
-        "Оптимизация проведена! (на самом деле нет)",
-        "Добро пожаловать в адскую вечеринку FPS-дропов!",
-        "Твоя сборка: 'ахуенная' (с) твоя мамка",
-        "Все работает! (это временно)",
-        "Загрузка... пока можешь сходить в душ",
-        "Твой RAM: 💀 УБИТ 💀",
-        "Привет от разработчика: иди нахуй <3",
-        "Готово! Время играть... или нет?",
-        "Система: загружена. Санity: не найдена",
-        "Твоя игра теперь с DLC: 'баги и кринж'",
-        "Добро пожаловать в симулятор ожидания!",
-        "Все сломалось! Ахаха, расслабился? Шучу... наверное...",
-        "Твой ПК теперь обогреватель! (бесплатно!)",
-        "Готово! Наслаждайся слайд-шоу!",
-        "Рекомендация: не смотри на FPS-счетчик",
-        "Твоя видеокарта: 🔥 ГОРИТ 🔥 (в переносном смысле)",
-        "Запуск успешен! (если успех = боль)",
-        "Добро пожаловать в клуб 'У меня все тормозит!'",
-        "Твои настройки: УЛЬТРА НИЗКИЕ (как твоя самооценка)",
-        "Система: работает. Мозг: нет.",
-        "Все готово! Теперь можешь идти за пивом",
-        "Твой ПК издает странные звуки? Это фича!",
-        "Готово! Время играть... или переустанавливать Windows?",
-        "Добро пожаловать в ад! Выбери свой грех:",
-        "- Кринжовые моды",
-        "- Убитый FPS",
-        "- Выжженная видеокарта",
-        "Твоя сборка: 'я сам это собирал' (ошибка)",
-        "Все работает! (пока не тронешь)",
-        "Загрузка завершена! Теперь можно грузить моды...",
-        "Твой CPU: 💯% (это плохо)",
-        "Готово! Наслаждайся пикселями!",
-        "Добро пожаловать в симулятор слабоумия!",
-        "Твоя ОС: кринж. Железо: боль. Настроение: gaming",
-        "Все сломалось! (шучу, все сломалось потом)",
-        "Система: загружена. Проблемы: загружены тоже",
-        "Твоя игра теперь с RTX! (шучу, у тебя GT 210)",
-        "Готово! Время для... ой, все зависло",
-        "Добро пожаловать в клуб 'Я 5 часов настраивал лаунчер'",
-        "Твой ПК: 💸 ДЕНЬГИ НА ВЕТЕР 💸",
-        "Все работает! (на старом ПК в музее)",
-        "Запуск: успешен! FPS: провален! Настроение: ахуенно!",
-        "Добро пожаловать в дикий запад багов и глитчей!",
-        "Твоя сборка: 'оно как-то само'",
-        "Готово! Теперь можешь идти гуглить 'почему все тормозит'",
-        "Система: работает. Нервы: нет.",
-        "Твой FPS: ❤️ ЛЮБОВЬ ❤️ (к слайд-шоу)",
-        "Все сломалось! Ахаха... стоп, это не шутка...",
-        "Добро пожаловать в адскую вечеринку глитчей!",
-        "Твоя видеокарта: 💀 ОТДЫХАЕТ 💀 (навсегда)",
-        "Готово! Наслаждайся... ой, синий экран...",
-        "Сервак запущен, а ты - опущен",
-    ]
 
+messages = [
+    "Удачи! (она тебе понадобится)",
+    "Не удивляйся если всё сломается!",
+    "Твой компьютер уже ненавидит тебя...",
+    "Помни: это твой выбор!",
+    "RIP твоему FPS.",
+    "Скажи привет майнеру.",
+    "Спасибо за удаленный доступ.",
+    "Ого сколько у тебя денег...Мало...",
+    "Потрогай траву...",
+    "А ты знаешь как выглядит небо?",
+    "Выпил пива уже?",
+    "Добро пожаловать!",
+    "Люби аксолотлей.",
+    "Может быть всё напрасно?",
+    "У Артёмов нет детей.",
+    "У меня есть дискорд сервер:)",
+    "Sludge life тоже круто!",
+    "Купи мне словарь Русского и Могучего!",
+    "Твой FPS: да.",
+    "Гречка дорожает, а ты в майнкрафт играешь...",
+    "Пахнет жареным... (твой видеокартой)",
+    "Системные требования: иметь систему (необязательно)",
+    "Твой ПК: 🔥🔥🔥",
+    "Запускаю криптоферму... шучу... наверное...",
+    "Твоя мамка гордится тобой! (нет)",
+    "Поздравляю! Ты 1000-й пользователь! (приз: вирус)",
+    "Оптимизация? Не, не слышал.",
+    "Добро пожаловать в ад, выбери свой котел!",
+    "Твой скин такой же кринжовый, как и твой вкус",
+    "Сервер просит не тыкать в него палкой",
+    "Загрузка успешна! (это ложь)",
+    "Ты знал что трава зеленая? Вот и я нет",
+    "Рекомендуется: выключить монитор для лучшего FPS",
+    "Твои моды конфликтуют сильнее, чем родители в разводе",
+    "Чиним неисправность... шучу, идем пить чай",
+    "Это не баг, это фича (ха-ха)",
+    "Твой процессор плачет кровавыми слезами",
+    "Памяти: мало. Проблем: много. Настроение: ахуенно",
+    "Запускаю NASA... ой, это же майнкрафт",
+    "Твоя видеокарта: 💀 RIP 💀",
+    "Совет: не дыши на компьютер, он пугается",
+    "Готовься к слайд-шоу вместо игры!",
+    "Твои настройки графики: УЛЬТРА КРИНЖ",
+    "Модпак загружен! (и твоя душа продана)",
+    "Добро пожаловать в цифровой дурдом!",
+    "Твой логин: анон. Пароль: ******** (все равно '12345')",
+    "Система: работает. Разум: на перезагрузке",
+    "Запускаю... стоп, а что это за кнопка?",
+    "Все сломалось! Шучу... пока что...",
+    "Твоя ОС: Windows (мне жаль)",
+    "Рекомендуемое время игры: никогда",
+    "Чекни свой FPS: ㋡ ㋡ ㋡ (это смайлики, не цифры)",
+    "Твоя сборка модов: шедевр (психбольницы)",
+    "Готово! Теперь можешь идти плакать в угол",
+    "Установка завершена! (шутка, это только начало)",
+    "Добро пожаловать в симулятор слабого ПК!",
+    "Твоя мышь: жирная. Клавиатура: липкая. Настроение: gaming",
+    "Запускаю... ой, подожди, нужно перекреститься",
+    "Системные требования: терпение и алкоголь",
+    "Твой ПК издает звуки? Это нормально! (нет)",
+    "Готово! Теперь ты официально NEET",
+    "Оптимизация проведена! (на самом деле нет)",
+    "Добро пожаловать в адскую вечеринку FPS-дропов!",
+    "Твоя сборка: 'ахуенная' (с) твоя мамка",
+    "Все работает! (это временно)",
+    "Загрузка... пока можешь сходить в душ",
+    "Твой RAM: 💀 УБИТ 💀",
+    "Привет от разработчика: иди нахуй <3",
+    "Готово! Время играть... или нет?",
+    "Система: загружена. Санity: не найдена",
+    "Твоя игра теперь с DLC: 'баги и кринж'",
+    "Добро пожаловать в симулятор ожидания!",
+    "Все сломалось! Ахаха, расслабился? Шучу... наверное...",
+    "Твой ПК теперь обогреватель! (бесплатно!)",
+    "Готово! Наслаждайся слайд-шоу!",
+    "Рекомендация: не смотри на FPS-счетчик",
+    "Твоя видеокарта: 🔥 ГОРИТ 🔥 (в переносном смысле)",
+    "Запуск успешен! (если успех = боль)",
+    "Добро пожаловать в клуб 'У меня все тормозит!'",
+    "Твои настройки: УЛЬТРА НИЗКИЕ (как твоя самооценка)",
+    "Система: работает. Мозг: нет.",
+    "Все готово! Теперь можешь идти за пивом",
+    "Твой ПК издает странные звуки? Это фича!",
+    "Готово! Время играть... или переустанавливать Windows?",
+    "Добро пожаловать в ад! Выбери свой грех:",
+    "- Кринжовые моды",
+    "- Убитый FPS",
+    "- Выжженная видеокарта",
+    "Твоя сборка: 'я сам это собирал' (ошибка)",
+    "Все работает! (пока не тронешь)",
+    "Загрузка завершена! Теперь можно грузить моды...",
+    "Твой CPU: 💯% (это плохо)",
+    "Готово! Наслаждайся пикселями!",
+    "Добро пожаловать в симулятор слабоумия!",
+    "Твоя ОС: кринж. Железо: боль. Настроение: gaming",
+    "Все сломалось! (шучу, все сломалось потом)",
+    "Система: загружена. Проблемы: загружены тоже",
+    "Твоя игра теперь с RTX! (шучу, у тебя GT 210)",
+    "Готово! Время для... ой, все зависло",
+    "Добро пожаловать в клуб 'Я 5 часов настраивал лаунчер'",
+    "Твой ПК: 💸 ДЕНЬГИ НА ВЕТЕР 💸",
+    "Все работает! (на старом ПК в музее)",
+    "Запуск: успешен! FPS: провален! Настроение: ахуенно!",
+    "Добро пожаловать в дикий запад багов и глитчей!",
+    "Твоя сборка: 'оно как-то само'",
+    "Готово! Теперь можешь идти гуглить 'почему все тормозит'",
+    "Система: работает. Нервы: нет.",
+    "Твой FPS: ❤️ ЛЮБОВЬ ❤️ (к слайд-шоу)",
+    "Все сломалось! Ахаха... стоп, это не шутка...",
+    "Добро пожаловать в адскую вечеринку глитчей!",
+    "Твоя видеокарта: 💀 ОТДЫХАЕТ 💀 (навсегда)",
+    "Готово! Наслаждайся... ой, синий экран...",
+    "Сервак запущен, а ты - опущен",
+]
 
 # CurseForge Proxy Configuration
 CURSEFORGE_CONFIG = {
-    "proxy_url": "http://90.151.59.120:8000",  # Убедитесь, что это правильный URL
-    "enabled": True,  # Должно быть True
+    "proxy_url": "http://90.151.59.120:8000",
+    "enabled": True,
     "api_version": "v1",
     "timeout": 10,
     "max_retries": 3
 }
 
+
 def setup_environment():
     """Настройка окружения и загрузка ресурсов"""
     try:
-        # Создаем папку если не существует
         RESOURCE_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Скачиваем недостающие файлы
         for filename, url in RESOURCES.items():
             file_path = RESOURCE_DIR / filename
             if not file_path.exists():
-                # Получаем прямую ссылку на файл
                 download_url = get_yandex_direct_link(url)
                 if not download_url:
                     continue
 
-                # Скачиваем файл
                 response = requests.get(download_url, stream=True)
                 response.raise_for_status()
 
-                # Сохраняем файл
                 with open(file_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
@@ -1099,123 +518,5 @@ def setup_environment():
 
 def get_yandex_direct_link(public_key):
     """Получаем прямую ссылку для скачивания через API Яндекс.Диска"""
-    api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
-    try:
-        response = requests.get(api_url, params={"public_key": public_key}, timeout=30)
-        response.raise_for_status()
-        return response.json().get("href")
-    except Exception as e:
-        logging.error(f"Ошибка получения ссылки: {str(e)}")
-        return None
-
-
-# ============================================================
-# АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ HOSTS (ОБХОД БЛОКИРОВКИ MOJANG)
-# ============================================================
-
-def update_hosts_file():
-    """Автоматически добавляет записи для обхода блокировки Mojang"""
-    hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
-
-    # Записи, которые нужно добавить
-    entries = [
-        "185.229.106.58 piston-meta.mojang.com",
-        "185.229.106.58 launchermeta.mojang.com",
-        "185.229.106.58 sessionserver.mojang.com",
-        "185.229.106.58 minecraft.net",
-        "185.229.106.58 mojang.com"
-    ]
-
-    try:
-        # Проверяем, есть ли права на запись
-        if not os.access(hosts_path, os.W_OK):
-            # Пытаемся получить права через запрос админа
-            try:
-                import sys
-                if sys.platform == "win32":
-                    import ctypes
-                    if ctypes.windll.shell32.IsUserAnAdmin():
-                        print("✅ Запущено от администратора, обновляю hosts...")
-                    else:
-                        print("⚠️ Нет прав администратора! Запусти лаунчер от имени администратора.")
-                        print("   Или добавь записи вручную в C:\\Windows\\System32\\drivers\\etc\\hosts")
-                        return False
-            except:
-                pass
-
-        # Читаем текущий hosts
-        with open(hosts_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # Проверяем, есть ли уже наши записи
-        already_exists = all(entry.split()[1] in content for entry in entries)
-
-        if already_exists:
-            print("✅ Записи для Mojang уже есть в hosts")
-            return True
-
-        # Добавляем записи
-        print("🔄 Добавляю записи в hosts...")
-
-        # Проверяем, есть ли маркер
-        marker = "# YamalPixel Mojang Fix"
-        if marker in content:
-            # Удаляем старые записи YamalPixel
-            lines = content.split('\n')
-            new_lines = []
-            skip = False
-            for line in lines:
-                if marker in line:
-                    skip = True
-                    continue
-                if skip and not line.strip():
-                    skip = False
-                    continue
-                if not skip:
-                    new_lines.append(line)
-            content = '\n'.join(new_lines)
-
-        # Добавляем новые записи
-        with open(hosts_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-            f.write(
-                f"\n\n# YamalPixel Mojang Fix - Добавлено автоматически {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            for entry in entries:
-                f.write(f"{entry}\n")
-            f.write("# Конец записей YamalPixel\n")
-
-        print("✅ Записи успешно добавлены в hosts!")
-        print("   Если не работает - запусти лаунчер от имени администратора")
-        return True
-
-    except PermissionError:
-        print("❌ Нет прав на запись в hosts!")
-        print("   Запусти лаунчер от имени администратора или добавь вручную:")
-        print("\n   Открой файл: C:\\Windows\\System32\\drivers\\etc\\hosts")
-        print("   Добавь строки:")
-        for entry in entries:
-            print(f"   {entry}")
-        return False
-    except Exception as e:
-        print(f"❌ Ошибка обновления hosts: {e}")
-        return False
-
-
-def check_and_fix_hosts():
-    """Проверяет и исправляет hosts при запуске"""
-    try:
-        hosts_path = r"C:\Windows\System32\drivers\etc\hosts"
-
-        # Проверяем доступность Mojang
-        import socket
-        try:
-            socket.gethostbyname("piston-meta.mojang.com")
-            print("✅ Mojang доступен, hosts не требует правки")
-            return True
-        except socket.gaierror:
-            print("⚠️ Mojang недоступен, пробуем исправить hosts...")
-            return update_hosts_file()
-
-    except Exception as e:
-        print(f"⚠️ Ошибка проверки hosts: {e}")
-        return False
+    from Network.Downloader import get_yandex_direct_link_sync
+    return get_yandex_direct_link_sync(public_key)

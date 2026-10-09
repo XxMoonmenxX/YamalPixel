@@ -1,181 +1,359 @@
-## Ui/DownloadProgress.py
-import os
-import threading
-import asyncio
+# Ui/DependencyAnalyzer.py
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QTextEdit, QApplication
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTreeWidget, QTreeWidgetItem, QProgressBar, QMessageBox,
+    QApplication, QHeaderView, QWidget
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMetaObject, Q_ARG
-from PyQt6.QtGui import QFont, QTextCursor
-
-from Network.Downloader import download_single_mod_turbo
-from ConfDir.Configs import CONFIG
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QColor
 
 from Ui.BaseWindow import BaseDialog
 
+import logging
 
-class ModDownloadWorker(QThread):
-    """Поток для загрузки модов"""
-    progress = pyqtSignal(int, int, str)  # current, total, mod_name
-    finished = pyqtSignal(int, int)  # success_count, total
-    log = pyqtSignal(str)
+logger = logging.getLogger("YamalPixel.DependencyAnalyzer")
 
-    def __init__(self, mods_list):
+from Network.DependencyManager import DependencyManager, ModDependency
+from typing import List, Dict, Callable
+
+
+class DependencyAnalyzerWorker(QThread):
+    """Поток для анализа зависимостей"""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+    def __init__(self, mods, minecraft_version, loader):
         super().__init__()
-        self.mods_list = mods_list
-        self.cancelled = False
-
-    def cancel(self):
-        self.cancelled = True
+        self.mods = mods
+        self.minecraft_version = minecraft_version
+        self.loader = loader
+        self.dependency_manager = DependencyManager()
 
     def run(self):
-        total = len(self.mods_list)
-        success_count = 0
+        try:
+            self.progress.emit("Анализ модов...")
 
-        for i, mod in enumerate(self.mods_list):
-            if self.cancelled:
-                self.log.emit("❌ Загрузка отменена")
-                break
+            all_dependencies = []
 
-            self.progress.emit(i, total, mod["file"])
-            self.log.emit(f"⬇️ Загрузка: {mod['file']}")
+            for i, mod in enumerate(self.mods):
+                mod_name = mod.get('name', 'Unknown')
+                mod_source = mod.get('source')
+                mod_id = mod.get('mod_id') or mod.get('project_id')
 
-            try:
-                result = download_single_mod_turbo(mod, CONFIG["minecraft_dir"])
-                if result:
-                    success_count += 1
-                    self.log.emit(f"✅ Успешно: {mod['file']}")
-                else:
-                    self.log.emit(f"❌ Ошибка: {mod['file']}")
-            except Exception as e:
-                self.log.emit(f"💥 Ошибка {mod['file']}: {str(e)}")
+                if not mod_source or not mod_id:
+                    logger.warning(f"⚠️ Мод {mod_name} пропущен: нет source={mod_source} или id={mod_id}")
+                    self.progress.emit(f"⚠️ {mod_name} - нет ID, пропускаем")
+                    continue
 
-        self.finished.emit(success_count, total)
+                self.progress.emit(f"Анализ: {mod_name} ({i + 1}/{len(self.mods)})")
+
+                dependencies = self.dependency_manager.resolve_dependencies_for_mod(
+                    mod, self.minecraft_version, self.loader
+                )
+
+                logger.info(f"Для мода {mod_name} найдено {len(dependencies)} зависимостей")
+                all_dependencies.extend(dependencies)
+
+            # Разделяем на обязательные и опциональные
+            required = []
+            optional = []
+            seen = set()
+
+            for dep in all_dependencies:
+                key = f"{dep.source}:{dep.mod_id or dep.project_id}"
+                if key not in seen:
+                    seen.add(key)
+                    if dep.dependency_type == 'required':
+                        required.append(dep)
+                    elif dep.dependency_type == 'optional':
+                        optional.append(dep)
+
+            result = {
+                'total_mods': len([m for m in self.mods if m.get('mod_id') or m.get('project_id')]),
+                'required_dependencies': required,
+                'optional_dependencies': optional,
+                'all_dependencies': required + optional
+            }
+
+            logger.info(f"Анализ завершен: обязательных={len(required)}, опциональных={len(optional)}")
+            self.finished.emit(result)
+
+        except Exception as e:
+            logger.error(f"Ошибка анализа зависимостей: {e}", exc_info=True)
+            self.error.emit(str(e))
 
 
-class ModDownloadProgressDialog(BaseDialog):
-    """Диалог прогресса загрузки модов"""
+class DependencyAnalyzerDialog(BaseDialog):
+    """Диалог для отображения результатов анализа зависимостей"""
 
-    def __init__(self, parent, mods_list, on_complete=None):
+    def __init__(self, parent, result, tree_widget=None, on_add_callback=None):
         super().__init__(parent)
-        self.mods_list = mods_list
-        self.on_complete = on_complete
-        self.worker = None
+        self.result = result
+        self.tree_widget = tree_widget
+        self.on_add_callback = on_add_callback
+        self._is_closing = False
 
-        self.setWindowTitle("Загрузка модов")
-        self.setFixedSize(500, 400)
-        self.setModal(True)
+        self.setWindowTitle("Результаты анализа зависимостей")
+        self.setMinimumSize(800, 500)
+        # Делаем окно НЕ модальным, чтобы можно было взаимодействовать с основным окном
+        self.setModal(False)
 
         self.setup_ui()
-        self.start_download()
+        self.display_results()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
 
         # Заголовок
-        title = QLabel("📥 Загрузка модов")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #4ECDC4;")
+        title = QLabel("🔍 Результаты анализа зависимостей")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        main_layout.addWidget(title)
 
         # Информация
-        self.info_label = QLabel(f"Всего модов: {len(self.mods_list)}")
+        self.info_label = QLabel()
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.info_label)
+        main_layout.addWidget(self.info_label)
 
-        # Общий прогресс
-        self.total_progress = QProgressBar()
-        self.total_progress.setRange(0, 100)
-        layout.addWidget(self.total_progress)
-
-        # Текущий мод
-        self.current_label = QLabel("Подготовка к загрузке...")
-        self.current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.current_label)
-
-        # Лог
-        log_label = QLabel("📋 Лог загрузки:")
-        log_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(log_label)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 9))
-        self.log_text.setMaximumHeight(200)
-        layout.addWidget(self.log_text)
+        # Tree для отображения зависимостей
+        self.deps_tree = QTreeWidget()
+        self.deps_tree.setHeaderLabels(["Тип", "Название", "Источник", "Статус"])
+        self.deps_tree.setColumnWidth(0, 120)
+        self.deps_tree.setColumnWidth(1, 350)
+        self.deps_tree.setColumnWidth(2, 100)
+        self.deps_tree.setColumnWidth(3, 100)
+        main_layout.addWidget(self.deps_tree)
 
         # Кнопки
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        self.cancel_btn = QPushButton("Отмена")
-        self.cancel_btn.clicked.connect(self.cancel_download)
-        button_layout.addWidget(self.cancel_btn)
+        self.add_button = QPushButton("➕ Добавить обязательные зависимости")
+        self.add_button.clicked.connect(self._add_required_dependencies)
+        button_layout.addWidget(self.add_button)
 
-        self.close_btn = QPushButton("Закрыть")
-        self.close_btn.clicked.connect(self.accept)
-        self.close_btn.setEnabled(False)
-        button_layout.addWidget(self.close_btn)
+        self.close_button = QPushButton("❌ Закрыть")
+        self.close_button.clicked.connect(self.close)
+        button_layout.addWidget(self.close_button)
 
-        layout.addLayout(button_layout)
+        main_layout.addLayout(button_layout)
 
-    def start_download(self):
-        """Запускает загрузку в отдельном потоке"""
-        self.worker = ModDownloadWorker(self.mods_list)
-        self.worker.progress.connect(self.update_progress)
-        self.worker.finished.connect(self.on_download_finished)
-        self.worker.log.connect(self.add_log)
+    def display_results(self):
+        self.deps_tree.clear()
+
+        required_deps = self.result.get('required_dependencies', [])
+        optional_deps = self.result.get('optional_dependencies', [])
+
+        # Добавляем обязательные зависимости
+        for dep in required_deps:
+            item = QTreeWidgetItem()
+            item.setText(0, "🔴 Обязательная")
+            item.setText(1, dep.name)
+            item.setText(2, dep.source.upper())
+            item.setText(3, "❌ Не установлена")
+            item.setData(0, Qt.ItemDataRole.UserRole, dep)
+            # Подсветка
+            item.setForeground(0, QColor("#ff6b6b"))
+            item.setForeground(1, QColor("#ff6b6b"))
+            self.deps_tree.addTopLevelItem(item)
+
+        # Добавляем опциональные зависимости
+        for dep in optional_deps:
+            item = QTreeWidgetItem()
+            item.setText(0, "🟡 Необязательная")
+            item.setText(1, dep.name)
+            item.setText(2, dep.source.upper())
+            item.setText(3, "ℹ️ Опционально")
+            item.setData(0, Qt.ItemDataRole.UserRole, dep)
+            self.deps_tree.addTopLevelItem(item)
+
+        total = self.result.get('total_mods', 0)
+        required = len(required_deps)
+        optional = len(optional_deps)
+
+        self.info_label.setText(
+            f"📊 Проанализировано модов: {total}. "
+            f"Найдено зависимостей: {required + optional} "
+            f"(обязательных: {required}, опциональных: {optional})"
+        )
+
+        self.add_button.setEnabled(required > 0)
+
+    def _add_required_dependencies(self):
+        if not self.tree_widget:
+            QMessageBox.warning(self, "Ошибка", "Не удалось добавить зависимости")
+            return
+
+        # Собираем обязательные зависимости
+        required_deps = []
+        for i in range(self.deps_tree.topLevelItemCount()):
+            item = self.deps_tree.topLevelItem(i)
+            if "Обязательная" in item.text(0):
+                dep = item.data(0, Qt.ItemDataRole.UserRole)
+                if dep:
+                    required_deps.append(dep)
+
+        if not required_deps:
+            QMessageBox.information(self, "Информация", "Нет обязательных зависимостей для добавления")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Добавление зависимостей",
+            f"Добавить {len(required_deps)} обязательных зависимостей в сборку?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        added_count = 0
+        for dep in required_deps:
+            if self._add_dependency_to_tree(dep):
+                added_count += 1
+
+        if added_count > 0:
+            QMessageBox.information(
+                self,
+                "Готово",
+                f"✅ Добавлено {added_count} зависимостей в сборку."
+            )
+            # Обновляем список
+            self.display_results()
+            # Если есть callback
+            if self.on_add_callback:
+                self.on_add_callback(added_count)
+        else:
+            QMessageBox.information(
+                self,
+                "Информация",
+                "Все зависимости уже есть в сборке."
+            )
+
+    def _add_dependency_to_tree(self, dep: ModDependency) -> bool:
+        if not self.tree_widget:
+            return False
+
+        # Проверяем, нет ли уже этого мода
+        for i in range(self.tree_widget.topLevelItemCount()):
+            item = self.tree_widget.topLevelItem(i)
+            if item.text(1) == dep.name:
+                return False
+
+        source_icon = "🌐" if dep.source == "modrinth" else "⚡"
+        mod_data = {
+            'source': dep.source,
+            'name': dep.name,
+            'filename': f"{dep.mod_id or dep.project_id}.jar",
+            'mod_id': dep.mod_id,
+            'project_id': dep.project_id
+        }
+
+        if dep.source == 'modrinth':
+            mod_data['modrinth_id'] = dep.mod_id or dep.project_id
+            mod_data['modrinth_slug'] = dep.mod_id or dep.project_id
+        else:
+            mod_data['curseforge_id'] = dep.mod_id or dep.project_id
+            mod_data['curseforge_slug'] = dep.mod_id or dep.project_id
+
+        # Добавляем в Treeview
+        item = QTreeWidgetItem()
+        item.setText(0, f"{source_icon} {dep.source.capitalize()}")
+        item.setText(1, dep.name)
+        item.setText(2, mod_data['filename'])
+        item.setData(0, Qt.ItemDataRole.UserRole, mod_data)
+        self.tree_widget.addTopLevelItem(item)
+
+        # Добавляем в selected_mods родительского окна
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'selected_mods') and isinstance(parent.selected_mods, list):
+                # Проверяем, нет ли уже
+                exists = False
+                for existing in parent.selected_mods:
+                    if existing.get('name') == dep.name:
+                        exists = True
+                        break
+                if not exists:
+                    parent.selected_mods.append(mod_data)
+                    if hasattr(parent, 'update_selected_list'):
+                        parent.update_selected_list()
+                    logger.info(f"✅ Добавлена зависимость: {dep.name}")
+                return True
+            parent = parent.parent()
+
+        return True
+
+
+class DependencyAnalyzerUI:
+    """UI для анализа и отображения зависимостей"""
+
+    def __init__(self, parent, minecraft_version: str, loader: str, tree_widget=None):
+        self.parent = parent
+        self.minecraft_version = minecraft_version
+        self.loader = loader
+        self.dependency_manager = DependencyManager()
+        self.tree_widget = tree_widget
+        self.on_complete_callback = None
+        self.analyzer_dialog = None
+        self.progress_dialog = None
+
+    def show_analyzer(self, mods: List[Dict], on_complete: Callable = None):
+        """Показывает окно анализа зависимостей"""
+        self.on_complete_callback = on_complete
+
+        # Показываем диалог прогресса
+        self.progress_dialog = QDialog(self.parent)
+        self.progress_dialog.setWindowTitle("Анализ зависимостей")
+        self.progress_dialog.setFixedSize(400, 150)
+        self.progress_dialog.setModal(True)
+
+        layout = QVBoxLayout(self.progress_dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        status_label = QLabel("⏳ Анализ зависимостей...")
+        status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(status_label)
+
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 0)  # Indeterminate
+        layout.addWidget(progress_bar)
+
+        # Запускаем анализ
+        self.worker = DependencyAnalyzerWorker(mods, self.minecraft_version, self.loader)
+        self.worker.progress.connect(status_label.setText)
+        self.worker.finished.connect(lambda r: self._on_analysis_finished(r, self.progress_dialog))
+        self.worker.error.connect(lambda e: self._on_analysis_error(e, self.progress_dialog))
         self.worker.start()
 
-    def update_progress(self, current, total, mod_name):
-        """Обновляет прогресс"""
-        percent = int((current + 1) * 100 / total) if total > 0 else 0
-        self.total_progress.setValue(percent)
-        self.current_label.setText(f"Загрузка: {mod_name} ({current + 1}/{total})")
+        self.progress_dialog.exec()
 
-    def add_log(self, message):
-        """Добавляет сообщение в лог"""
-        self.log_text.append(message)
-        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+    def _on_analysis_finished(self, result, progress_dialog):
+        """Обработка завершения анализа"""
+        progress_dialog.accept()
 
-    def on_download_finished(self, success_count, total):
-        """Обработка завершения загрузки"""
-        self.total_progress.setValue(100)
-        self.cancel_btn.setEnabled(False)
-        self.close_btn.setEnabled(True)
+        # Показываем результаты в отдельном диалоге
+        self.analyzer_dialog = DependencyAnalyzerDialog(
+            self.parent,
+            result,
+            self.tree_widget,
+            self._on_dependencies_added
+        )
+        self.analyzer_dialog.show()
 
-        if success_count == total:
-            self.current_label.setText("✅ Все моды успешно загружены!")
-            self.add_log(f"\n✅ Успешно загружено {success_count} из {total} модов")
-        else:
-            self.current_label.setText(f"⚠️ Загружено {success_count} из {total} модов")
-            self.add_log(f"\n⚠️ Загружено {success_count} из {total} модов")
+        if self.on_complete_callback:
+            self.on_complete_callback(result)
 
-        if self.on_complete:
-            self.on_complete(success_count, total)
+    def _on_analysis_error(self, error_msg, progress_dialog):
+        """Обработка ошибки анализа"""
+        progress_dialog.accept()
+        QMessageBox.critical(self.parent, "Ошибка", f"Не удалось проанализировать зависимости:\n{error_msg}")
 
-    def cancel_download(self):
-        """Отмена загрузки"""
-        if self.worker and self.worker.isRunning():
-            self.worker.cancel()
-            self.worker.terminate()
-            self.worker.wait(1000)
-            self.add_log("❌ Загрузка отменена пользователем")
-            self.current_label.setText("❌ Загрузка отменена")
-            self.cancel_btn.setEnabled(False)
-            self.close_btn.setEnabled(True)
-
-
-def download_mods_turbo_ui(mods_list, parent=None, on_complete=None):
-    """
-    PyQt6 версия функции загрузки модов
-    mods_list: список модов [{"file": "...", "url": "..."}, ...]
-    parent: родительское окно
-    on_complete: callback при завершении (success_count, total)
-    """
-    dialog = ModDownloadProgressDialog(parent, mods_list, on_complete)
-    dialog.exec()
-    return dialog
+    def _on_dependencies_added(self, count):
+        """Обработка добавления зависимостей"""
+        if self.tree_widget and hasattr(self.parent, 'update_selected_list'):
+            self.parent.update_selected_list()

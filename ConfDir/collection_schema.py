@@ -1,7 +1,9 @@
-## ConfDir/collection_schema.py
+## ConfDir/collection_schema.py гы
 """
 Схема JSON файла сборки с поддержкой зависимостей
 """
+
+from typing import Dict
 
 COLLECTION_SCHEMA = {
     "name": "Название сборки",

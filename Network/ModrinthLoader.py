@@ -1,7 +1,9 @@
 ## modrinh_api
 import requests
+from Network.proxy_status import proxy_available, mark_proxy_unavailable
 import json
 import os
+from Core.mod_transaction import safe_target
 import threading
 import urllib.parse
 from typing import List, Dict, Optional
@@ -98,37 +100,23 @@ class ModrinthAPI:
 
     def download_mod(self, project_slug: str, version_id: str, filename: str, mods_dir: str,
                      minecraft_version: str = None, loader: str = None) -> bool:
-        """
-        Скачивание мода с автоматическим обновлением версии если указанная не существует
-        """
-        # Если version_id указан, пробуем скачать с ним
-        print("try1")
-        if version_id and version_id != "latest":
-            logger.info(f"📥 Пробуем скачать {filename} с указанной версией {version_id}")
-            direct_url = self._build_direct_cdn_url(project_slug, version_id, filename)
-
-            if self._download_direct(direct_url, filename, mods_dir):
-                self._notify_proxy_to_cache(project_slug, version_id, filename, direct_url)
-                return True
-
-            logger.warning(f"⚠️ Версия {version_id} не существует, получаем актуальную...")
-
-        # Если версия не указана или указанная не существует, получаем актуальную
-        if minecraft_version and loader:
+        """Use the shared health result; never substitute a pinned version."""
+        pinned = version_id and version_id != 'latest'
+        if not pinned:
+            if not minecraft_version or not loader:
+                return False
             latest = self._get_latest_version_id(project_slug, minecraft_version, loader)
-            if latest:
-                new_version_id, new_filename = latest
-                logger.info(f"🔄 Используем актуальную версию: {new_version_id} -> {new_filename}")
-
-                direct_url = self._build_direct_cdn_url(project_slug, new_version_id, new_filename)
-
-                if self._download_direct(direct_url, new_filename, mods_dir):
-                    self._notify_proxy_to_cache(project_slug, new_version_id, new_filename, direct_url)
-                    return True
-
-        # Пробуем через прокси как fallback
-        logger.warning("⚠️ Прямой CDN недоступен, пробуем через прокси...")
-        return self._download_via_proxy(project_slug, version_id, filename, mods_dir)
+            if not latest:
+                return False
+            version_id, filename = latest
+        if proxy_available(self.proxy_url):
+            if self._download_via_proxy(project_slug, version_id, filename, mods_dir):
+                return True
+        direct_url = self._build_direct_cdn_url(project_slug, version_id, filename)
+        if self._download_direct(direct_url, filename, mods_dir):
+            self._notify_proxy_to_cache(project_slug, version_id, filename, direct_url)
+            return True
+        return self.download_mod_alternative(project_slug, version_id, filename, mods_dir)
 
     def _build_direct_cdn_url(self, project_slug: str, version_id: str, filename: str) -> str:
         encoded_filename = urllib.parse.quote(filename)
@@ -146,7 +134,7 @@ class ModrinthAPI:
             response.raise_for_status()
 
             os.makedirs(mods_dir, exist_ok=True)
-            filepath = os.path.join(mods_dir, filename)
+            filepath = safe_target(mods_dir, filename)
 
             with open(filepath, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -189,7 +177,7 @@ class ModrinthAPI:
                         response.raise_for_status()
 
                         os.makedirs(mods_dir, exist_ok=True)
-                        filepath = os.path.join(mods_dir, filename)
+                        filepath = safe_target(mods_dir, filename)
 
                         with open(filepath, "wb") as f:
                             for chunk in response.iter_content(chunk_size=8192):
@@ -207,7 +195,8 @@ class ModrinthAPI:
             return False
 
     def _notify_proxy_to_cache(self, mod_id: str, file_id: str, filename: str, source_url: str):
-        print ('try4')
+        if not proxy_available(self.proxy_url):
+            return
         def _send_notification():
             try:
                 cache_url = f"{self.proxy_url}/api/v1/cache/request"
@@ -227,6 +216,8 @@ class ModrinthAPI:
         threading.Thread(target=_send_notification, daemon=True).start()
 
     def _download_via_proxy(self, project_slug: str, version_id: str, filename: str, mods_dir: str) -> bool:
+        if not proxy_available(self.proxy_url):
+            return False
         try:
             logger.info(f"🔄 Загрузка через прокси: {filename}")
 
@@ -235,7 +226,7 @@ class ModrinthAPI:
 
             if response.status_code == 200:
                 os.makedirs(mods_dir, exist_ok=True)
-                filepath = os.path.join(mods_dir, filename)
+                filepath = safe_target(mods_dir, filename)
 
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -249,12 +240,18 @@ class ModrinthAPI:
             elif response.status_code == 404:
                 logger.warning(f"⚠️ Файл {filename} не найден на прокси (404)")
             else:
-                logger.error(f"❌ Прокси вернул ошибку: {response.status_code}")
+                if response.status_code >= 500:
+                    mark_proxy_unavailable(self.proxy_url)
+                logger.debug('Proxy returned %s', response.status_code)
 
             return False
 
-        except Exception as e:
-            logger.error(f"❌ Ошибка скачивания через прокси: {e}")
+        except requests.RequestException as exc:
+            mark_proxy_unavailable(self.proxy_url)
+            logger.debug('Proxy download failed: %s', exc)
+            return False
+        except Exception as exc:
+            logger.debug('Proxy file could not be saved: %s', exc)
             return False
 
     def get_mod_versions(self, mod_id: str, minecraft_version: str, loader: str) -> Optional[List[Dict]]:

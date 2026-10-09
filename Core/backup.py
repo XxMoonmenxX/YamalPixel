@@ -2,6 +2,8 @@
 import os
 import shutil
 import zipfile
+import tempfile
+from Core.mod_transaction import safe_filename, safe_target, replace_mods
 from datetime import datetime
 from typing import List, Dict, Optional
 import logging
@@ -40,10 +42,10 @@ class ModsBackupManager:
 
         # Создаём имя бэкапа
         if not backup_name:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             backup_name = f"mods_backup_{timestamp}"
 
-        backup_path = os.path.join(self.backup_dir, f"{backup_name}.zip")
+        backup_path = safe_target(self.backup_dir, f"{backup_name}.zip")
 
         logger.info(f"📦 Создаём бэкап: {backup_name} ({len(mod_files)} модов)")
 
@@ -64,23 +66,38 @@ class ModsBackupManager:
         """
         Восстанавливает бэкап
         """
-        backup_path = os.path.join(self.backup_dir, backup_filename)
+        backup_path = safe_target(self.backup_dir, backup_filename)
         if not os.path.exists(backup_path):
             logger.error(f"❌ Бэкап не найден: {backup_filename}")
             return False
 
-        # Очищаем папку mods
-        self.clear_mods()
-
         try:
-            with zipfile.ZipFile(backup_path, 'r') as zipf:
-                zipf.extractall(self.mods_dir)
-
-            logger.info(f"✅ Бэкап восстановлен: {backup_filename}")
+            with tempfile.TemporaryDirectory(prefix='.mods-restore-', dir=self.minecraft_dir) as staging:
+                prepared = os.path.join(staging, 'mods')
+                os.makedirs(prepared)
+                with zipfile.ZipFile(backup_path) as archive:
+                    if archive.testzip() is not None:
+                        raise ValueError("Повреждённый архив")
+                    for member in archive.infolist():
+                        if member.is_dir():
+                            continue
+                        target = safe_target(prepared, member.filename)
+                        if not member.filename.lower().endswith('.jar'):
+                            raise ValueError("Архив содержит файл, не являющийся модом")
+                        with archive.open(member) as source, open(target, 'wb') as output:
+                            shutil.copyfileobj(source, output)
+                # Keep configuration files outside the backup's JAR-only scope.
+                for entry in os.scandir(self.mods_dir):
+                    if not entry.name.lower().endswith('.jar'):
+                        target = os.path.join(prepared, entry.name)
+                        if entry.is_dir():
+                            shutil.copytree(entry.path, target)
+                        else:
+                            shutil.copy2(entry.path, target)
+                replace_mods(prepared, self.mods_dir, os.path.join(staging, 'previous'))
             return True
-
         except Exception as e:
-            logger.error(f"❌ Ошибка восстановления бэкапа: {e}")
+            logger.error("Ошибка восстановления, текущие моды сохранены: %s", e)
             return False
 
     def clear_mods(self) -> int:
@@ -143,7 +160,7 @@ class ModsBackupManager:
         """
         Удаляет бэкап
         """
-        backup_path = os.path.join(self.backup_dir, backup_filename)
+        backup_path = safe_target(self.backup_dir, backup_filename)
         if os.path.exists(backup_path):
             try:
                 os.remove(backup_path)

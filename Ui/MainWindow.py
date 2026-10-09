@@ -22,11 +22,11 @@ from PyQt6.QtWidgets import (
     QSpinBox, QGroupBox, QScrollArea
 )
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize, QMetaObject, Q_ARG
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize, QMetaObject, Q_ARG, pyqtSlot, QObject
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QPalette, QBrush, QColor, QFontDatabase
 
 # Импорты из проекта
-from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, essential_mods, get_minecraft_version, \
+from ConfDir.Configs import CONFIG, RESOURCE_DIR, RESOURCES, SHADERS_CONFIG, get_minecraft_version, \
     version_configs, messages, CURSEFORGE_CONFIG, set_window_icon, setup_environment, resource_path
 from ConfDir.Versions import version_configs, fabric_supported_versions, neoforge_supported_versions, all_versions, \
     CURRENT_VERSION, quilt_supported_versions, forge_supported_versions, get_all_versions
@@ -36,6 +36,7 @@ from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_c
 
 from Core.run import is_game_running, set_current_collection, get_current_collection
 
+from Network.proxy_status import start_proxy_probe
 from Network.java_checker import check_java_on_startup, check_java_version
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo_sync, download_mods_turbo_ui, TurboDownloader, LauncherCache
@@ -48,7 +49,7 @@ from Network.Downloader import download_shaders_turbo_ui
 from Ui.DependencyAnalyzer import DependencyAnalyzerUI
 from Ui.BaseWindow import BaseMainWindow
 
-import minecraft_launcher_lib
+import MCLIB
 import requests
 
 logger = logging.getLogger("YamalPixel.MainWindow")
@@ -131,7 +132,7 @@ def check_quilt_installed():
     try:
         minecraft_dir = CONFIG["minecraft_dir"]
         versions_dir = os.path.join(minecraft_dir, "versions")
-        installed_versions = minecraft_launcher_lib.utils.get_installed_versions(minecraft_dir)
+        installed_versions = MCLIB.utils.get_installed_versions(minecraft_dir)
         for version in installed_versions:
             if version["id"].startswith("quilt-loader-"):
                 return True
@@ -144,7 +145,7 @@ def install_fabric_silent():
     """Тихая установка Fabric"""
     try:
         print("🔧 Устанавливаем Fabric...")
-        minecraft_launcher_lib.fabric.install_fabric(
+        MCLIB.fabric.install_fabric(
             minecraft_version=CONFIG["version"],
             loader_version=CONFIG["fabric_loader"],
             minecraft_directory=CONFIG["minecraft_dir"],
@@ -160,7 +161,7 @@ def install_quilt_silent():
     """Тихая установка Quilt"""
     try:
         print("🔧 Устанавливаем Quilt...")
-        minecraft_launcher_lib.quilt.install_quilt(
+        MCLIB.quilt.install_quilt(
             minecraft_version=CONFIG["version"],
             loader_version=None,
             minecraft_directory=CONFIG["minecraft_dir"],
@@ -221,6 +222,19 @@ class ServerStatusWorker(QThread):
             self.error.emit(str(e))
 
 
+class BugreportWorker(QThread):
+    ready = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from Core.bugreport import create_bugreport
+            self.ready.emit(create_bugreport())
+        except Exception as exc:
+            logger.exception('Создание Bugreport.txt')
+            self.failed.emit(str(exc))
+
+
 class MessageDialog(QMessageBox):
     """Диалог с поддержкой русского текста"""
 
@@ -262,11 +276,61 @@ class MessageDialog(QMessageBox):
         return dialog.exec()
 
 
+class LaunchWorker(QThread):
+    progress = pyqtSignal(str, str)
+    completed = pyqtSignal(bool)
+
+    def __init__(self, version, username, parent=None):
+        super().__init__(parent)
+        self.version = version
+        self.username = username
+
+    def run(self):
+        from Core.run import run_game_launch
+        try:
+            success = run_game_launch(self.version, self.username, self.progress.emit)
+        except Exception as exc:
+            self.progress.emit('error', str(exc))
+            success = False
+        self.completed.emit(success)
+
+
+class VersionCatalogWorker(QObject):
+    ready = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.thread = None
+        self.cancelled = threading.Event()
+
+    def start(self):
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+
+    def isRunning(self):
+        return self.thread is not None and self.thread.is_alive()
+
+    def requestInterruption(self):
+        self.cancelled.set()
+
+    def run(self):
+        from ConfDir.Versions import refresh_catalog
+        try:
+            result = refresh_catalog()
+            if not self.cancelled.is_set():
+                self.ready.emit(result)
+        except Exception as exc:
+            if not self.cancelled.is_set():
+                self.error.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     """Главное окно лаунчера на PyQt6"""
 
     def __init__(self):
         super().__init__()
+        start_proxy_probe()
 
         # Загружаем шрифты, поддерживающие кириллицу
         self.load_fonts()
@@ -435,6 +499,11 @@ class MainWindow(QMainWindow):
         version_layout.addWidget(self.version_combo)
         version_layout.addStretch()
         card_layout.addLayout(version_layout)
+        self.beta_checkbox = QCheckBox("Показывать бета версии")
+        self.beta_checkbox.setChecked(CONFIG.get('show_beta_versions', False))
+        self.beta_checkbox.setStyleSheet("color: #b5cadb; background: transparent;")
+        self.beta_checkbox.toggled.connect(self.on_beta_changed)
+        card_layout.addWidget(self.beta_checkbox, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # Кнопка запуска
         self.launch_btn = QPushButton("ВОЙТИ В ИГРУ")
@@ -494,6 +563,11 @@ class MainWindow(QMainWindow):
         self.status_label.setFont(QFont("Segoe UI", 11))
         self.status_label.setStyleSheet("background-color: transparent; color: #00ff88;")
         card_layout.addWidget(self.status_label)
+        self.launch_progress = QProgressBar()
+        self.launch_progress.setRange(0, 100)
+        self.launch_progress.setStyleSheet('QProgressBar { background: #102033; color: white; border-radius: 7px; text-align: center; min-height: 18px; } QProgressBar::chunk { background: #4ecdc4; border-radius: 7px; }')
+        self.launch_progress.hide()
+        card_layout.addWidget(self.launch_progress)
 
         content_layout.addStretch()
         content_layout.addWidget(card)
@@ -523,6 +597,11 @@ class MainWindow(QMainWindow):
 
         # Рабочий поток для сетевых операций
         self.worker_thread = None
+        self.launch_worker = None
+        self.catalog_worker = VersionCatalogWorker(self)
+        self.catalog_worker.ready.connect(self.on_catalog_ready)
+        self.catalog_worker.error.connect(self.on_catalog_error)
+        self.catalog_worker.start()
 
         # Проверяем java
         self.check_java_on_startup()
@@ -546,11 +625,13 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=check_thread, daemon=True).start()
 
-    def _show_error_dialog(self, title, message):
-        """Показывает диалог ошибки"""
+    @pyqtSlot(str, str)
+    def _show_error_dialog(self, title: str, message: str):
+        """Показывает диалог ошибки (вызывается из основного потока)"""
         from PyQt6.QtWidgets import QMessageBox
         QMessageBox.critical(self, title, message)
 
+    @pyqtSlot()
     def _show_java_dialog(self):
         """Показывает диалог установки Java (вызывается из основного потока)"""
         from Network.java_checker import JavaCheckDialog
@@ -717,106 +798,84 @@ class MainWindow(QMainWindow):
         self.load_background()
 
     def refresh_versions(self):
-        """Обновляет список версий"""
         current = self.version_combo.currentText()
+        selected = current or getattr(self, '_saved_version', '')
+        items = get_all_versions(CONFIG.get('show_beta_versions', False))
+        self.version_combo.blockSignals(True)
         self.version_combo.clear()
-        all_versions = get_all_versions()
-        self.version_combo.addItems(all_versions)
-        if current in all_versions:
-            self.version_combo.setCurrentText(current)
+        self.version_combo.addItems(items)
+        if selected in items:
+            self.version_combo.setCurrentText(selected)
+        self.version_combo.blockSignals(False)
+
+    @pyqtSlot(bool)
+    def on_beta_changed(self, checked):
+        CONFIG['show_beta_versions'] = checked
+        self.refresh_versions()
+
+    @pyqtSlot(list)
+    def on_catalog_ready(self, failed_loaders):
+        self.refresh_versions()
+        if failed_loaders:
+            self.status_label.setText('Версии обновлены; временно недоступны: ' + ', '.join(failed_loaders))
+        elif not (self.launch_worker and self.launch_worker.isRunning()):
+            self.status_label.setText('Каталог версий обновлён')
+
+    @pyqtSlot(str)
+    def on_catalog_error(self, message):
+        self.status_label.setText('Нет связи с каталогом — доступны сохранённые версии')
+        logger.warning('Обновление каталога: %s', message)
 
     def on_version_changed(self, version):
-        """Обработчик смены версии"""
-        print(f"Выбрана версия: {version}")
+        pass
 
     def launch_game(self):
-        """Запуск игры"""
-        username = self.username_input.text().strip()
-        if not username or username == "Введите никнейм":
-            MessageDialog.show_warning(self, "Ошибка", "Введите корректное имя пользователя!")
-            return
-
-        # Проверяем валидацию имени
-        is_valid, error_msg = self.validate_username(username)
-        if not is_valid:
-            MessageDialog.show_warning(self, "Ошибка", error_msg)
-            return
-
-        selected_version = self.version_combo.currentText()
-
-        # Блокируем кнопку
-        self.launch_btn.setEnabled(False)
-
-        # Запускаем в отдельном потоке
-        def launch_thread():
-            try:
-                self.run_game_launch(selected_version, username)
-            finally:
-                self.launch_btn.setEnabled(True)
-
-        threading.Thread(target=launch_thread, daemon=True).start()
+        self.run_game_launch(self.version_combo.currentText(), self.username_input.text().strip())
 
     def run_game_launch(self, selected_version, username):
-        """Запускает игру"""
-        from Core.run import run_game_launch as core_launch, is_game_running
-
-        # Проверяем, не запущена ли уже игра
-        if is_game_running():
-            MessageDialog.show_warning(self, "Предупреждение", "Игра уже запущена!")
+        if self.launch_worker and self.launch_worker.isRunning():
             return
-
-        # Блокируем кнопку запуска
+        valid, message = self.validate_username(username)
+        if not valid:
+            MessageDialog.show_warning(self, 'Ошибка', message)
+            return
+        if is_game_running():
+            MessageDialog.show_warning(self, 'Предупреждение', 'Игра уже запущена!')
+            return
         self.launch_btn.setEnabled(False)
+        self.launch_progress.setRange(0, 0)
+        self.launch_progress.show()
         self.online_btn.setEnabled(False)
-        self.status_label.setText("Запуск игры...")
-        self.status_label.setStyleSheet("background-color: transparent; color: #ffaa00;")
+        self.version_combo.setEnabled(False)
+        self.beta_checkbox.setEnabled(False)
+        self.status_label.setText('Подготовка к запуску…')
+        self.launch_worker = LaunchWorker(selected_version, username, self)
+        self.launch_worker.progress.connect(self.on_launch_progress)
+        self.launch_worker.completed.connect(self.on_launch_completed)
+        self.launch_worker.start()
 
-        # Переменная для хранения результата
-        launch_success = False
+    @pyqtSlot(str, str)
+    def on_launch_progress(self, kind, message):
+        if kind == 'progress':
+            self.launch_progress.setRange(0, 100)
+            self.launch_progress.setValue(max(0, min(100, int(message))))
+            return
+        self.status_label.setText(message)
+        color = '#ff7272' if kind == 'error' else '#65dec9' if kind == 'success' else '#f0c875'
+        self.status_label.setStyleSheet(f'background: transparent; color: {color};')
+        if kind == 'error':
+            self._show_error_dialog('Ошибка запуска', message)
 
-        def callback(event_type, message):
-            nonlocal launch_success
+    @pyqtSlot(bool)
+    def on_launch_completed(self, success):
+        self.launch_progress.hide()
+        self.launch_btn.setEnabled(True)
+        self.online_btn.setEnabled(True)
+        self.version_combo.setEnabled(True)
+        self.beta_checkbox.setEnabled(True)
 
-            if event_type == "status":
-                self.status_label.setText(message)
-            elif event_type == "success":
-                launch_success = True
-                self.status_label.setText("✅ " + message)
-                self.status_label.setStyleSheet("background-color: transparent; color: #00ff88;")
-                print(f"✅ Игра успешно запущена: {message}")
-            elif event_type == "error":
-                launch_success = False
-                self.status_label.setText("❌ " + message)
-                self.status_label.setStyleSheet("background-color: transparent; color: #ff4444;")
-                self._show_error_dialog("Ошибка запуска", message)
-
-        def launch_thread():
-            try:
-                result = core_launch(selected_version, username, callback)
-                if not result and not launch_success:
-                    QMetaObject.invokeMethod(
-                        self, "_show_error_dialog",
-                        Qt.ConnectionType.QueuedConnection,
-                        Q_ARG(str, "Ошибка запуска"),
-                        Q_ARG(str, "Не удалось запустить игру. Проверьте логи.")
-                    )
-            finally:
-                QMetaObject.invokeMethod(
-                    self.launch_btn, "setEnabled",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(bool, True)
-                )
-                QMetaObject.invokeMethod(
-                    self.online_btn, "setEnabled",
-                    Qt.ConnectionType.QueuedConnection,
-                    Q_ARG(bool, True)
-                )
-
-        threading.Thread(target=launch_thread, daemon=True).start()
-
-
+    @pyqtSlot(str, str)
     def _show_info_dialog(self, title, message):
-        """Показывает информационный диалог (вызывается из основного потока)"""
         MessageDialog.show_info(self, title, message)
 
     def validate_username(self, username):
@@ -874,6 +933,8 @@ class MainWindow(QMainWindow):
             from pygame import mixer
             mixer.init()
             music_path = RESOURCE_DIR / "menu_song.mp3"
+            if not music_path.exists():
+                music_path = Path(resource_path('YamalPixelRes/menu_song.mp3'))
             if music_path.exists():
                 mixer.music.load(str(music_path))
                 mixer.music.set_volume(0.1)
@@ -984,6 +1045,8 @@ class MainWindow(QMainWindow):
         # Диагностика
         diagnostic_action = tools_menu.addAction("Диагностика проблем")
         diagnostic_action.triggered.connect(self.show_diagnostic)
+        self.bugreport_action = tools_menu.addAction("Сохранить полный Bugreport.txt")
+        self.bugreport_action.triggered.connect(self.save_bugreport)
 
         # Фон
         bg_action = tools_menu.addAction("Выбрать фон")
@@ -1001,6 +1064,15 @@ class MainWindow(QMainWindow):
 
         update_action = help_menu.addAction("Проверить обновления")
         update_action.triggered.connect(self.check_updates)
+
+        guide_menu = menubar.addMenu('Гайд')
+        guide_action = guide_menu.addAction('Открыть гайд по лаунчеру')
+        guide_action.setShortcut('F1')
+        guide_action.triggered.connect(self.show_guide)
+
+    def show_guide(self):
+        from Ui.LauncherGuide import LauncherGuide
+        LauncherGuide(self).exec()
 
     def download_shaders(self):
         """Открывает менеджер шейдеров"""
@@ -1319,6 +1391,7 @@ class MainWindow(QMainWindow):
         minecraft_dir = CONFIG["minecraft_dir"]
         mods_dir = os.path.join(minecraft_dir, "mods")
         disabled_dir = os.path.join(minecraft_dir, "mods_disabled_temp")
+        CONFIG["launch_without_mods_next"] = True
 
         if os.path.exists(mods_dir) and os.listdir(mods_dir):
             backup_path = create_backup(mods_dir, "mods_before_clean_launch")
@@ -1413,7 +1486,7 @@ class MainWindow(QMainWindow):
                     self.status_updated.emit("Установка Minecraft...")
                     self.progress_updated.emit(70)
 
-                    minecraft_launcher_lib.install.install_minecraft_version(
+                    MCLIB.install.install_minecraft_version(
                         version=CONFIG["version"],
                         minecraft_directory=minecraft_dir
                     )
@@ -1421,7 +1494,7 @@ class MainWindow(QMainWindow):
                     self.status_updated.emit("Установка Fabric...")
                     self.progress_updated.emit(85)
 
-                    minecraft_launcher_lib.fabric.install_fabric(
+                    MCLIB.fabric.install_fabric(
                         minecraft_version=CONFIG["version"],
                         loader_version=CONFIG["fabric_loader"],
                         minecraft_directory=minecraft_dir,
@@ -1430,34 +1503,13 @@ class MainWindow(QMainWindow):
                     self.status_updated.emit("Установка модов...")
                     self.progress_updated.emit(95)
 
-                    base_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?"
-
-                    for mod in essential_mods:
-                        try:
-                            mods_dir_path = os.path.join(minecraft_dir, "mods")
-                            mod_path = os.path.join(mods_dir_path, mod["file"])
-
-                            params = {"public_key": mod["url"]}
-                            response = requests.get(base_url, params=params)
-                            response.raise_for_status()
-                            download_url = response.json().get("href")
-
-                            if download_url:
-                                with open(mod_path, "wb") as f:
-                                    dl_response = requests.get(download_url, stream=True)
-                                    dl_response.raise_for_status()
-                                    for chunk in dl_response.iter_content(chunk_size=8192):
-                                        f.write(chunk)
-
-                                if mod["file"].endswith(".zip"):
-                                    try:
-                                        with zipfile.ZipFile(mod_path, "r") as zip_file:
-                                            zip_file.extractall(path=mods_dir_path)
-                                    except Exception as e:
-                                        print(f"Ошибка распаковки {mod['file']}: {e}")
-
-                        except Exception as e:
-                            print(f"Ошибка загрузки мода {mod['file']}: {e}")
+                    from Core.run import switch_mods_for_version
+                    def archive_progress(kind, message):
+                        if kind == 'progress':
+                            self.progress_updated.emit(85 + int(int(message) * 0.15))
+                        else:
+                            self.status_updated.emit(message)
+                    switch_mods_for_version('YamalPixel', archive_progress, raise_on_error=True)
 
                     self.progress_updated.emit(100)
                     self.status_updated.emit("Готово!")
@@ -1557,6 +1609,17 @@ class MainWindow(QMainWindow):
 
         dialog = ReinstallDialog(self)
         dialog.exec()
+
+    def save_bugreport(self):
+        if getattr(self, 'bugreport_worker', None) and self.bugreport_worker.isRunning():
+            return
+        self.bugreport_action.setEnabled(False)
+        self.bugreport_worker = BugreportWorker(self)
+        self.bugreport_worker.ready.connect(lambda path: MessageDialog.show_info(
+            self, 'Bugreport.txt', f'Полный отчёт сохранён:\n{path}'))
+        self.bugreport_worker.failed.connect(lambda error: MessageDialog.show_error(self, 'Bugreport.txt', error))
+        self.bugreport_worker.finished.connect(lambda: self.bugreport_action.setEnabled(True))
+        self.bugreport_worker.start()
 
     def show_diagnostic(self):
         """Показывает окно диагностики"""
@@ -1870,7 +1933,10 @@ class MainWindow(QMainWindow):
         if "username" in data:
             self.username_input.setText(data["username"])
 
+        if "show_beta_versions" in data:
+            self.beta_checkbox.setChecked(data["show_beta_versions"])
         if "version" in data:
+            self._saved_version = data["version"]
             idx = self.version_combo.findText(data["version"])
             if idx >= 0:
                 self.version_combo.setCurrentIndex(idx)
@@ -1900,6 +1966,7 @@ class MainWindow(QMainWindow):
             session_data["username"] = username
 
         session_data["version"] = self.version_combo.currentText()
+        session_data["show_beta_versions"] = self.beta_checkbox.isChecked()
         session_data["memory"] = CONFIG.get("jvm_memory", "-Xmx4G")
         session_data["fullscreen"] = self.fullscreen_checkbox.isChecked()
         session_data["music"] = self.music_checkbox.isChecked()
@@ -1936,6 +2003,19 @@ class MainWindow(QMainWindow):
         """Закрытие окна - безопасная версия"""
         from Core.run import is_game_running, GAME_PROCESS
 
+        if self.launch_worker and self.launch_worker.isRunning():
+            MessageDialog.show_info(self, 'Подготовка игры', 'Дождитесь завершения подготовки игры перед закрытием лаунчера.')
+            event.ignore()
+            return
+        if getattr(self, 'bugreport_worker', None) and self.bugreport_worker.isRunning():
+            MessageDialog.show_info(self, 'Bugreport.txt', 'Дождитесь сохранения полного отчёта.')
+            event.ignore()
+            return
+        if self.catalog_worker.isRunning():
+            self.catalog_worker.requestInterruption()
+            self.catalog_worker.setParent(None)
+            # Keep the worker alive until its bounded metadata requests finish.
+            QApplication.instance()._catalog_worker = self.catalog_worker
         try:
             if is_game_running():
                 reply = QMessageBox.question(
@@ -1978,7 +2058,7 @@ class MainWindow(QMainWindow):
                 pass
 
         event.accept()
-        sys.exit(0)
+        # QApplication quits when the last window closes; Minecraft stays alive.
 
 
 def run_main_window():

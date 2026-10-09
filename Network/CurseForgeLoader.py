@@ -1,7 +1,9 @@
 # Network/CurseForgeLoader.py
 import requests
+from Network.proxy_status import proxy_available, mark_proxy_unavailable
 import json
 import os
+from Core.mod_transaction import safe_target
 import threading
 import urllib.parse
 from typing import List, Dict, Optional, Any
@@ -37,6 +39,8 @@ class CurseForgeAPI:
 
     def _make_proxy_request(self, method: str, endpoint: str, **kwargs) -> Optional[requests.Response]:
         """Универсальный метод для запросов к прокси"""
+        if not proxy_available(self.proxy_url):
+            return None
         url = f"{self.proxy_url}{endpoint}"
 
         try:
@@ -49,10 +53,13 @@ class CurseForgeAPI:
             if response.status_code == 200:
                 return response
             else:
+                if response.status_code >= 500:
+                    mark_proxy_unavailable(self.proxy_url)
                 logger.debug(f"Прокси вернул {response.status_code} для {endpoint}")
                 return None
 
-        except requests.exceptions.ConnectionError:
+        except requests.RequestException:
+            mark_proxy_unavailable(self.proxy_url)
             logger.debug(f"🔌 Не удалось подключиться к прокси: {self.proxy_url}")
             return None
         except Exception as e:
@@ -60,21 +67,7 @@ class CurseForgeAPI:
             return None
 
     def test_connection(self) -> bool:
-        """Проверка соединения с прокси-сервером"""
-        try:
-            health_response = self._make_proxy_request('GET', '/api/v1/health')
-            if not health_response:
-                return False
-
-            ping_response = self._make_proxy_request('GET', '/api/v1/curseforge/ping')
-            if ping_response and ping_response.status_code == 200:
-                data = ping_response.json()
-                return data.get("success", False)
-            return False
-
-        except Exception as e:
-            logger.error(f"Ошибка проверки соединения: {e}")
-            return False
+        return proxy_available(self.proxy_url)
 
     def search_mods(self, query: str, minecraft_version: str, loader: str, limit: int = 30) -> Optional[Dict]:
         """Поиск модов на CurseForge"""
@@ -267,20 +260,14 @@ class CurseForgeAPI:
         return []
 
     def download_mod(self, mod_id: str, version_id: str, filename: str, destination_dir: str) -> bool:
-        """Скачивание мода с приоритетом прямого источника"""
-        logger.info(f"📥 Начинаем скачивание мода: {filename}")
-
-        # 1. ПРЯМОЙ ИСТОЧНИК: Пробуем скачать с CurseForge CDN напрямую
+        if proxy_available(self.proxy_url):
+            if self._download_via_proxy(mod_id, version_id, filename, destination_dir):
+                return True
         direct_url = self._build_direct_cdn_url(version_id, filename)
-
         if self._download_direct(direct_url, filename, destination_dir):
-            logger.info(f"✅ Файл {filename} скачан напрямую с CDN")
             self._notify_proxy_to_cache(mod_id, version_id, filename, direct_url)
             return True
-
-        # 2. ПРОКСИ (Fallback)
-        logger.warning(f"⚠️ Прямой источник недоступен, пробуем через прокси...")
-        return self._download_via_proxy(mod_id, version_id, filename, destination_dir)
+        return False
 
     def _build_direct_cdn_url(self, file_id: str, filename: str) -> str:
         """Формирование прямой ссылки на CurseForge CDN"""
@@ -300,7 +287,7 @@ class CurseForgeAPI:
 
             if response.status_code == 200:
                 os.makedirs(destination_dir, exist_ok=True)
-                filepath = os.path.join(destination_dir, filename)
+                filepath = safe_target(destination_dir, filename)
 
                 with open(filepath, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -321,6 +308,8 @@ class CurseForgeAPI:
 
     def _notify_proxy_to_cache(self, mod_id: str, file_id: str, filename: str, source_url: str):
         """Уведомление прокси о необходимости кэширования"""
+        if not proxy_available(self.proxy_url):
+            return
         def _send_notification():
             try:
                 cache_url = f"{self.proxy_url}/api/v1/cache/request"
@@ -363,7 +352,7 @@ class CurseForgeAPI:
             file_response = self.session.get(download_url, stream=True, timeout=60)
             file_response.raise_for_status()
 
-            destination_path = os.path.join(destination_dir, filename)
+            destination_path = safe_target(destination_dir, filename)
             with open(destination_path, 'wb') as f:
                 for chunk in file_response.iter_content(chunk_size=8192):
                     if chunk:
@@ -371,8 +360,13 @@ class CurseForgeAPI:
 
             return os.path.exists(destination_path) and os.path.getsize(destination_path) > 1000
 
-        except Exception as e:
-            logger.error(f"Ошибка скачивания с прокси: {e}")
+        except requests.RequestException as exc:
+            if locals().get('download_url', '').startswith(self.proxy_url + '/'):
+                mark_proxy_unavailable(self.proxy_url)
+            logger.debug('Proxy transfer failed: %s', exc)
+            return False
+        except Exception as exc:
+            logger.debug('Proxy file could not be saved: %s', exc)
             return False
 
     def get_supported_loaders(self, minecraft_version: str) -> List[str]:

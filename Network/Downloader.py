@@ -1,11 +1,13 @@
 # Network/Downloader.py
 import os
+from Network.proxy_status import proxy_available, mark_proxy_unavailable
 import time
 import hashlib
 import requests
 import asyncio
 import logging
 import zipfile
+from Core.mod_transaction import safe_target
 from pathlib import Path
 from ConfDir.Configs import API_KEY
 import aiohttp
@@ -82,55 +84,19 @@ class TurboDownloader:
             self._session = None
 
     async def get_turbo_link(self, public_key):
-        if public_key in self.cache:
-            return self.cache[public_key]
-
-        api_url = "https://cloud-api.yandex.net/v1/disk/public/resources/download"
-        try:
-            async with self.session.get(api_url, params={"public_key": public_key}) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    direct_link = data.get("href")
-                    self.cache[public_key] = direct_link
-                    return direct_link
-                else:
-                    logger.error(f"Ошибка API Яндекс: {response.status}")
-                    return None
-        except asyncio.TimeoutError:
-            logger.error("Таймаут получения ссылки Яндекс")
-            return None
-        except Exception as e:
-            logger.error(f"Ошибка получения ссылки: {e}")
-            return None
+        cached = self.cache.get(public_key)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+        link = await asyncio.to_thread(get_yandex_direct_link_sync, public_key)
+        if link:
+            self.cache[public_key] = (time.monotonic() + 60, link)
+        return link
 
     async def download_file_async(self, url, file_path, progress_callback=None):
-        try:
-            async with self.session.get(url) as response:
-                if response.status != 200:
-                    raise Exception(f"HTTP {response.status}")
-
-                total_size = int(response.headers.get("content-length", 0))
-
-                with open(file_path, "wb") as f:
-                    downloaded = 0
-                    async for chunk in response.content.iter_chunked(8192 * 8):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback and total_size > 0:
-                            progress_callback(downloaded, total_size)
-
-                return True
-        except Exception as e:
-            logger.error(f"Ошибка загрузки {url}: {e}")
-            return False
+        return await asyncio.to_thread(download_file_sync, url, str(file_path), progress_callback)
 
     def download_file_sync(self, url, file_path, progress_callback=None):
-        try:
-            return asyncio.run(
-                self.download_file_async(url, file_path, progress_callback)
-            )
-        finally:
-            asyncio.run(self.cleanup())
+        return download_file_sync(url, str(file_path), progress_callback)
 
 
 def get_yandex_direct_link_sync(public_key):
@@ -139,41 +105,64 @@ def get_yandex_direct_link_sync(public_key):
     try:
         response = requests.get(api_url, params={"public_key": public_key}, timeout=30)
         response.raise_for_status()
-        return response.json().get("href")
+        link = response.json().get("href")
+        if not isinstance(link, str) or not link.startswith(('https://', 'http://')):
+            raise ValueError('API Яндекс Диска не вернул ссылку на файл')
+        return link
     except Exception as e:
         logger.error(f"Ошибка получения ссылки: {e}")
         return None
 
 
 def download_file_sync(url, filepath, progress_callback=None):
-    """Синхронное скачивание файла с прогрессом"""
+    temporary = filepath + '.part'
     try:
-        response = requests.get(url, stream=True, timeout=60)
-        response.raise_for_status()
-
-        total_size = int(response.headers.get('content-length', 0))
-
-        with open(filepath, 'wb') as f:
+        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+        with requests.get(url, stream=True, timeout=60, headers={'Accept-Encoding': 'identity'}) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+            # requests decodes HTTP compression; Content-Length describes encoded bytes.
+            if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
+                total_size = 0
             downloaded = 0
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if progress_callback and total_size > 0:
-                        progress_callback(downloaded, total_size)
-
-        if os.path.getsize(filepath) > 1000:
-            return True
-        else:
-            if os.path.exists(filepath):
-                os.remove(filepath)
-            return False
-
-    except Exception as e:
-        logger.error(f"Ошибка скачивания {url}: {e}")
-        if os.path.exists(filepath):
-            os.remove(filepath)
+            with open(temporary, 'wb') as output:
+                for chunk in response.iter_content(8192):
+                    if chunk:
+                        output.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size:
+                            progress_callback(downloaded, total_size)
+            if downloaded == 0 or (total_size and downloaded != total_size):
+                raise ValueError('Неполная загрузка')
+        if filepath.lower().endswith(('.jar', '.zip')):
+            with zipfile.ZipFile(temporary) as archive:
+                if archive.testzip() is not None:
+                    raise ValueError('Повреждённый архив')
+        os.replace(temporary, filepath)
+        return True
+    except Exception as exc:
+        logger.error('Ошибка скачивания %s: %s', url, exc)
         return False
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+
+def download_yandex_file_sync(public_url, filepath, source='yandex', progress_callback=None):
+    if progress_callback is None and proxy_available() and download_through_proxy(public_url, filepath, source):
+        return True
+    public_url = public_url.strip()
+    for attempt in range(2):
+        direct_link = get_yandex_direct_link_sync(public_url)
+        success = (download_file_sync(direct_link, filepath, progress_callback) if progress_callback
+                   else download_file_sync(direct_link, filepath)) if direct_link else False
+        if success:
+            return True
+        if attempt == 0:
+            logger.info('Повторная попытка Яндекс Диска со свежей ссылкой: %s', public_url)
+            time.sleep(0.3)
+    logger.error('Не удалось скачать файл Яндекс Диска: %s', public_url)
+    return False
 
 
 def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", minecraft_version=None, loader=None):
@@ -195,17 +184,18 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
 
         mods_dir = os.path.join(minecraft_dir, "mods")
         os.makedirs(mods_dir, exist_ok=True)
-        file_path = os.path.join(mods_dir, filename)
+        file_path = safe_target(mods_dir, filename)
 
         # 1. Проверяем локальный кэш
         if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
             print(f"✅ Мод уже есть: {filename}")
-            return True
+            if not file_path.lower().endswith(('.jar', '.zip')) or zipfile.is_zipfile(file_path):
+                return True
 
         # 2. Пробуем через прокси
-        use_proxy = CONFIG.get("use_proxy_for_downloads", True)
+        use_proxy = proxy_available()
 
-        if use_proxy:
+        if use_proxy and source == "local":
             url = mod_info.get('url') or mod_info.get('download_url') or mod_info.get('direct_link')
 
             if url:
@@ -242,12 +232,7 @@ def _download_from_yandex(mod_info, file_path, mods_dir):
             print(f"❌ Нет URL для Яндекс.Диска")
             return False
 
-        direct_link = get_yandex_direct_link_sync(url)
-        if not direct_link:
-            print(f"❌ Не удалось получить прямую ссылку")
-            return False
-
-        success = download_file_sync(direct_link, file_path)
+        success = download_yandex_file_sync(url, file_path, 'yandex')
 
         if success and file_path.endswith(".zip"):
             try:
@@ -266,8 +251,8 @@ def _download_from_yandex(mod_info, file_path, mods_dir):
 
 
 def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=None, loader=None):
-    """Прямая загрузка с Modrinth"""
-    print(f"🔄 Прямая загрузка Modrinth")
+    """Загрузка с Modrinth"""
+    print(f"🔄 Загрузка Modrinth")
     try:
         from Network.ModrinthLoader import ModrinthAPI
 
@@ -284,7 +269,7 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
         mc_version = minecraft_version or mod_info.get('minecraft_version', '1.20.1')
         loader_type = loader or mod_info.get('loader', 'fabric')
 
-        print(f"🔄 Прямая загрузка Modrinth: {mod_id} для {mc_version}/{loader_type}")
+        print(f"🔄 Загрузка Modrinth: {mod_id} для {mc_version}/{loader_type}")
 
         # Передаём minecraft_version и loader в download_mod
         success = api.download_mod(
@@ -297,9 +282,11 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
         )
 
         if success:
-            print(f"✅ Прямая загрузка Modrinth успешна: {filename}")
+            print(f"✅ Загрузка Modrinth успешна: {filename}")
             return True
 
+        if mod_info.get("version_id"):
+            return False
         # Пробуем альтернативный метод
         print(f"🔄 Пробуем альтернативную загрузку...")
         from Network.Downloader import download_file_sync
@@ -312,7 +299,7 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
 
 
 def _download_from_curseforge(mod_info, file_path, mods_dir):
-    """Прямая загрузка с CurseForge"""
+    """Загрузка с CurseForge"""
     try:
         from Network.CurseForgeLoader import CurseForgeAPI
         from ConfDir.Configs import CURSEFORGE_CONFIG
@@ -329,27 +316,23 @@ def _download_from_curseforge(mod_info, file_path, mods_dir):
         minecraft_version = mod_info.get('minecraft_version', '1.20.1')
         loader = mod_info.get('loader', 'fabric')
 
-        print(f"🔄 Прямая загрузка CurseForge: {mod_id} для {minecraft_version}/{loader}")
+        print(f"🔄 Загрузка CurseForge: {mod_id} для {minecraft_version}/{loader}")
 
-        # Получаем версии
-        versions = api.get_mod_versions(
-            mod_id=str(mod_id),
-            minecraft_version=minecraft_version,
-            loader=loader
-        )
-
-        if not versions:
-            print(f"❌ Нет совместимых версий для {mod_id}")
-            return False
-
-        version_info = versions[0]
-        version_id = version_info['id']
+        pinned = mod_info.get('version_id') or mod_info.get('file_id')
+        if pinned:
+            # The stored ID and filename are enough to use CurseForge's public CDN.
+            version_id = pinned
+        else:
+            versions = api.get_mod_versions(str(mod_id), minecraft_version, loader)
+            if not versions:
+                return False
+            version_id = versions[0]['id']
 
         # Скачиваем через метод CurseForgeAPI
         success = api.download_mod(str(mod_id), version_id, filename, mods_dir)
 
         if success:
-            print(f"✅ Прямая загрузка CurseForge успешна: {filename}")
+            print(f"✅ Загрузка CurseForge успешна: {filename}")
             return True
 
         return False
@@ -360,54 +343,15 @@ def _download_from_curseforge(mod_info, file_path, mods_dir):
 
 
 def _download_shader(mod_info, file_path):
-    """Прямая загрузка шейдера"""
-    try:
-        url = mod_info.get('url')
-        if not url:
-            return False
-
-        direct_link = get_yandex_direct_link_sync(url)
-        if not direct_link:
-            return False
-
-        return download_file_sync(direct_link, file_path)
-
-    except Exception as e:
-        print(f"❌ Ошибка загрузки шейдера: {e}")
-        return False
+    url = mod_info.get('url')
+    return bool(url and download_yandex_file_sync(url, file_path, 'shader'))
 
 
 def download_single_mod_turbo(mod_info, minecraft_dir):
-    """Асинхронная версия (для совместимости)"""
-    downloader = TurboDownloader()
-    try:
-        direct_link = asyncio.run(downloader.get_turbo_link(mod_info["url"]))
-        if not direct_link:
-            return False
-
-        mods_dir = os.path.join(minecraft_dir, "mods")
-        os.makedirs(mods_dir, exist_ok=True)
-        file_path = os.path.join(mods_dir, mod_info["file"])
-
-        success = downloader.download_file_sync(direct_link, file_path)
-
-        if success and mod_info["file"].endswith(".zip"):
-            try:
-                with zipfile.ZipFile(file_path, "r") as zip_ref:
-                    zip_ref.extractall(mods_dir)
-            except:
-                pass
-
-        asyncio.run(downloader.cleanup())
-        return success
-
-    except Exception as e:
-        logger.error(f"Ошибка загрузки мода {mod_info['file']}: {e}")
-        try:
-            asyncio.run(downloader.cleanup())
-        except:
-            pass
-        return False
+    """Compatibility entry point using the same route as the UI downloader."""
+    return download_single_mod_turbo_sync(mod_info, minecraft_dir, source=mod_info.get('source', 'yandex'),
+                                          minecraft_version=mod_info.get('minecraft_version'),
+                                          loader=mod_info.get('loader'))
 
 
 class ModDownloadWorker(QThread):
@@ -630,25 +574,14 @@ def download_shaders_turbo_ui(shaders_list, parent=None):
                 self.log.emit(f"⬇️ Загрузка: {shader['name']}")
 
                 try:
-                    direct_link = get_yandex_direct_link_sync(shader["url"])
-                    if not direct_link:
-                        self.log.emit(f"❌ Не удалось получить ссылку: {shader['name']}")
-                        continue
-
-                    shader_path = os.path.join(shaders_dir, shader["file"])
-                    success = download_file_sync(direct_link, shader_path)
+                    shader_path = safe_target(shaders_dir, shader['file'])
+                    success = download_yandex_file_sync(shader['url'], shader_path, 'shader')
 
                     if success:
                         success_count += 1
                         self.log.emit(f"✅ Успешно: {shader['name']}")
 
-                        if shader["file"].endswith(".zip"):
-                            try:
-                                with zipfile.ZipFile(shader_path, "r") as zip_ref:
-                                    zip_ref.extractall(shaders_dir)
-                                self.log.emit(f"📦 Распакован: {shader['name']}")
-                            except Exception as e:
-                                self.log.emit(f"⚠️ Ошибка распаковки {shader['name']}: {e}")
+                        # Shader packs are loaded directly from their ZIP files.
                     else:
                         self.log.emit(f"❌ Ошибка: {shader['name']}")
 
@@ -803,6 +736,8 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
     Универсальная загрузка файла через прокси-сервер
     source: "yandex", "curseforge", "modrinth", "shader", "unknown"
     """
+    if not proxy_available():
+        return False
     try:
         from ConfDir.Configs import CURSEFORGE_CONFIG
         import requests
@@ -815,7 +750,7 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
             "url": url,
             "filename": os.path.basename(filepath),
             "source": source,
-            "file_type": "mod"
+            "file_type": "shader" if source == "shader" else "mod"
         }
 
         # Для Modrinth добавляем дополнительную информацию
@@ -840,35 +775,34 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
 
         if response.status_code == 200:
             content = response.content
-
-            # Проверяем, что это не JSON ошибка
-            if len(content) > 100:
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        print(f"❌ Прокси: {error_data['error']}")
-                        return False
-                except:
-                    # Это файл, а не JSON
-                    pass
-
-            # Сохраняем
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            with open(filepath, 'wb') as f:
-                f.write(content)
-
-            file_size = os.path.getsize(filepath)
-            if file_size > 1000:
-                print(f"✅ Прокси: загружен {os.path.basename(filepath)} ({file_size} байт)")
+            if not content:
+                raise ValueError('Прокси вернул пустой файл')
+            temporary = filepath + '.proxy.part'
+            try:
+                Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+                with open(temporary, 'wb') as stream:
+                    stream.write(content)
+                if filepath.lower().endswith(('.jar', '.zip')):
+                    with zipfile.ZipFile(temporary) as archive:
+                        if archive.testzip() is not None:
+                            raise ValueError('Прокси вернул повреждённый архив')
+                elif response.headers.get('Content-Type', '').startswith(('text/html', 'application/json')):
+                    raise ValueError('Прокси вернул страницу ошибки вместо файла')
+                os.replace(temporary, filepath)
                 return True
-            else:
-                print(f"⚠️ Прокси: файл слишком мал ({file_size} байт)")
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                return False
+            finally:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
 
+        if response.status_code >= 500:
+            mark_proxy_unavailable()
         return False
 
+    except requests.RequestException as exc:
+        mark_proxy_unavailable()
+        logger.debug('Proxy unavailable: %s', exc)
+        return False
     except Exception as e:
+        mark_proxy_unavailable()
         print(f"❌ Прокси: ошибка - {e}")
         return False

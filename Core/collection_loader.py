@@ -3,7 +3,13 @@ import os
 import json
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
+import tempfile
+import zipfile
+import shutil
+from pathlib import Path
+from Core.mod_transaction import safe_filename, safe_target, replace_mods
+from Core.local_mods import copy_local_mod
 from typing import List, Dict, Optional
 
 from ConfDir.Configs import COLLECTIONS_CONFIG, CONFIG
@@ -26,6 +32,14 @@ if not logger.handlers:
 def get_collections_dir() -> str:
     """Возвращает путь к папке со сборками"""
     return COLLECTIONS_CONFIG["collections_dir"]
+
+
+def load_collection_file(filename: str) -> Dict:
+    with open(safe_target(get_collections_dir(), filename), encoding='utf-8') as stream:
+        data = json.load(stream)
+    if not isinstance(data, dict) or not all(key in data for key in ('name', 'minecraft_version', 'loader', 'mods')):
+        raise ValueError('Неверный файл сборки')
+    return data
 
 
 def load_collection_data(collection_name: str) -> Optional[Dict]:
@@ -97,7 +111,7 @@ def load_all_collections() -> List[Dict]:
                         'loader_version': data.get('loader_version', ''),
                         'mods': data.get('mods', []),
                         'mod_count': len(data.get('mods', [])),
-                        'created_at': created_date,
+                        'created_at': created_date.astimezone(timezone.utc),
                         'created_str': created_date.strftime("%d.%m.%Y"),
                         'description': data.get('description', ''),
                         'source': data.get('source', 'local')
@@ -120,14 +134,24 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
             safe_name = safe_name[:50]
             filename = f"{safe_name}.json"
 
-        filepath = os.path.join(collections_dir, filename)
+        filepath = safe_target(collections_dir, filename)
 
         collection_data['updated_at'] = datetime.now().isoformat()
         if 'created_at' not in collection_data:
             collection_data['created_at'] = datetime.now().isoformat()
 
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(collection_data, f, indent=2, ensure_ascii=False)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=collections_dir,
+                                             prefix='.collection-', suffix='.tmp', delete=False) as stream:
+                temporary = stream.name
+                json.dump(collection_data, stream, indent=2, ensure_ascii=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, filepath)
+        finally:
+            if temporary and os.path.exists(temporary):
+                os.remove(temporary)
 
         return True, filename
     except Exception as e:
@@ -191,131 +215,83 @@ def check_mod_compatibility(mod: Dict, minecraft_version: str, loader: str) -> t
     return True, "OK"
 
 
-def install_collection(collection_data: Dict, progress_callback=None, create_backup=True) -> bool:
-    """
-    Устанавливает сборку с бэкапом и проверкой совместимости
-    """
+def install_collection(collection_data: Dict, progress_callback=None, create_backup=True,
+                       cancel_event=None, raise_on_error=False) -> bool:
+    """Download a complete collection before replacing existing mods."""
     from Core.run import set_current_collection
-    from Core.backup import ModsBackupManager
-
-    logger.info("=" * 60)
-    logger.info("🚀 START install_collection")
-    logger.info(f"   collection_data keys: {list(collection_data.keys())}")
-    logger.info(f"   mods count: {len(collection_data.get('mods', []))}")
-    logger.info(f"   create_backup: {create_backup}")
-    logger.info("=" * 60)
-
+    minecraft_dir = CONFIG["minecraft_dir"]
+    os.makedirs(minecraft_dir, exist_ok=True)
+    mods_dir = os.path.join(minecraft_dir, "mods")
     try:
-        mods_dir = os.path.join(CONFIG["minecraft_dir"], "mods")
-        os.makedirs(mods_dir, exist_ok=True)
-        logger.info(f"✅ mods_dir: {mods_dir}")
-
-        backup_manager = ModsBackupManager(CONFIG["minecraft_dir"])
-        logger.info("✅ backup_manager created")
-
-        # 1. Создаём бэкап
-        backup_path = None
-        if create_backup:
-            logger.info("📦 Creating backup...")
-            backup_path = backup_manager.create_backup()
-            if backup_path:
-                logger.info(f"✅ Backup created: {backup_path}")
-            else:
-                logger.warning("⚠️ Backup not created")
-        else:
-            logger.info("⏭️ Backup skipped")
-
-        # 2. Очищаем папку модов
-        logger.info("🗑️ Clearing mods directory...")
-        removed_count = backup_manager.clear_mods()
-        logger.info(f"✅ Cleared {removed_count} mods")
-
-        total_mods = len(collection_data.get('mods', []))
-        success_count = 0
-        skipped_count = 0
-
-        minecraft_version = collection_data.get('minecraft_version', '1.20.1')
-        loader = collection_data.get('loader', 'fabric')
-
-        logger.info(f"📋 Collection info: MC={minecraft_version}, loader={loader}, total_mods={total_mods}")
-
-        for i, mod in enumerate(collection_data.get('mods', [])):
-            mod_name = mod.get('name', 'Unknown')
-            logger.info(f"🔍 Processing mod {i+1}/{total_mods}: {mod_name}")
-
-            if progress_callback:
-                try:
-                    progress_callback(i, total_mods, mod_name)
-                except Exception as e:
-                    logger.error(f"   ❌ progress_callback error: {e}")
-
-            # Проверка совместимости
-            is_compatible, reason = check_mod_compatibility(mod, minecraft_version, loader)
-
-            if not is_compatible:
-                logger.warning(f"   ⚠️ Skipped {mod_name}: {reason}")
-                skipped_count += 1
+        mods = collection_data.get('mods', [])
+        if not isinstance(mods, list):
+            raise ValueError("Неверный список модов")
+        version = collection_data['minecraft_version']
+        loader = collection_data['loader']
+        filenames = set()
+        for mod in mods:
+            filename = safe_filename(mod.get('filename') or f"{mod.get('name', 'mod')}.jar")
+            if filename.casefold() in filenames:
+                raise ValueError(f"Повторяющееся имя файла: {filename}")
+            filenames.add(filename.casefold())
+            compatible, reason = ((True, 'OK') if mod.get('source') == 'local'
+                                  else check_mod_compatibility(mod, version, loader))
+            if not compatible:
+                raise ValueError(f"{mod.get('name', filename)}: {reason}")
+        with tempfile.TemporaryDirectory(prefix='.mods-install-', dir=minecraft_dir) as staging:
+            prepared = os.path.join(staging, 'mods')
+            os.makedirs(prepared)
+            # Keep non-JAR user files, but never carry old mods into a new collection.
+            if os.path.isdir(mods_dir):
+                for entry in os.scandir(mods_dir):
+                    if not entry.name.lower().endswith('.jar'):
+                        target = os.path.join(prepared, entry.name)
+                        if entry.is_dir():
+                            shutil.copytree(entry.path, target)
+                        else:
+                            shutil.copy2(entry.path, target)
+            if collection_data.get('archive_url'):
+                from Core.archive_mods import prepare_archive_mods
+                prepare_archive_mods(collection_data['archive_url'], prepared, progress_callback, cancel_event)
+            for i, mod in enumerate(mods):
+                if cancel_event and cancel_event.is_set():
+                    raise InterruptedError("Установка отменена")
+                name = mod.get('name') or mod.get('filename') or 'мод без имени'
                 if progress_callback:
-                    try:
-                        progress_callback(i, total_mods, mod_name, status="skipped", reason=reason)
-                    except Exception as e:
-                        logger.error(f"   ❌ progress_callback error: {e}")
-                continue
-
-            source = mod.get('source', 'modrinth')
-
-            try:
-                mod_info = {
-                    "file": mod.get('filename', f"{mod.get('modrinth_slug', mod_name)}.jar"),
-                    "name": mod_name,
-                    "source": source,
-                    "minecraft_version": minecraft_version,
-                    "loader": loader
-                }
-
-                if source == 'modrinth':
-                    mod_info["modrinth_id"] = mod.get('modrinth_id')
-                    mod_info["project_id"] = mod.get('modrinth_id')
-                    mod_info["version_id"] = mod.get('version_id')
-                elif source == 'curseforge':
-                    mod_info["curseforge_id"] = str(mod.get('curseforge_id'))
-                    mod_info["project_id"] = str(mod.get('curseforge_id'))
-                elif source == 'yandex' or source == 'local':
-                    mod_info["url"] = mod.get('url', '')
-
-                logger.info(f"   📥 Downloading {mod_name}...")
-                success = download_single_mod_turbo_sync(
-                    mod_info=mod_info,
-                    minecraft_dir=CONFIG["minecraft_dir"],
-                    source=source,
-                    minecraft_version=minecraft_version,
-                    loader=loader
-                )
-
-                if success:
-                    success_count += 1
-                    logger.info(f"   ✅ {mod_name} installed")
-                else:
-                    logger.warning(f"   ❌ {mod_name} failed to download")
-
-            except Exception as e:
-                logger.error(f"   💥 Error installing {mod_name}: {e}")
-                traceback.print_exc()
-
-        # Итог
-        logger.info(f"📊 Result: {success_count}/{total_mods} installed, {skipped_count} skipped")
-
-        if success_count >= total_mods // 2:
-            set_current_collection(collection_data.get('name'))
-            logger.info(f"✅ Collection '{collection_data.get('name')}' installed")
-            return True
-        else:
-            logger.warning(f"⚠️ Collection '{collection_data.get('name')}' partially installed")
-            return False
-
-    except Exception as e:
-        logger.error(f"❌ Fatal error in install_collection: {e}")
-        traceback.print_exc()
+                    progress_callback(i, len(mods), name, status='loading')
+                info = dict(mod)
+                info['file'] = mod.get('filename') or f"{name}.jar"
+                info['minecraft_version'] = version
+                info['loader'] = loader
+                source = mod.get('source', 'modrinth')
+                if source == 'local':
+                    copy_local_mod(mod, get_collections_dir(),
+                                   os.path.join(prepared, safe_filename(info['file'])))
+                elif not download_single_mod_turbo_sync(info, staging, source=source,
+                                                        minecraft_version=version, loader=loader):
+                    raise RuntimeError(f"Не удалось скачать {name}")
+                if progress_callback:
+                    progress_callback(i, len(mods), name, status='success')
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("Установка отменена")
+            # Validate once, after all downloads, before modifying the current installation.
+            for candidate in Path(prepared).rglob('*.jar'):
+                with zipfile.ZipFile(candidate) as archive:
+                    if archive.testzip() is not None:
+                        raise ValueError(f'Повреждённый мод: {candidate.name}')
+            manager = ModsBackupManager(minecraft_dir)
+            existing = [f for f in os.listdir(mods_dir) if f.lower().endswith('.jar')]
+            if create_backup and existing and not manager.create_backup():
+                raise RuntimeError("Не удалось создать бэкап: текущие моды сохранены")
+            replace_mods(prepared, mods_dir, os.path.join(staging, 'previous'))
+            if progress_callback and collection_data.get('archive_url'):
+                progress_callback(1, 1, 'Моды установлены', status='archive_complete')
+        set_current_collection(collection_data.get('name'))
+        return True
+    except Exception as exc:
+        logger.exception("Установка сборки отменена без замены текущих модов: %s", exc)
+        if raise_on_error:
+            raise RuntimeError(f'{exc}. Текущие моды сохранены.') from exc
         return False
 
 

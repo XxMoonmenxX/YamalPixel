@@ -1,69 +1,141 @@
-# run.py
+# run.py - ФИНАЛЬНАЯ БОЕВАЯ ВЕРСИЯ
 import sys
 import os
-import signal
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from launcher_paths import resource_path
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont, QIcon
 
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except AttributeError:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
+# ============================================================
+# ВОССТАНОВЛЕНИЕ STDOUT
+# ============================================================
+log_dir = Path.home() / 'YamalPixel' / 'logs'
+log_dir.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(level=logging.INFO, handlers=[RotatingFileHandler(
+    log_dir / 'launcher.log', maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8')],
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+if sys.stdout is None:
+    sys.stdout = open(log_dir / 'launcher-console.log', 'a', encoding='utf-8', buffering=1)
+if sys.stderr is None:
+    sys.stderr = sys.stdout
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, 'reconfigure'):
+        stream.reconfigure(encoding='utf-8', errors='backslashreplace')
 
-# Добавляем путь с учетом onefile
-sys.path.insert(0, resource_path("."))
 
-print("=== STARTUP PHASE 1: Basic imports ===")
-sys.stdout.flush()
 
-# Добавляем путь к проекту
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-print(f"Path added: {os.path.dirname(os.path.abspath(__file__))}")
-sys.stdout.flush()
+def log_uncaught_error(kind, value, traceback):
+    logging.critical('Необработанная ошибка лаунчера', exc_info=(kind, value, traceback))
+    sys.__excepthook__(kind, value, traceback)
 
-print("=== STARTUP PHASE 2: Import from Ui ===")
-sys.stdout.flush()
 
-try:
-    from Ui.MainWindow import run_main_window
-    print("✅ MainWindow imported")
-    sys.stdout.flush()
-except Exception as e:
-    print(f"❌ Failed to import MainWindow: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1)
+sys.excepthook = log_uncaught_error
 
-print("=== STARTUP PHASE 3: Environment setup ===")
-sys.stdout.flush()
 
+# ============================================================
+# СПЛЕШ
+# ============================================================
+class SplashWithProgress(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setFixedSize(450, 250)
+        self.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #1a1a2e, stop:1 #0f3460);
+            border-radius: 20px;
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 30, 30, 30)
+
+        self.title = QLabel("🚀 YamalPixel Launcher")
+        self.title.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        self.title.setStyleSheet("color: #4ECDC4;")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.title)
+
+        self.version = QLabel("v0.9.2")
+        self.version.setFont(QFont("Segoe UI", 10))
+        self.version.setStyleSheet("color: #666666;")
+        self.version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.version)
+
+        layout.addStretch()
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setStyleSheet("""
+            QProgressBar {
+                background-color: #2a2a3a;
+                border: none;
+                border-radius: 10px;
+                height: 20px;
+                text-align: center;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #FF6B6B, stop:1 #4ECDC4);
+                border-radius: 10px;
+            }
+        """)
+        layout.addWidget(self.progress)
+
+        self.status = QLabel("Загрузка...")
+        self.status.setFont(QFont("Segoe UI", 10))
+        self.status.setStyleSheet("color: #888888;")
+        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.status)
+
+        self.center_on_screen()
+
+    def center_on_screen(self):
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+
+    def update_progress(self, value, text):
+        self.progress.setValue(value)
+        self.status.setText(text)
+
+
+# ============================================================
+# ГЛАВНЫЙ БЛОК
+# ============================================================
+# run.py - ПРАВИЛЬНЫЙ ПОРЯДОК
 if __name__ == "__main__":
-    print("=== STARTUP PHASE 4: Main block ===")
-    sys.stdout.flush()
+    if '--smoke-test' in sys.argv:
+        from Core.build_smoke import main as smoke_main
+        sys.exit(smoke_main())
+    keep_mods = '--keep-mods' in sys.argv
+    if keep_mods:
+        sys.argv.remove('--keep-mods')
+    app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(resource_path('icon.ico')))
 
-    # Инициализация ресурсов
-    try:
-        from ConfDir.Configs import setup_environment, check_and_fix_hosts
-        print("✅ Configs imported")
-        sys.stdout.flush()
+    splash = SplashWithProgress()
+    splash.show()
+    app.processEvents()
 
-        # ===== ПРОВЕРКА И ОБНОВЛЕНИЕ HOSTS =====
-        print("🔍 Проверяю доступ к Mojang...")
-        check_and_fix_hosts()
-        # ========================================
+    # Загружаем модули ДО создания окна
+    from Ui.MainWindow import MainWindow
 
-        setup_environment()
-        print("✅ Environment setup complete")
-        sys.stdout.flush()
-    except Exception as e:
-        print(f"❌ Setup environment failed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.stdout.flush()
-        sys.exit(1)
+    # Закрываем сплеш
+    splash.close()
 
-    # Запуск
-    print("=== STARTUP PHASE 5: Launching main window ===")
-    sys.stdout.flush()
-    sys.exit(run_main_window())
+    # СОЗДАЁМ ОКНО
+    window = MainWindow()
+    if keep_mods:
+        from ConfDir.Configs import CONFIG
+        CONFIG['launch_without_mods_next'] = True
+    window.show()
+
+    # ЗАПУСКАЕМ
+    sys.exit(app.exec())

@@ -16,7 +16,7 @@ from PyQt6.QtGui import QFont, QIcon, QColor
 
 from Core.collection_loader import (
     load_all_collections, delete_collection, install_collection,
-    get_collections_dir, get_collection_mods_info, save_collection
+    get_collections_dir, get_collection_mods_info, save_collection, load_collection_file
 )
 from ConfDir.Configs import COLLECTIONS_CONFIG
 from ConfDir.Versions import CURRENT_VERSION, all_versions
@@ -32,66 +32,6 @@ try:
 except ImportError:
     CollectionCreator = None
     print("⚠️ CollectionCreator не найден")
-
-
-print("=== IMPORTING collection_manager.py ===")
-import sys
-sys.stdout.flush()
-
-print("  Import 1: os")
-import os
-sys.stdout.flush()
-
-print("  Import 2: json")
-import json
-sys.stdout.flush()
-
-print("  Import 3: threading")
-import threading
-sys.stdout.flush()
-
-print("  Import 4: requests")
-import requests
-sys.stdout.flush()
-
-print("  Import 5: datetime")
-from datetime import datetime
-sys.stdout.flush()
-
-print("  Import 6: PyQt6.QtWidgets")
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QMessageBox, QWidget, QSplitter,
-    QTextEdit, QFrame, QTabWidget, QLineEdit, QComboBox,
-    QProgressBar, QApplication
-)
-sys.stdout.flush()
-
-print("  Import 7: PyQt6.QtCore")
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, pyqtSlot
-sys.stdout.flush()
-
-print("  Import 8: PyQt6.QtGui")
-from PyQt6.QtGui import QFont, QIcon, QColor
-sys.stdout.flush()
-
-print("  Import 9: Core.collection_loader")
-from Core.collection_loader import (
-    load_all_collections, delete_collection, install_collection,
-    get_collections_dir, get_collection_mods_info, save_collection
-)
-sys.stdout.flush()
-
-print("  Import 10: ConfDir.Configs")
-from ConfDir.Configs import COLLECTIONS_CONFIG
-sys.stdout.flush()
-
-print("  Import 11: ConfDir.Versions")
-from ConfDir.Versions import CURRENT_VERSION, all_versions
-sys.stdout.flush()
-
-print("=== collection_manager.py imports complete ===")
-sys.stdout.flush()
 
 
 class CommunityAPI:
@@ -903,52 +843,46 @@ class CollectionManager(BaseDialog):
 
         layout.addLayout(button_layout)
 
+    def load_background(self):
+        # Keep one background on the window, with opaque readable content panels.
+        self.setObjectName('collectionManager')
+        self.setStyleSheet(self._get_stylesheet())
+        return True
+
     def _get_stylesheet(self):
         return """
-            QDialog {
-                background-color: #2b2b2b;
+            QWidget { background-image: none; color: #dce8f5; font-family: 'Segoe UI'; font-size: 12px; }
+            QDialog#collectionManager {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0b182a, stop:0.48 #17283d, stop:1 #123f46);
             }
-            QLabel#title {
-                color: #4ECDC4;
-                font-size: 18px;
-                font-weight: bold;
-                padding: 10px;
+            QLabel { background: transparent; border: none; }
+            QLabel#title { color: #f1f7ff; font-size: 24px; font-weight: 600; padding: 12px; }
+            QLabel#info { color: #9db6ce; font-size: 11px; padding: 0px 8px 8px; }
+            QTabWidget::pane { background: #102033; border: 1px solid #30475e; border-radius: 12px; }
+            QTabBar::tab { background: #1c3047; color: #9db6ce; padding: 12px 22px;
+                          border-top-left-radius: 9px; border-top-right-radius: 9px; margin-right: 5px; }
+            QTabBar::tab:selected { background: #102033; color: #68e0cc; border-top: 2px solid #68e0cc; }
+            QTabBar::tab:hover { background: #284058; }
+            QTreeWidget, QTextEdit, QLineEdit, QComboBox {
+                background: #0b192a; color: #dce8f5; border: 1px solid #30475e;
+                border-radius: 9px; padding: 8px; selection-background-color: #28556a;
             }
-            QLabel#info {
-                color: #888888;
-                font-size: 11px;
-            }
-            QTabWidget::pane {
-                background-color: #1e1e2a;
-                border: 1px solid #3a3a4a;
-                border-radius: 8px;
-            }
-            QTabBar::tab {
-                background-color: #2a2a3a;
-                color: #e0e0e0;
-                padding: 8px 20px;
-                margin-right: 2px;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-            }
-            QTabBar::tab:selected {
-                background-color: #4ECDC4;
-                color: #1a1a1a;
-            }
-            QTabBar::tab:hover {
-                background-color: #3a3a4a;
-            }
-            QPushButton {
-                background-color: #3a3a4a;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #4a4a5a;
-            }
+            QTreeWidget { alternate-background-color: #102238; }
+            QTreeWidget::item { padding: 7px 3px; }
+            QTreeWidget::item:selected { background: #234e61; color: #ffffff; }
+            QTreeWidget::item:hover { background: #192f46; }
+            QHeaderView::section { background: #1c3047; color: #9fcec9; padding: 10px 8px; border: none; }
+            QPushButton { background: #203b53; color: #eaf2fa; border: 1px solid #385971;
+                          border-radius: 8px; padding: 10px 14px; font-weight: 500; }
+            QPushButton:hover { background: #2b506a; border-color: #68e0cc; }
+            QPushButton:pressed { background: #17334a; }
+            QPushButton:disabled { color: #647d91; background: #17283a; border-color: #253b4e; }
+            QScrollBar:vertical { background: #102033; width: 10px; margin: 0; }
+            QScrollBar::handle:vertical { background: #385971; border-radius: 5px; min-height: 24px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar:horizontal { background: #102033; height: 10px; }
+            QScrollBar::handle:horizontal { background: #385971; border-radius: 5px; }
         """
 
 
@@ -975,7 +909,8 @@ class LocalCollectionsTab(QWidget):
 
         self.collections_tree = QTreeWidget()
         self.collections_tree.setHeaderLabels(["Название", "Версия", "Загрузчик", "Модов", "Создана"])
-        self.collections_tree.setColumnWidth(0, 250)
+        self.collections_tree.setAlternatingRowColors(True)
+        self.collections_tree.setColumnWidth(0, 190)
         self.collections_tree.setColumnWidth(1, 100)
         self.collections_tree.setColumnWidth(2, 100)
         self.collections_tree.setColumnWidth(3, 60)
@@ -995,7 +930,7 @@ class LocalCollectionsTab(QWidget):
 
         left_layout.addLayout(list_buttons)
 
-        layout.addWidget(left_widget, 2)
+        layout.addWidget(left_widget, 3)
 
         # Правая панель - детали
         right_widget = QWidget()
@@ -1015,7 +950,7 @@ class LocalCollectionsTab(QWidget):
 
         self.mods_list = QTreeWidget()
         self.mods_list.setHeaderLabels(["Источник", "Название", "Файл"])
-        self.mods_list.setColumnWidth(0, 80)
+        self.mods_list.setColumnWidth(0, 115)
         self.mods_list.setColumnWidth(1, 250)
         self.mods_list.setColumnWidth(2, 200)
         right_layout.addWidget(self.mods_list)
@@ -1033,6 +968,11 @@ class LocalCollectionsTab(QWidget):
         self.delete_btn.setEnabled(False)
         action_layout.addWidget(self.delete_btn)
 
+        self.edit_btn = QPushButton('✏️ Редактировать')
+        self.edit_btn.clicked.connect(self.edit_collection)
+        self.edit_btn.setEnabled(False)
+        action_layout.addWidget(self.edit_btn)
+
         action_layout.addStretch()
 
         self.new_btn = QPushButton("➕ Новая сборка")
@@ -1045,6 +985,13 @@ class LocalCollectionsTab(QWidget):
 
     def load_collections(self):
         self.collections_tree.clear()
+        self.current_collection = None
+        self.current_filename = None
+        self.install_btn.setEnabled(False)
+        self.delete_btn.setEnabled(False)
+        self.edit_btn.setEnabled(False)
+        self.info_text.clear()
+        self.mods_list.clear()
         collections = load_all_collections()
 
         for col in collections:
@@ -1068,6 +1015,7 @@ class LocalCollectionsTab(QWidget):
 
         self.install_btn.setEnabled(True)
         self.delete_btn.setEnabled(True)
+        self.edit_btn.setEnabled(True)
 
         # Информация
         info = f"""
@@ -1080,7 +1028,7 @@ class LocalCollectionsTab(QWidget):
         if self.current_collection.get('description'):
             info += f"\n<b>Описание:</b>\n{self.current_collection['description']}"
 
-        self.info_text.setHtml(info)
+        self.info_text.setHtml(info.replace("\n", "<br>"))
 
         # Моды
         self.mods_list.clear()
@@ -1101,7 +1049,7 @@ class LocalCollectionsTab(QWidget):
 
         print("=== install_collection button clicked ===")
         import sys
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         reply = QMessageBox.question(
             self,
@@ -1118,22 +1066,22 @@ class LocalCollectionsTab(QWidget):
             return
 
         print("Creating CollectionInstallProgress...")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         try:
             progress = CollectionInstallProgress(self, self.current_collection)
             print("CollectionInstallProgress created, calling exec()...")
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
 
             progress.exec()
             print("CollectionInstallProgress.exec() finished")
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
 
         except Exception as e:
             print(f"ERROR in install_collection: {e}")
             import traceback
             traceback.print_exc()
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
 
 
 
@@ -1196,6 +1144,28 @@ class LocalCollectionsTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть создание сборки: {e}")
 
+    def edit_collection(self):
+        if not self.current_filename:
+            return
+        try:
+            data = load_collection_file(self.current_filename)
+            editor = CollectionCreator(self.window(), collection_data=data,
+                                       original_filename=self.current_filename)
+            if editor.exec() == QDialog.DialogCode.Accepted:
+                filename = self.current_filename
+                self.load_collections()
+                for index in range(self.collections_tree.topLevelItemCount()):
+                    item = self.collections_tree.topLevelItem(index)
+                    if item.data(0, Qt.ItemDataRole.UserRole) == filename:
+                        self.collections_tree.setCurrentItem(item)
+                        self.on_collection_selected(item)
+                        break
+                main_window = self.window().parent() if self.window() else None
+                if main_window and hasattr(main_window, 'refresh_versions'):
+                    main_window.refresh_versions()
+        except Exception as exc:
+            QMessageBox.critical(self, 'Редактирование сборки', str(exc))
+
 
 class CollectionInstallWorker(QThread):
     """Поток для установки сборки"""
@@ -1206,22 +1176,24 @@ class CollectionInstallWorker(QThread):
     def __init__(self, collection_data):
         print("=== CollectionInstallWorker.__init__ ===")
         import sys
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
         super().__init__()
         self.collection_data = collection_data
         self._cancelled = False
+        self.cancel_event = threading.Event()
         print(f"collection_data name: {collection_data.get('name', 'Unknown')}")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
     def cancel(self):
         """Отмена установки"""
         print("CollectionInstallWorker.cancel called")
         self._cancelled = True
+        self.cancel_event.set()
 
     def run(self):
         print("=== CollectionInstallWorker.run START ===")
         import sys
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         try:
             from Core.backup import ModsBackupManager
@@ -1233,7 +1205,7 @@ class CollectionInstallWorker(QThread):
                 if self._cancelled:
                     return
                 print(f"CALLBACK: {current}/{total} - {mod_name} - status={status}")
-                sys.stdout.flush()
+                sys.stdout.flush() if sys.stdout is not None else None
                 self.progress.emit(current, total, mod_name)
                 if status == "skipped":
                     self.log.emit(f"⏭️ Пропущен {mod_name}: {reason}")
@@ -1244,19 +1216,19 @@ class CollectionInstallWorker(QThread):
                     installed_mods.append(mod_name)
 
             print("Calling install_collection...")
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
 
-            success = install_collection(self.collection_data, callback, create_backup=True)
+            success = install_collection(self.collection_data, callback, create_backup=True, cancel_event=self.cancel_event)
 
             print(f"install_collection returned: {success}")
             print(f"Installed mods count: {len(installed_mods)}")
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
 
             total = len(self.collection_data.get('mods', []))
-            success_count = len(installed_mods)
+            success_count = len(installed_mods) if success else 0
 
             print(f"Success count: {success_count} / {total}")
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
 
             self.finished.emit(success, success_count, total)
 
@@ -1264,7 +1236,7 @@ class CollectionInstallWorker(QThread):
             print(f"ERROR in CollectionInstallWorker.run: {e}")
             import traceback
             traceback.print_exc()
-            sys.stdout.flush()
+            sys.stdout.flush() if sys.stdout is not None else None
             self.finished.emit(False, 0, 0)
 
 class CollectionInstallProgress(QDialog):
@@ -1273,7 +1245,7 @@ class CollectionInstallProgress(QDialog):
     def __init__(self, parent, collection_data):
         print("=== CollectionInstallProgress.__init__ START ===")
         import sys
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         super().__init__(parent)
         self.collection_data = collection_data
@@ -1281,13 +1253,13 @@ class CollectionInstallProgress(QDialog):
         self.worker = None
 
         print(f"collection_data: {collection_data.get('name', 'Unknown')}")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.setWindowTitle(f"Установка сборки: {collection_data['name']}")
         self.setFixedSize(500, 300)
         self.setModal(True)
         print("Window setup complete")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.setStyleSheet("""
             QDialog {
@@ -1330,73 +1302,73 @@ class CollectionInstallProgress(QDialog):
             }
         """)
         print("Stylesheet applied")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
         print("Layout created")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         title = QLabel(f"📦 Установка сборки: {collection_data['name']}")
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #4ECDC4;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         print("Title added")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         info = QLabel(f"Модов: {len(collection_data.get('mods', []))}")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(info)
         print("Info added")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         layout.addWidget(self.progress_bar)
         print("Progress bar added")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.status_label = QLabel("Подготовка к установке...")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
         print("Status label added")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumHeight(120)
         layout.addWidget(self.log_text)
         print("Log text added")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.cancel_btn = QPushButton("Отмена")
         self.cancel_btn.clicked.connect(self.cancel_install)
         layout.addWidget(self.cancel_btn)
         print("Cancel button added")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         print("Creating CollectionInstallWorker...")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.worker = CollectionInstallWorker(collection_data)
         print("Worker created")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         self.worker.progress.connect(self.update_progress)
         self.worker.log.connect(self.add_log)
         self.worker.finished.connect(self.on_finished)
         print("Signals connected")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         print("Starting worker...")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
         self.worker.start()
         print("Worker started")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
         print("=== CollectionInstallProgress.__init__ END ===")
-        sys.stdout.flush()
+        sys.stdout.flush() if sys.stdout is not None else None
 
     def add_log(self, message):
         """Добавляет сообщение в лог"""
@@ -1413,6 +1385,8 @@ class CollectionInstallProgress(QDialog):
     def on_finished(self, success, success_count, total):
         """Обработка завершения установки"""
         if self.cancelled:
+            self.worker.wait(1000)
+            self.accept()
             return
 
         if success:
@@ -1443,11 +1417,26 @@ class CollectionInstallProgress(QDialog):
         self.cancel_btn.clicked.disconnect()
         self.cancel_btn.clicked.connect(self.accept)
 
+    def reject(self):
+        if self.worker and self.worker.isRunning():
+            self.cancel_install()
+        else:
+            super().reject()
+
+    def closeEvent(self, event):
+        if self.worker and self.worker.isRunning():
+            self.cancel_install()
+            event.ignore()
+        else:
+            event.accept()
+
     def cancel_install(self):
         """Отмена установки"""
         print("Cancel install called")
         self.cancelled = True
         if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait(1000)
+            self.worker.cancel()
+            self.cancel_btn.setEnabled(False)
+            self.status_label.setText("Отмена после завершения текущей загрузки…")
+            return
         self.accept()

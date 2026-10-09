@@ -11,7 +11,8 @@ from PyQt6.QtGui import QFont, QTextCursor, QColor
 
 
 from ConfDir.Configs import SHADERS_CONFIG, CONFIG
-from Network.Downloader import TurboDownloader
+from Network.Downloader import TurboDownloader, download_yandex_file_sync
+from Core.mod_transaction import safe_target
 from Ui.BaseWindow import BaseDialog
 import asyncio
 
@@ -47,27 +48,14 @@ class ShaderDownloadWorker(QThread):
             self.log.emit(f"⬇️ Загрузка: {shader['name']}")
 
             try:
-                direct_link = asyncio.run(downloader.get_turbo_link(shader["url"]))
-                if not direct_link:
-                    self.log.emit(f"❌ Не удалось получить ссылку: {shader['name']}")
-                    continue
-
-                shader_path = os.path.join(shaders_dir, shader["file"])
-                success = downloader.download_file_sync(direct_link, shader_path)
+                shader_path = safe_target(shaders_dir, shader['file'])
+                success = download_yandex_file_sync(shader['url'], shader_path, 'shader')
 
                 if success:
                     success_count += 1
                     self.log.emit(f"✅ Успешно: {shader['name']}")
 
-                    # Распаковываем ZIP если нужно
-                    if shader["file"].endswith(".zip"):
-                        import zipfile
-                        try:
-                            with zipfile.ZipFile(shader_path, "r") as zip_ref:
-                                zip_ref.extractall(shaders_dir)
-                            self.log.emit(f"📦 Распакован: {shader['name']}")
-                        except Exception as e:
-                            self.log.emit(f"⚠️ Ошибка распаковки {shader['name']}: {e}")
+                    # Keep the ZIP intact as a shader pack.
                 else:
                     self.log.emit(f"❌ Ошибка: {shader['name']}")
             except Exception as e:

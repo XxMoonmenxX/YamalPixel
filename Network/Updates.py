@@ -12,13 +12,14 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QTextEdit, QProgressBar, QMessageBox, QFrame
+    QPushButton, QTextEdit, QProgressBar, QMessageBox, QFrame, QApplication
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QTextCursor
 
 from ConfDir.Versions import CURRENT_VERSION
 from ConfDir.Configs import resource_path
+from launcher_paths import launcher_executable
 
 logger = logging.getLogger("YamalPixel.Updates")
 
@@ -379,7 +380,11 @@ class UpdateProgressDialog(QDialog):
 
     def perform_update(self, temp_exe):
         """Выполняет установку обновления"""
-        current_exe = os.path.abspath(sys.argv[0])
+        current_exe = launcher_executable()
+        if not current_exe.lower().endswith('.exe'):
+            QMessageBox.information(self, 'Обновление исходников',
+                                    'При запуске из Python обновите исходники проекта. Автообновление доступно для EXE.')
+            return
         backup_exe = os.path.join(os.path.dirname(current_exe), "YamalPixelLauncher_Backup.exe")
         temp_dir = tempfile.gettempdir()
 
@@ -393,11 +398,6 @@ timeout /t 2 /nobreak >nul
 
 :: Закрываем лаунчер
 taskkill /f /im "{os.path.basename(current_exe)}" >nul 2>&1
-
-:: Очистка временных файлов PyInstaller
-del /q /f "%TEMP%\\_MEI*" >nul 2>&1
-for /d %%i in ("%TEMP%\\_MEI*") do rd /s /q "%%i" >nul 2>&1
-timeout /t 1 /nobreak >nul
 
 :: Создаем бэкап
 if exist "{current_exe}" (
