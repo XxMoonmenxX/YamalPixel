@@ -1056,7 +1056,7 @@ class LocalCollectionsTab(QWidget):
             "Установка сборки",
             f"Установить сборку '{self.current_collection['name']}'?\n\n"
             f"Будет установлено {self.current_collection['mod_count']} модов.\n"
-            f"Существующие моды в папке mods будут заменены.\n\n"
+            f"Моды будут установлены в отдельную папку этой сборки.\n\n"
             f"Продолжить?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
@@ -1218,7 +1218,10 @@ class CollectionInstallWorker(QThread):
             print("Calling install_collection...")
             sys.stdout.flush() if sys.stdout is not None else None
 
-            success = install_collection(self.collection_data, callback, create_backup=True, cancel_event=self.cancel_event)
+            from Core.instances import collection_directory, ensure_directory
+            directory = ensure_directory(collection_directory(self.collection_data))
+            success = install_collection(self.collection_data, callback, create_backup=True,
+                                         cancel_event=self.cancel_event, minecraft_dir=directory)
 
             print(f"install_collection returned: {success}")
             print(f"Installed mods count: {len(installed_mods)}")

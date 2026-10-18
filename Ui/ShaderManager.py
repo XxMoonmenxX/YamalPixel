@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont, QTextCursor, QColor
 from ConfDir.Configs import SHADERS_CONFIG, CONFIG
 from Network.Downloader import TurboDownloader, download_yandex_file_sync
 from Core.mod_transaction import safe_target
+from Core.instances import ensure_game_directory
 from Ui.BaseWindow import BaseDialog
 import asyncio
 
@@ -32,7 +33,7 @@ class ShaderDownloadWorker(QThread):
         self.cancelled = True
 
     def run(self):
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
         os.makedirs(shaders_dir, exist_ok=True)
 
         downloader = TurboDownloader()
@@ -154,7 +155,7 @@ class ShaderManagerDialog(BaseDialog):
 
     def check_installed_shaders(self):
         """Проверяет какие шейдеры уже установлены"""
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
         if not os.path.exists(shaders_dir):
             return
 
@@ -249,7 +250,7 @@ class ShaderManagerDialog(BaseDialog):
 
     def open_shaders_folder(self):
         """Открывает папку с шейдерами"""
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
         os.makedirs(shaders_dir, exist_ok=True)
 
         import subprocess

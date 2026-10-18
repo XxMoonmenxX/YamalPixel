@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QProgressBar, QTextEdit, QFrame, QComboBox,
     QMenuBar, QMenu, QDialog, QDialogButtonBox, QListWidget,
     QListWidgetItem, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QSpinBox, QGroupBox, QScrollArea
+    QSpinBox, QGroupBox, QScrollArea, QFileDialog
 )
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QSize, QMetaObject, Q_ARG, pyqtSlot, QObject
@@ -37,7 +37,6 @@ from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_c
 from Core.run import is_game_running, set_current_collection, get_current_collection
 
 from Network.proxy_status import start_proxy_probe
-from Network.java_checker import check_java_on_startup, check_java_version
 from Network.Updates import check_for_updates_local
 from Network.Downloader import download_single_mod_turbo_sync, download_mods_turbo_ui, TurboDownloader, LauncherCache
 from Network.ModrinthLoader import ModrinthAPI
@@ -226,10 +225,14 @@ class BugreportWorker(QThread):
     ready = pyqtSignal(str)
     failed = pyqtSignal(str)
 
+    def __init__(self, parent=None, minecraft_dir=None):
+        super().__init__(parent)
+        self.minecraft_dir = minecraft_dir
+
     def run(self):
         try:
             from Core.bugreport import create_bugreport
-            self.ready.emit(create_bugreport())
+            self.ready.emit(create_bugreport(minecraft_dir=self.minecraft_dir))
         except Exception as exc:
             logger.exception('Создание Bugreport.txt')
             self.failed.emit(str(exc))
@@ -568,6 +571,13 @@ class MainWindow(QMainWindow):
         self.launch_progress.setStyleSheet('QProgressBar { background: #102033; color: white; border-radius: 7px; text-align: center; min-height: 18px; } QProgressBar::chunk { background: #4ecdc4; border-radius: 7px; }')
         self.launch_progress.hide()
         card_layout.addWidget(self.launch_progress)
+        self.game_log_button = QPushButton('Лог запуска Minecraft')
+        self.game_log_button.setEnabled(False)
+        self.game_log_button.clicked.connect(self.show_game_log)
+        card_layout.addWidget(self.game_log_button)
+        self.game_log_reader = None
+        self.game_log_dialog = None
+        self.game_loading_started = None
 
         content_layout.addStretch()
         content_layout.addWidget(card)
@@ -583,6 +593,9 @@ class MainWindow(QMainWindow):
 
         # Загрузка сессии
         self.load_session()
+        from Core.instances import select_instance
+        select_instance(self.version_combo.currentText())
+        self.version_combo.currentTextChanged.connect(select_instance)
 
         # Таймер для обновления
         self.update_timer = QTimer()
@@ -598,6 +611,10 @@ class MainWindow(QMainWindow):
         # Рабочий поток для сетевых операций
         self.worker_thread = None
         self.launch_worker = None
+        self.crash_worker = None
+        self.game_event_timer = QTimer(self)
+        self.game_event_timer.timeout.connect(self.check_game_events)
+        self.game_event_timer.start(700)
         self.catalog_worker = VersionCatalogWorker(self)
         self.catalog_worker.ready.connect(self.on_catalog_ready)
         self.catalog_worker.error.connect(self.on_catalog_error)
@@ -607,23 +624,9 @@ class MainWindow(QMainWindow):
         self.check_java_on_startup()
 
     def check_java_on_startup(self):
-        """Проверяет Java при запуске"""
-
-        def check_thread():
-            try:
-                ok, message = check_java_version()
-                if not ok:
-                    from PyQt6.QtCore import QMetaObject, Q_ARG
-                    QMetaObject.invokeMethod(
-                        self, "_show_java_dialog",
-                        Qt.ConnectionType.QueuedConnection
-                    )
-                else:
-                    print(f"✅ Java проверена: {message}")
-            except Exception as e:
-                print(f"⚠️ Ошибка проверки Java: {e}")
-
-        threading.Thread(target=check_thread, daemon=True).start()
+        """Java is resolved for the selected game at launch, including bundled runtimes."""
+        # A global Java 17 check misses bundled runtimes and other game versions.
+        return
 
     @pyqtSlot(str, str)
     def _show_error_dialog(self, title: str, message: str):
@@ -634,9 +637,83 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _show_java_dialog(self):
         """Показывает диалог установки Java (вызывается из основного потока)"""
-        from Network.java_checker import JavaCheckDialog
-        dialog = JavaCheckDialog(self)
+        self.open_java_manager()
+
+    def open_java_manager(self, checked=False, minecraft_version=None, minecraft_dir=None):
+        from Ui.JavaManager import JavaManagerDialog
+        from ConfDir.Versions import get_version_config
+        config = get_version_config(self.version_combo.currentText())
+        dialog = JavaManagerDialog(self, minecraft_dir or CONFIG['minecraft_dir'],
+                                   minecraft_version or (config[0] if config else None))
         dialog.exec()
+
+    def selected_game_directory(self, create=False):
+        from Core.instances import ensure_game_directory, game_directory
+        version = self.version_combo.currentText()
+        return ensure_game_directory(version) if create else str(game_directory(version))
+
+    def check_game_events(self):
+        self.update_game_log()
+        from Core.run import poll_game_events
+        for analysis in poll_game_events():
+            if analysis.get('crashed'):
+                self.show_crash_result(analysis)
+
+    def show_game_log(self):
+        if self.game_log_dialog:
+            self.game_log_dialog.show()
+            self.game_log_dialog.raise_()
+            self.game_log_dialog.activateWindow()
+
+    def update_game_log(self):
+        if self.game_log_reader is None:
+            return
+        from Core.game_log import loading_stage
+        text = self.game_log_reader.read()
+        if text:
+            self.game_log_dialog.append_text(text)
+            stage = loading_stage(text)
+            if stage:
+                self.status_label.setText('Minecraft: ' + stage)
+        if is_game_running():
+            elapsed = max(0, int(time.monotonic() - self.game_loading_started))
+            self.launch_progress.setFormat(f'Minecraft работает · {elapsed // 60}:{elapsed % 60:02d} · подробности в логе')
+        else:
+            if not self.game_log_reader.at_end:
+                return
+            self.launch_progress.setRange(0, 100)
+            self.launch_progress.setValue(100)
+            self.launch_progress.setFormat('Процесс Minecraft завершён — лог сохранён')
+            self.status_label.setText('Minecraft завершился; при вылете выполняется анализ логов')
+            self.game_log_reader = None
+
+    def show_crash_result(self, analysis):
+        from Ui.CrashAnalysis import CrashAnalysisDialog
+        self.crash_dialog = CrashAnalysisDialog(analysis, analysis.get('minecraft_dir', CONFIG['minecraft_dir']), self)
+        self.crash_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.crash_dialog.java_requested.connect(lambda: self.open_java_manager(
+            minecraft_version=analysis.get('minecraft'), minecraft_dir=analysis.get('shared_dir', CONFIG['minecraft_dir'])))
+        self.crash_dialog.bugreport_requested.connect(
+            lambda: self.save_bugreport(minecraft_dir=analysis.get('minecraft_dir')))
+        self.crash_dialog.show()
+
+    def analyze_last_crash(self, checked=False, log_file=None):
+        if self.crash_worker and self.crash_worker.isRunning():
+            return
+        from Ui.CrashAnalysis import CrashAnalysisWorker
+        self.crash_worker = CrashAnalysisWorker(self.selected_game_directory(), log_file, self)
+        self.crash_action.setEnabled(False)
+        self.crash_worker.ready.connect(self.show_crash_result)
+        self.crash_worker.failed.connect(lambda error: MessageDialog.show_error(self, 'Анализ вылета', error))
+        self.crash_worker.finished.connect(lambda: self.crash_action.setEnabled(True))
+        self.crash_worker.start()
+
+    def analyze_crash_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Выбрать лог или отчёт Minecraft',
+                                            os.path.join(self.selected_game_directory(), 'logs'),
+                                            'Логи и отчёты (*.log *.txt);;Все файлы (*)')
+        if path:
+            self.analyze_last_crash(log_file=path)
 
     def load_fonts(self):
         """Загружает шрифты, поддерживающие кириллицу"""
@@ -868,7 +945,25 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(bool)
     def on_launch_completed(self, success):
-        self.launch_progress.hide()
+        if success:
+            from Core.run import GAME_PROCESS
+            from Core.game_log import GameLogReader
+            from Ui.GameLog import GameLogDialog
+            context = getattr(GAME_PROCESS, '_yamal_context', {})
+            path = context.get('java_console')
+            if isinstance(path, str) and path:
+                if self.game_log_dialog is None:
+                    self.game_log_dialog = GameLogDialog(self)
+                self.game_log_dialog.start_session(path)
+                self.game_log_reader = GameLogReader(path)
+                self.game_loading_started = time.monotonic()
+                self.game_log_button.setEnabled(True)
+                self.launch_progress.setRange(0, 0)
+                self.launch_progress.setTextVisible(True)
+                self.launch_progress.show()
+                self.update_game_log()
+        else:
+            self.launch_progress.hide()
         self.launch_btn.setEnabled(True)
         self.online_btn.setEnabled(True)
         self.version_combo.setEnabled(True)
@@ -1037,7 +1132,7 @@ class MainWindow(QMainWindow):
         tools_menu.addSeparator()
 
         # Переустановка
-        reinstall_action = tools_menu.addAction("Полная переустановка")
+        reinstall_action = tools_menu.addAction("Восстановить выбранную сборку")
         reinstall_action.triggered.connect(self.complete_reinstall)
 
         tools_menu.addSeparator()
@@ -1045,6 +1140,10 @@ class MainWindow(QMainWindow):
         # Диагностика
         diagnostic_action = tools_menu.addAction("Диагностика проблем")
         diagnostic_action.triggered.connect(self.show_diagnostic)
+        self.crash_action = tools_menu.addAction('Разобрать последний вылет')
+        self.crash_action.triggered.connect(self.analyze_last_crash)
+        crash_file_action = tools_menu.addAction('Разобрать файл лога…')
+        crash_file_action.triggered.connect(self.analyze_crash_file)
         self.bugreport_action = tools_menu.addAction("Сохранить полный Bugreport.txt")
         self.bugreport_action.triggered.connect(self.save_bugreport)
 
@@ -1257,7 +1356,7 @@ class MainWindow(QMainWindow):
 
     def open_shaders_folder(self):
         """Открывает папку с шейдерами"""
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(self.selected_game_directory(create=True), "shaderpacks")
         os.makedirs(shaders_dir, exist_ok=True)
 
         if os.name == "nt":
@@ -1268,7 +1367,7 @@ class MainWindow(QMainWindow):
 
     def open_game_folder(self):
         """Открывает папку с игрой"""
-        minecraft_dir = CONFIG["minecraft_dir"]
+        minecraft_dir = self.selected_game_directory(create=True)
         if os.path.exists(minecraft_dir):
             if os.name == "nt":
                 os.startfile(minecraft_dir)
@@ -1279,7 +1378,7 @@ class MainWindow(QMainWindow):
 
     def create_backup(self):
         """Создает бэкап"""
-        minecraft_dir = CONFIG["minecraft_dir"]
+        minecraft_dir = self.selected_game_directory(create=True)
         mods_dir = os.path.join(minecraft_dir, "mods")
 
         backups_created = []
@@ -1310,7 +1409,7 @@ class MainWindow(QMainWindow):
 
     def show_backup_info(self):
         """Показывает информацию о бэкапах"""
-        backup_dir = os.path.join(CONFIG["minecraft_dir"], "backups")
+        backup_dir = os.path.join(self.selected_game_directory(create=True), "backups")
         if not os.path.exists(backup_dir):
             MessageDialog.show_info(self, "Бэкапы", "Бэкапы не создавались")
             return
@@ -1349,7 +1448,7 @@ class MainWindow(QMainWindow):
 
     def delete_all_backups(self):
         """Удаляет все бэкапы"""
-        backup_dir = os.path.join(CONFIG["minecraft_dir"], "backups")
+        backup_dir = os.path.join(self.selected_game_directory(create=True), "backups")
         if not os.path.exists(backup_dir):
             MessageDialog.show_info(self, "Бэкапы", "Папка бэкапов не существует")
             return
@@ -1388,10 +1487,11 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        minecraft_dir = CONFIG["minecraft_dir"]
+        minecraft_dir = self.selected_game_directory(create=True)
         mods_dir = os.path.join(minecraft_dir, "mods")
         disabled_dir = os.path.join(minecraft_dir, "mods_disabled_temp")
         CONFIG["launch_without_mods_next"] = True
+        CONFIG['launch_without_mods_version'] = self.version_combo.currentText()
 
         if os.path.exists(mods_dir) and os.listdir(mods_dir):
             backup_path = create_backup(mods_dir, "mods_before_clean_launch")
@@ -1423,198 +1523,21 @@ class MainWindow(QMainWindow):
             MessageDialog.show_info(self, "Информация", "Модов для отключения не найдено")
 
     def complete_reinstall(self):
-        """Полная переустановка игры с очисткой всех файлов"""
-        reply = MessageDialog.show_question(self, "Полная переустановка",
-                                            "⚠️ ВНИМАНИЕ! Это удалит ВСЕ файлы игры и настроек.\n\n"
-                                            "Будет выполнено:\n"
-                                            "• Удаление папки YamalPixel\n"
-                                            "• Удаление всех модов и конфигов\n"
-                                            "• Удаление миров и сохранений\n"
-                                            "• Создание чистых бэкапов\n\n"
-                                            "Продолжить?")
-
-        if reply != QMessageBox.StandardButton.Yes:
+        if is_game_running() or (self.launch_worker and self.launch_worker.isRunning()):
+            MessageDialog.show_info(self, 'Восстановление', 'Сначала закройте игру и дождитесь подготовки.')
             return
+        selected = self.version_combo.currentText()
+        reply = MessageDialog.show_question(self, 'Восстановить сборку',
+            f'Проверить файлы и восстановить моды сборки «{selected}»? Миры, настройки и другие сборки сохранятся.')
+        if reply == QMessageBox.StandardButton.Yes:
+            from Ui.InstanceRepair import InstanceRepairDialog
+            InstanceRepairDialog(selected, self).exec()
 
-        minecraft_dir = CONFIG["minecraft_dir"]
-
-        class ReinstallWorker(QThread):
-            status_updated = pyqtSignal(str)
-            progress_updated = pyqtSignal(int)
-            finished = pyqtSignal(dict)
-
-            def __init__(self):
-                super().__init__()
-                self.backups_created = []
-
-            def run(self):
-                try:
-                    self.status_updated.emit("Создание бэкапов...")
-
-                    mods_dir = os.path.join(minecraft_dir, "mods")
-                    if os.path.exists(mods_dir) and os.listdir(mods_dir):
-                        backup_path = create_backup(mods_dir, "mods_full_backup")
-                        if backup_path:
-                            self.backups_created.append(f"Моды: {os.path.basename(backup_path)}")
-
-                    world_dir = os.path.join(minecraft_dir, "world")
-                    if os.path.exists(world_dir) and os.listdir(world_dir):
-                        backup_path = create_backup(world_dir, "world_full_backup")
-                        if backup_path:
-                            self.backups_created.append(f"Мир: {os.path.basename(backup_path)}")
-
-                    config_dir = os.path.join(minecraft_dir, "config")
-                    if os.path.exists(config_dir) and os.listdir(config_dir):
-                        backup_path = create_backup(config_dir, "config_full_backup")
-                        if backup_path:
-                            self.backups_created.append(f"Настройки: {os.path.basename(backup_path)}")
-
-                    self.status_updated.emit("Удаление старых файлов...")
-                    self.progress_updated.emit(30)
-
-                    if os.path.exists(minecraft_dir):
-                        shutil.rmtree(minecraft_dir)
-
-                    self.status_updated.emit("Создание структуры...")
-                    self.progress_updated.emit(50)
-
-                    os.makedirs(minecraft_dir, exist_ok=True)
-                    os.makedirs(os.path.join(minecraft_dir, "mods"), exist_ok=True)
-                    os.makedirs(os.path.join(minecraft_dir, "config"), exist_ok=True)
-                    os.makedirs(os.path.join(minecraft_dir, "shaderpacks"), exist_ok=True)
-
-                    self.status_updated.emit("Установка Minecraft...")
-                    self.progress_updated.emit(70)
-
-                    MCLIB.install.install_minecraft_version(
-                        version=CONFIG["version"],
-                        minecraft_directory=minecraft_dir
-                    )
-
-                    self.status_updated.emit("Установка Fabric...")
-                    self.progress_updated.emit(85)
-
-                    MCLIB.fabric.install_fabric(
-                        minecraft_version=CONFIG["version"],
-                        loader_version=CONFIG["fabric_loader"],
-                        minecraft_directory=minecraft_dir,
-                    )
-
-                    self.status_updated.emit("Установка модов...")
-                    self.progress_updated.emit(95)
-
-                    from Core.run import switch_mods_for_version
-                    def archive_progress(kind, message):
-                        if kind == 'progress':
-                            self.progress_updated.emit(85 + int(int(message) * 0.15))
-                        else:
-                            self.status_updated.emit(message)
-                    switch_mods_for_version('YamalPixel', archive_progress, raise_on_error=True)
-
-                    self.progress_updated.emit(100)
-                    self.status_updated.emit("Готово!")
-
-                    self.finished.emit({
-                        "backups": self.backups_created,
-                        "success": True
-                    })
-
-                except Exception as e:
-                    self.finished.emit({
-                        "backups": self.backups_created,
-                        "success": False,
-                        "error": str(e)
-                    })
-
-        class ReinstallDialog(QDialog):
-            def __init__(self, parent=None):
-                super().__init__(parent)
-                self.setWindowTitle("Переустановка")
-                self.setMinimumSize(400, 200)
-                self.setModal(True)
-
-                self.setStyleSheet("""
-                    QDialog {
-                        background-color: #2b2b2b;
-                        border-radius: 15px;
-                    }
-                    QLabel {
-                        color: white;
-                        font-family: 'Segoe UI';
-                    }
-                    QProgressBar {
-                        background-color: #3a3a4a;
-                        border: none;
-                        border-radius: 8px;
-                        height: 20px;
-                        text-align: center;
-                        color: white;
-                    }
-                    QProgressBar::chunk {
-                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                            stop:0 #FF6B6B, stop:1 #4ECDC4);
-                        border-radius: 8px;
-                    }
-                    QPushButton {
-                        background-color: #4a5568;
-                        color: white;
-                        border: none;
-                        border-radius: 6px;
-                        padding: 8px 16px;
-                    }
-                    QPushButton:hover {
-                        background-color: #5a6b82;
-                    }
-                """)
-
-                layout = QVBoxLayout(self)
-                layout.setSpacing(15)
-                layout.setContentsMargins(25, 25, 25, 25)
-
-                self.status_label = QLabel("Подготовка к переустановке...")
-                self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                layout.addWidget(self.status_label)
-
-                self.progress_bar = QProgressBar()
-                self.progress_bar.setRange(0, 100)
-                layout.addWidget(self.progress_bar)
-
-                self.worker = ReinstallWorker()
-                self.worker.status_updated.connect(self.status_label.setText)
-                self.worker.progress_updated.connect(self.progress_bar.setValue)
-                self.worker.finished.connect(self.on_finished)
-                self.worker.start()
-
-            def on_finished(self, result):
-                if result.get("success", False):
-                    backups = result.get("backups", [])
-
-                    report = "✅ Переустановка завершена!\n\n"
-
-                    if backups:
-                        report += "📦 Созданы бэкапы:\n" + "\n".join([f"• {b}" for b in backups]) + "\n\n"
-
-                    report += "🔄 Установлено:\n"
-                    report += "• Чистая версия Minecraft 1.20.1\n"
-                    report += "• Fabric Loader 0.17.2\n"
-                    report += "• Основные моды (без проблемных)\n\n"
-                    report += "🎯 Теперь попробуйте запустить игру!"
-
-                    MessageDialog.show_info(self, "Переустановка завершена", report)
-                else:
-                    error = result.get("error", "Неизвестная ошибка")
-                    MessageDialog.show_error(self, "Ошибка", f"❌ Ошибка переустановки:\n{error}")
-
-                self.accept()
-
-        dialog = ReinstallDialog(self)
-        dialog.exec()
-
-    def save_bugreport(self):
+    def save_bugreport(self, checked=False, minecraft_dir=None):
         if getattr(self, 'bugreport_worker', None) and self.bugreport_worker.isRunning():
             return
         self.bugreport_action.setEnabled(False)
-        self.bugreport_worker = BugreportWorker(self)
+        self.bugreport_worker = BugreportWorker(self, minecraft_dir or self.selected_game_directory())
         self.bugreport_worker.ready.connect(lambda path: MessageDialog.show_info(
             self, 'Bugreport.txt', f'Полный отчёт сохранён:\n{path}'))
         self.bugreport_worker.failed.connect(lambda error: MessageDialog.show_error(self, 'Bugreport.txt', error))
@@ -1720,7 +1643,7 @@ class MainWindow(QMainWindow):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Настройки")
-        dialog.setFixedSize(400, 300)
+        dialog.setFixedSize(520, 430)
         dialog.setModal(True)
         dialog.setStyleSheet("""
             QDialog {
@@ -1776,7 +1699,7 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(30, 30, 30, 30)
 
-        title = QLabel("⚙️ Настройки памяти")
+        title = QLabel("⚙️ Память и Java")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #4ECDC4; margin-bottom: 10px;")
         main_layout.addWidget(title)
@@ -1815,6 +1738,10 @@ class MainWindow(QMainWindow):
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_label.setStyleSheet("color: #888888; font-size: 10px; margin-top: 5px;")
         main_layout.addWidget(info_label)
+
+        java_button = QPushButton('Версия JAVA')
+        java_button.clicked.connect(self.open_java_manager)
+        main_layout.addWidget(java_button)
 
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
@@ -2002,6 +1929,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Закрытие окна - безопасная версия"""
         from Core.run import is_game_running, GAME_PROCESS
+
+        if self.crash_worker and self.crash_worker.isRunning():
+            MessageDialog.show_info(self, 'Анализ вылета', 'Дождитесь завершения анализа логов.')
+            event.ignore()
+            return
 
         if self.launch_worker and self.launch_worker.isRunning():
             MessageDialog.show_info(self, 'Подготовка игры', 'Дождитесь завершения подготовки игры перед закрытием лаунчера.')

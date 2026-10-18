@@ -40,7 +40,8 @@ class DiagnosticWorker(QThread):
     def run(self):
         """Выполняет диагностику в отдельном потоке"""
         try:
-            minecraft_dir = CONFIG["minecraft_dir"]
+            from Core.instances import game_directory
+            minecraft_dir = str(game_directory(self.selected_version))
 
             # Проверка папок
             for folder in ["mods", "versions", "config", "shaderpacks"]:
@@ -119,7 +120,7 @@ class DiagnosticWorker(QThread):
                     loader_needed = is_modloader_needed(self.selected_version)
 
                     if loader_needed:
-                        versions_dir = os.path.join(minecraft_dir, "versions")
+                        versions_dir = os.path.join(CONFIG['minecraft_dir'], "versions")
                         if loader_needed == "fabric":
                             loader_installed = any("fabric-loader" in v for v in os.listdir(versions_dir) if
                                                    os.path.isdir(os.path.join(versions_dir, v)))
@@ -473,7 +474,8 @@ class QtDiagnosticWindow(BaseMainWindow):
 
     def create_report(self):
         """Создает отчет"""
-        report_path = os.path.join(CONFIG["minecraft_dir"], "diagnostic_report.txt")
+        from Core.instances import game_directory
+        report_path = os.path.join(game_directory(self.selected_version), "diagnostic_report.txt")
 
         try:
             os.makedirs(os.path.dirname(report_path), exist_ok=True)

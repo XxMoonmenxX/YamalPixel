@@ -21,6 +21,7 @@ from PyQt6.QtGui import QFont, QColor
 from ConfDir.Configs import CONFIG, SHADERS_CONFIG
 from Network.Downloader import TurboDownloader, download_yandex_file_sync
 from Core.mod_transaction import safe_target
+from Core.instances import ensure_game_directory
 
 logger = logging.getLogger("YamalPixel.ShaderManager")
 
@@ -40,7 +41,7 @@ class ShaderDownloadWorker(QThread):
         self.cancelled = True
 
     def run(self):
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
         os.makedirs(shaders_dir, exist_ok=True)
 
         downloader = TurboDownloader()
@@ -258,7 +259,7 @@ class ShaderManagerDialog(QDialog):
 
     def check_installed_shaders(self):
         """Проверяет какие шейдеры уже установлены"""
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
         if not os.path.exists(shaders_dir):
             return
 
@@ -353,7 +354,7 @@ class ShaderManagerDialog(QDialog):
 
     def open_shaders_folder(self):
         """Открывает папку с шейдерами"""
-        shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
         os.makedirs(shaders_dir, exist_ok=True)
 
         import subprocess

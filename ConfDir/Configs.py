@@ -53,7 +53,7 @@ CONFIG = {
     "fabric_loader": "0.17.2",
     "use_proxy_for_downloads": True,
     "minecraft_dir": os.path.expanduser("~/YamalPixel"),
-    "mods_archive_url": "https://disk.yandex.ru/d/3TObVTQaQnF6-Q",
+    "mods_archive_url": "https://disk.yandex.ru/d/gyF-xpn4a0jfsQ",
     "mods": [],
 }
 

@@ -559,7 +559,8 @@ def download_shaders_turbo_ui(shaders_list, parent=None):
             self.cancelled = True
 
         def run(self):
-            shaders_dir = os.path.join(CONFIG["minecraft_dir"], "shaderpacks")
+            from Core.instances import ensure_game_directory
+            shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
             os.makedirs(shaders_dir, exist_ok=True)
 
             total = len(self.shaders)

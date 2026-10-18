@@ -39,6 +39,8 @@ def load_collection_file(filename: str) -> Dict:
         data = json.load(stream)
     if not isinstance(data, dict) or not all(key in data for key in ('name', 'minecraft_version', 'loader', 'mods')):
         raise ValueError('Неверный файл сборки')
+    data['filename'] = filename
+    data.setdefault('instance_id', 'file:' + filename)
     return data
 
 
@@ -59,6 +61,7 @@ def load_collection_data(collection_name: str) -> Optional[Dict]:
 
                     if data.get('name') == collection_name or f"📦 {data.get('name')}" == collection_name:
                         data['filename'] = filename
+                        data.setdefault('instance_id', 'file:' + filename)
                         return data
                 except Exception as e:
                     logger.error(f"Ошибка чтения файла {filename}: {e}")
@@ -106,6 +109,7 @@ def load_all_collections() -> List[Dict]:
                         'name': data['name'],
                         'display_name': f"📦 {data['name']}",
                         'filename': filename,
+                        'instance_id': data.get('instance_id') or 'file:' + filename,
                         'minecraft_version': data['minecraft_version'],
                         'loader': data['loader'],
                         'loader_version': data.get('loader_version', ''),
@@ -135,6 +139,7 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
             filename = f"{safe_name}.json"
 
         filepath = safe_target(collections_dir, filename)
+        collection_data.setdefault('instance_id', 'file:' + filename)
 
         collection_data['updated_at'] = datetime.now().isoformat()
         if 'created_at' not in collection_data:
@@ -216,10 +221,10 @@ def check_mod_compatibility(mod: Dict, minecraft_version: str, loader: str) -> t
 
 
 def install_collection(collection_data: Dict, progress_callback=None, create_backup=True,
-                       cancel_event=None, raise_on_error=False) -> bool:
+                       cancel_event=None, raise_on_error=False, minecraft_dir=None) -> bool:
     """Download a complete collection before replacing existing mods."""
     from Core.run import set_current_collection
-    minecraft_dir = CONFIG["minecraft_dir"]
+    minecraft_dir = minecraft_dir or CONFIG["minecraft_dir"]
     os.makedirs(minecraft_dir, exist_ok=True)
     mods_dir = os.path.join(minecraft_dir, "mods")
     try:
