@@ -22,7 +22,6 @@ from PyQt6.QtGui import QFont, QColor, QTextCursor, QPalette
 from ConfDir.Configs import CONFIG, get_minecraft_version
 from ConfDir.Versions import CURRENT_VERSION
 
-from Ui.BaseWindow import BaseMainWindow
 
 
 class DiagnosticWorker(QThread):
@@ -199,11 +198,11 @@ class DiagnosticWorker(QThread):
             return "Не найдена"
 
 
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QPalette
 from ConfDir.Configs import resource_path
 
 
-class QtDiagnosticWindow(BaseMainWindow):
+class QtDiagnosticWindow(QMainWindow):
     """Окно диагностики на PyQt6"""
 
     def __init__(self, parent=None, selected_version=None):
@@ -214,9 +213,13 @@ class QtDiagnosticWindow(BaseMainWindow):
         self.setWindowTitle("Диагностика проблем")
         self.setMinimumSize(900, 650)
         self.setStyleSheet(self._get_stylesheet())
+        palette = self.palette(); palette.setColor(QPalette.ColorRole.Window, QColor('#2b2b2b')); self.setPalette(palette); self.setAutoFillBackground(True)
 
         # Центральный виджет
         central = QWidget()
+        central.setObjectName('diagnosticCentral')
+        central.setAutoFillBackground(True)
+        central.setStyleSheet('#diagnosticCentral { background-color: #2b2b2b; background-image: none; }')
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setSpacing(15)
@@ -276,9 +279,20 @@ class QtDiagnosticWindow(BaseMainWindow):
         self.repair_btn.clicked.connect(self.auto_repair)
         buttons_layout.addWidget(self.repair_btn)
 
+        self.quarantine_btn = QPushButton("🛡 Карантин модов")
+        self.quarantine_btn.clicked.connect(self.open_quarantine)
+        buttons_layout.addWidget(self.quarantine_btn)
+
         self.report_btn = QPushButton("📄 Создать отчет")
         self.report_btn.clicked.connect(self.create_report)
         buttons_layout.addWidget(self.report_btn)
+
+        self.crash_btn = QPushButton("💥 Crash-анализы")
+        self.crash_btn.clicked.connect(self.show_crash_analyses)
+        buttons_layout.addWidget(self.crash_btn)
+        self.repair_report_btn = QPushButton("📄 report.txt")
+        self.repair_report_btn.clicked.connect(self.show_repair_report)
+        buttons_layout.addWidget(self.repair_report_btn)
 
         self.close_btn = QPushButton("❌ Закрыть")
         self.close_btn.clicked.connect(self.close)
@@ -307,6 +321,7 @@ class QtDiagnosticWindow(BaseMainWindow):
             QMainWindow {
                 background-color: #2b2b2b;
             }
+            QWidget { background-image: none; }
             QLabel {
                 color: #ffffff;
                 background-color: transparent;
@@ -366,6 +381,29 @@ class QtDiagnosticWindow(BaseMainWindow):
         self.worker.result_added.connect(self.add_result)
         self.worker.finished.connect(self.on_diagnostic_finished)
         self.worker.start()
+
+    def open_quarantine(self):
+        from Ui.QuarantineDialog import QuarantineDialog
+        from Core.instances import game_directory
+        QuarantineDialog(game_directory(self.selected_version), self).exec()
+
+    def show_crash_analyses(self):
+        from Core.instances import game_directory
+        from Core.crash_analyzer import analyze_text
+        from Core.repair_fingerprint import compute_fingerprint
+        root=game_directory(self.selected_version); paths=list((root/'crash-reports').glob('*.txt'))+list((root/'logs').glob('*.log'))+list(root.glob('hs_err_pid*.log'))
+        if not paths: self.results_text.setPlainText('Crash-анализы и логи не найдены.'); return
+        path=max(paths,key=lambda p:p.stat().st_mtime); raw=path.read_text(encoding='utf8',errors='replace'); analysis=analyze_text(raw)
+        lines=[f'Файл: {path.name}',f'Категория: {analysis.get("category","unknown")}',f'Причина: {analysis.get("title", "Не определена")}',f'Резюме: {analysis.get("summary","")}',f'Fingerprint: {compute_fingerprint(analysis,raw) or "не определён"}','', 'Подозрительные моды:']
+        lines += [f'  • {x}' for x in analysis.get('suspects',[])] or ['  • не обнаружены']
+        lines += ['', 'Рекомендации:'] + [f'  • {x}' for x in analysis.get('actions',[])]
+        lines += ['', 'Доказательства:'] + [f'  • {x}' for x in analysis.get('evidence',[])]
+        self.results_text.setPlainText('\n'.join(lines))
+
+    def show_repair_report(self):
+        from Core.instances import game_directory
+        p=game_directory(self.selected_version)/'_repair'/'sessions'/'report.txt'
+        self.results_text.setPlainText(p.read_text(encoding='utf8',errors='replace') if p.exists() else 'report.txt ещё не создан.')
 
     def add_result(self, text: str, color: str):
         color_map = {

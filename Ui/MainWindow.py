@@ -1140,12 +1140,13 @@ class MainWindow(QMainWindow):
         # Диагностика
         diagnostic_action = tools_menu.addAction("Диагностика проблем")
         diagnostic_action.triggered.connect(self.show_diagnostic)
-        self.crash_action = tools_menu.addAction('Разобрать последний вылет')
-        self.crash_action.triggered.connect(self.analyze_last_crash)
-        crash_file_action = tools_menu.addAction('Разобрать файл лога…')
-        crash_file_action.triggered.connect(self.analyze_crash_file)
-        self.bugreport_action = tools_menu.addAction("Сохранить полный Bugreport.txt")
-        self.bugreport_action.triggered.connect(self.save_bugreport)
+        #self.crash_action = tools_menu.addAction('Разобрать последний вылет')
+        #self.crash_action.triggered.connect(self.analyze_last_crash)
+        #crash_file_action = tools_menu.addAction('Разобрать файл лога…')
+        #crash_file_action.triggered.connect(self.analyze_crash_file)
+        #self.bugreport_action = tools_menu.addAction("Сохранить полный Bugreport.txt")
+
+        #self.bugreport_action.triggered.connect(self.save_bugreport)
 
         # Фон
         bg_action = tools_menu.addAction("Выбрать фон")
@@ -1168,6 +1169,11 @@ class MainWindow(QMainWindow):
         guide_action = guide_menu.addAction('Открыть гайд по лаунчеру')
         guide_action.setShortcut('F1')
         guide_action.triggered.connect(self.show_guide)
+
+    def open_repair_dialog(self):
+        from Ui.RepairDialog import RepairDialog
+        dialog = RepairDialog(CONFIG.get('minecraft_dir', ''), self)
+        dialog.exec()
 
     def show_guide(self):
         from Ui.LauncherGuide import LauncherGuide

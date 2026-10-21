@@ -120,6 +120,9 @@ def _finish_game_session(process, exit_code):
             logger.exception('Не удалось сохранить разбор, результат будет показан в окне')
             analysis['report_error'] = str(exc)
         _game_events.put(analysis)
+        if not analysis.get('crashed') and exit_code == 0 and analysis.get('reached_main_menu', True):
+            from Core.repair_last_ok import write
+            write(directory, context.get('selected_version'), context.get('minecraft'), context.get('loader'))
     except Exception:
         logger.exception('Не удалось разобрать завершение Minecraft')
         if exit_code:

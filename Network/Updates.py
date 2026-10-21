@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import stat
 import webbrowser
+import hashlib
+import uuid
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -48,29 +50,46 @@ def set_window_icon(window):
 class UpdateDownloadWorker(QThread):
     """Поток для скачивания обновления"""
     progress = pyqtSignal(int)
+    bytes_progress = pyqtSignal(int, int)  # downloaded, total
     finished = pyqtSignal(str, str)  # success, filepath
     error = pyqtSignal(str)
 
-    def __init__(self, download_url, temp_exe):
+    def __init__(self, download_url, temp_exe, expected_sha256=None):
         super().__init__()
         self.download_url = download_url
         self.temp_exe = temp_exe
+        self.expected_sha256 = expected_sha256.lower() if expected_sha256 else None
 
     def run(self):
         try:
-            with requests.get(self.download_url, stream=True) as r:
+            with requests.get(
+                self.download_url,
+                stream=True,
+                timeout=(10, 120),
+                headers={"User-Agent": "YamalPixelLauncher-Updater"},
+            ) as r:
                 r.raise_for_status()
-                total_size = int(r.headers.get("content-length", 0))
+                total_size = int(r.headers.get("content-length", 0) or 0)
+                digest = hashlib.sha256()
+                if total_size <= 0:
+                    self.progress.emit(-1)  # indeterminate: GitHub/CDN omitted size
 
                 with open(self.temp_exe, "wb") as f:
                     downloaded = 0
                     for chunk in r.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
+                            digest.update(chunk)
                             downloaded += len(chunk)
+                            self.bytes_progress.emit(downloaded, total_size)
                             if total_size > 0:
                                 percent = int((downloaded / total_size) * 100)
                                 self.progress.emit(percent)
+            if self.expected_sha256 and digest.hexdigest().lower() != self.expected_sha256:
+                raise ValueError('SHA256 скачанного EXE не совпал с GitHub')
+            with open(self.temp_exe, 'rb') as check:
+                if check.read(2) != b'MZ':
+                    raise ValueError('GitHub вернул не Windows EXE')
 
             # Делаем файл исполняемым (для Linux/MacOS)
             if os.name != "nt":
@@ -286,21 +305,23 @@ class UpdateDialog(QDialog):
             return
 
         self.accept()  # Закрываем диалог обновления
-        self.start_download_and_install(update_asset["browser_download_url"])
+        digest = update_asset.get('digest', '')
+        expected = digest.removeprefix('sha256:') if digest.startswith('sha256:') else None
+        self.start_download_and_install(update_asset["browser_download_url"], expected)
 
-    def start_download_and_install(self, download_url):
+    def start_download_and_install(self, download_url, expected_sha256=None):
         """Запускает скачивание и установку обновления"""
-        self.progress_dialog = UpdateProgressDialog(self, download_url)
+        self.progress_dialog = UpdateProgressDialog(self, download_url, expected_sha256)
         self.progress_dialog.show()
 
 
 class UpdateProgressDialog(QDialog):
     """Диалог прогресса скачивания обновления"""
 
-    def __init__(self, parent=None, download_url=None):
+    def __init__(self, parent=None, download_url=None, expected_sha256=None):
         super().__init__(parent)
         self.download_url = download_url
-        self.temp_exe = os.path.join(tempfile.gettempdir(), "YamalPixelLauncher_New.exe")
+        self.temp_exe = os.path.join(tempfile.gettempdir(), f"YamalPixelLauncher_New_{uuid.uuid4().hex}.exe")
 
         self.setWindowTitle("Обновление")
         self.setFixedSize(450, 180)
@@ -348,15 +369,33 @@ class UpdateProgressDialog(QDialog):
         layout.addWidget(self.percent_label)
 
         # Запускаем скачивание
-        self.worker = UpdateDownloadWorker(download_url, self.temp_exe)
+        self.worker = UpdateDownloadWorker(download_url, self.temp_exe, expected_sha256)
         self.worker.progress.connect(self.on_progress)
+        self.worker.bytes_progress.connect(self.on_bytes_progress)
         self.worker.finished.connect(self.on_download_finished)
         self.worker.error.connect(self.on_download_error)
         self.worker.start()
 
     def on_progress(self, percent):
+        if percent < 0:
+            self.progress_bar.setRange(0, 0)
+            self.percent_label.setText("Размер неизвестен")
+            return
+        if self.progress_bar.maximum() == 0:
+            self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(percent)
         self.percent_label.setText(f"{percent}%")
+
+    def on_bytes_progress(self, downloaded, total):
+        if total > 0:
+            self.status_label.setText(
+                "📥 Скачивание: %.1f / %.1f МБ" %
+                (downloaded / 1024 / 1024, total / 1024 / 1024)
+            )
+        else:
+            self.status_label.setText(
+                "📥 Скачано: %.1f МБ" % (downloaded / 1024 / 1024)
+            )
 
     def on_download_finished(self, success, filepath):
         """Обработка завершения скачивания"""
@@ -415,8 +454,10 @@ if exist "{current_exe}" (
     start "" "{current_exe}"
 )
 
-:: Очистка
-del "{backup_exe}" >nul 2>&1
+:: Удаляем резервную копию только после успешной проверки заменённого файла
+if exist "{current_exe}" (
+    for %%A in ("{current_exe}") do if %%~zA GTR 1000000 del "{backup_exe}" >nul 2>&1
+)
 del "%~f0" >nul 2>&1
 """)
 
@@ -494,15 +535,24 @@ rm -f "$0" 2>/dev/null
 
 
 def can_update_launcher():
-    """Проверяет, можно ли обновить лаунчер"""
+    """Проверяет права в каталоге реально запущенного лаунчера."""
+    test_file = None
     try:
-        test_file = os.path.join(os.path.dirname(sys.argv[0]), "test_write.tmp")
-        with open(test_file, "w") as f:
+        launcher_dir = os.path.dirname(launcher_executable())
+        test_file = os.path.join(
+            launcher_dir, f".yamalpixel_write_test_{uuid.uuid4().hex}"
+        )
+        with open(test_file, "w", encoding="utf-8") as f:
             f.write("test")
-        os.remove(test_file)
         return True
-    except:
+    except (OSError, TypeError, ValueError):
         return False
+    finally:
+        if test_file:
+            try:
+                os.remove(test_file)
+            except OSError:
+                pass
 
 
 def check_for_updates_local(parent_window=None):

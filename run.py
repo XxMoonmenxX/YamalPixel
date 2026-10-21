@@ -4,6 +4,8 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+from ConfDir.Versions import CURRENT_VERSION
 from launcher_paths import resource_path
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt, QTimer
@@ -59,7 +61,7 @@ class SplashWithProgress(QWidget):
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title)
 
-        self.version = QLabel("v0.9.2")
+        self.version = QLabel(CURRENT_VERSION)
         self.version.setFont(QFont("Segoe UI", 10))
         self.version.setStyleSheet("color: #666666;")
         self.version.setAlignment(Qt.AlignmentFlag.AlignCenter)

@@ -24,6 +24,16 @@ from ConfDir.Configs import CONFIG, CURSEFORGE_CONFIG
 
 logger = logging.getLogger(__name__)
 
+def _safe_print(message):
+    """Keep diagnostic output from crashing on legacy Windows consoles."""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        try:
+            print(str(message).encode("ascii", "backslashreplace").decode("ascii"))
+        except Exception:
+            logger.info("%s", message)
+
 
 class LauncherCache:
     def __init__(self):
@@ -180,7 +190,7 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
             name = mod_info.get('name', 'mod')
             filename = f"{name}.jar"
 
-        print(f"🔍 Начинаем загрузку мода: {filename} (источник: {source})")
+        _safe_print(f"🔍 Начинаем загрузку мода: {filename} (источник: {source})")
 
         mods_dir = os.path.join(minecraft_dir, "mods")
         os.makedirs(mods_dir, exist_ok=True)
@@ -188,7 +198,7 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
 
         # 1. Проверяем локальный кэш
         if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
-            print(f"✅ Мод уже есть: {filename}")
+            _safe_print(f"✅ Мод уже есть: {filename}")
             if not file_path.lower().endswith(('.jar', '.zip')) or zipfile.is_zipfile(file_path):
                 return True
 
@@ -199,11 +209,11 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
             url = mod_info.get('url') or mod_info.get('download_url') or mod_info.get('direct_link')
 
             if url:
-                print(f"🌐 Прокси: пробуем {filename}")
+                _safe_print(f"🌐 Прокси: пробуем {filename}")
                 if download_through_proxy(url, file_path, source):
-                    print(f"✅ Загружено через прокси: {filename}")
+                    _safe_print(f"✅ Загружено через прокси: {filename}")
                     return True
-                print(f"⚠️ Прокси не сработал, пробуем прямой метод")
+                _safe_print(f"⚠️ Прокси не сработал, пробуем прямой метод")
 
         # 3. Прямая загрузка в зависимости от источника
         if source == "yandex":
@@ -216,11 +226,11 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
         elif source == "shader":
             return _download_shader(mod_info, file_path)
         else:
-            print(f"❌ Неизвестный источник: {source}")
+            _safe_print(f"❌ Неизвестный источник: {source}")
             return False
 
     except Exception as e:
-        print(f"❌ Ошибка загрузки мода: {e}")
+        _safe_print(f"❌ Ошибка загрузки мода: {e}")
         return False
 
 
@@ -229,7 +239,7 @@ def _download_from_yandex(mod_info, file_path, mods_dir):
     try:
         url = mod_info.get('url')
         if not url:
-            print(f"❌ Нет URL для Яндекс.Диска")
+            _safe_print(f"❌ Нет URL для Яндекс.Диска")
             return False
 
         success = download_yandex_file_sync(url, file_path, 'yandex')
@@ -238,21 +248,31 @@ def _download_from_yandex(mod_info, file_path, mods_dir):
             try:
                 import zipfile
                 with zipfile.ZipFile(file_path, "r") as zip_ref:
-                    zip_ref.extractall(mods_dir)
-                print(f"📦 Распакован: {os.path.basename(file_path)}")
+                    root = Path(mods_dir).resolve()
+                    for member in zip_ref.infolist():
+                        if member.is_dir():
+                            continue
+                        target = (root / member.filename).resolve()
+                        if target.parent != root and root not in target.parents:
+                            raise ValueError(f"Небезопасный путь в архиве: {member.filename}")
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with zip_ref.open(member) as source, target.open("wb") as output:
+                            import shutil
+                            shutil.copyfileobj(source, output)
+                _safe_print(f"📦 Распакован: {os.path.basename(file_path)}")
             except Exception as e:
-                print(f"⚠️ Ошибка распаковки: {e}")
+                _safe_print(f"⚠️ Ошибка распаковки: {e}")
 
         return success
 
     except Exception as e:
-        print(f"❌ Ошибка прямой загрузки Яндекс: {e}")
+        _safe_print(f"❌ Ошибка прямой загрузки Яндекс: {e}")
         return False
 
 
 def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=None, loader=None):
     """Загрузка с Modrinth"""
-    print(f"🔄 Загрузка Modrinth")
+    _safe_print(f"🔄 Загрузка Modrinth")
     try:
         from Network.ModrinthLoader import ModrinthAPI
 
@@ -260,7 +280,7 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
         mod_id = mod_info.get('modrinth_id') or mod_info.get('project_id')
 
         if not mod_id:
-            print(f"❌ Нет ID мода для Modrinth")
+            _safe_print(f"❌ Нет ID мода для Modrinth")
             return False
 
         filename = mod_info.get('file') or mod_info.get('filename') or f"{mod_id}.jar"
@@ -269,7 +289,7 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
         mc_version = minecraft_version or mod_info.get('minecraft_version', '1.20.1')
         loader_type = loader or mod_info.get('loader', 'fabric')
 
-        print(f"🔄 Загрузка Modrinth: {mod_id} для {mc_version}/{loader_type}")
+        _safe_print(f"🔄 Загрузка Modrinth: {mod_id} для {mc_version}/{loader_type}")
 
         # Передаём minecraft_version и loader в download_mod
         success = api.download_mod(
@@ -282,19 +302,19 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
         )
 
         if success:
-            print(f"✅ Загрузка Modrinth успешна: {filename}")
+            _safe_print(f"✅ Загрузка Modrinth успешна: {filename}")
             return True
 
         if mod_info.get("version_id"):
             return False
         # Пробуем альтернативный метод
-        print(f"🔄 Пробуем альтернативную загрузку...")
+        _safe_print(f"🔄 Пробуем альтернативную загрузку...")
         from Network.Downloader import download_file_sync
         cdn_url = f"https://cdn.modrinth.com/data/{mod_id}/versions/latest/{filename}"
         return download_file_sync(cdn_url, file_path)
 
     except Exception as e:
-        print(f"❌ Ошибка прямой загрузки Modrinth: {e}")
+        _safe_print(f"❌ Ошибка прямой загрузки Modrinth: {e}")
         return False
 
 
@@ -309,14 +329,14 @@ def _download_from_curseforge(mod_info, file_path, mods_dir):
 
         mod_id = mod_info.get('curseforge_id') or mod_info.get('project_id')
         if not mod_id:
-            print(f"❌ Нет ID мода для CurseForge")
+            _safe_print(f"❌ Нет ID мода для CurseForge")
             return False
 
         filename = mod_info.get('file') or mod_info.get('filename') or f"mod-{mod_id}.jar"
         minecraft_version = mod_info.get('minecraft_version', '1.20.1')
         loader = mod_info.get('loader', 'fabric')
 
-        print(f"🔄 Загрузка CurseForge: {mod_id} для {minecraft_version}/{loader}")
+        _safe_print(f"🔄 Загрузка CurseForge: {mod_id} для {minecraft_version}/{loader}")
 
         pinned = mod_info.get('version_id') or mod_info.get('file_id')
         if pinned:
@@ -332,13 +352,13 @@ def _download_from_curseforge(mod_info, file_path, mods_dir):
         success = api.download_mod(str(mod_id), version_id, filename, mods_dir)
 
         if success:
-            print(f"✅ Загрузка CurseForge успешна: {filename}")
+            _safe_print(f"✅ Загрузка CurseForge успешна: {filename}")
             return True
 
         return False
 
     except Exception as e:
-        print(f"❌ Ошибка прямой загрузки CurseForge: {e}")
+        _safe_print(f"❌ Ошибка прямой загрузки CurseForge: {e}")
         return False
 
 
@@ -765,7 +785,7 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
             # Прокси сам разберётся
             pass
 
-        print(f"🌐 Прокси: загрузка {os.path.basename(filepath)} через {source}")
+        _safe_print(f"🌐 Прокси: загрузка {os.path.basename(filepath)} через {source}")
 
         response = requests.post(
             proxy_endpoint,
@@ -805,5 +825,5 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
         return False
     except Exception as e:
         mark_proxy_unavailable()
-        print(f"❌ Прокси: ошибка - {e}")
+        _safe_print(f"❌ Прокси: ошибка - {e}")
         return False

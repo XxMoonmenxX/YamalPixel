@@ -166,7 +166,11 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
 def delete_collection(filename: str) -> bool:
     """Удаляет сборку"""
     try:
-        filepath = os.path.join(get_collections_dir(), filename)
+        # Collection names come from UI/imported JSON; reject traversal and
+        # absolute paths before touching the filesystem.
+        filepath = safe_target(get_collections_dir(), filename)
+        if not filename.lower().endswith('.json'):
+            return False
         if os.path.exists(filepath):
             os.remove(filepath)
             return True
