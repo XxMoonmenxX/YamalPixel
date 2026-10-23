@@ -362,8 +362,7 @@ class ShaderDownloadProgressDialog(BaseDialog):
         """Отмена загрузки"""
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
-            self.worker.terminate()
-            self.worker.wait(1000)
+            self.worker.wait(5000)
             self.add_log("❌ Загрузка отменена пользователем")
             self.current_label.setText("❌ Загрузка отменена")
             self.cancel_btn.setEnabled(False)

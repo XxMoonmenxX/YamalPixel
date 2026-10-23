@@ -553,8 +553,7 @@ class CollectionCreator(QDialog):
         self.search_widget.setVisible(not custom)
         self.search_results.setVisible(not custom)
         self.source_combo.setEnabled(not custom)
-        self.analyze_btn.setEnabled(not custom and not any(
-            mod.get('source') == 'local' for mod in self.selected_mods))
+        self.analyze_btn.setEnabled(True)
         self.selected_tree.setMaximumHeight(350 if custom else 240 if self.original_data is not None else 160)
         self.status_label.setText('Добавьте локальные моды и сохраните сборку' if custom
                                   else 'Введите запрос для поиска модов')
@@ -951,14 +950,9 @@ class CollectionCreator(QDialog):
             self.selected_tree.addTopLevelItem(item)
 
         self.selected_count_label.setText(f"Всего: {len(self.selected_mods)}")
-        self.analyze_btn.setEnabled(self.mode_combo.currentData() != 'custom' and not any(
-            mod.get('source') == 'local' for mod in self.selected_mods))
+        self.analyze_btn.setEnabled(True)
 
     def analyze_dependencies(self):
-        if any(mod.get('source') == 'local' for mod in self.selected_mods):
-            QMessageBox.information(self, 'Локальные моды',
-                                    'Для локальных модов зависимости нужно добавить самостоятельно.')
-            return
         if not self.selected_mods:
             QMessageBox.warning(self, "Анализ", "Добавьте моды для анализа")
             return

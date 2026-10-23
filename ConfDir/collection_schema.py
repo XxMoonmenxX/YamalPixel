@@ -4,6 +4,8 @@
 """
 
 from typing import Dict
+import re
+from Core.mod_transaction import safe_filename
 
 COLLECTION_SCHEMA = {
     "name": "Название сборки",
@@ -48,16 +50,28 @@ def validate_collection_schema(data:  Dict) -> bool:
     """Проверяет валидность схемы сборки"""
     required_fields = ["name", "minecraft_version", "loader", "mods"]
 
+    if not isinstance(data, dict):
+        return False
     for field in required_fields:
         if field not in data:
             return False
 
+    if data.get('loader') not in {'fabric','forge','quilt','neoforge'}:
+        return False
+    if not re.fullmatch(r'\d+\.\d+(?:\.\d+)?', str(data.get('minecraft_version',''))):
+        return False
     # Проверяем моды
     if not isinstance(data["mods"], list):
         return False
 
     for mod in data["mods"]:
-        if "source" not in mod or "name" not in mod:
+        if not isinstance(mod, dict) or not all(k in mod for k in ("source","name","filename")):
             return False
+        if mod['source'] not in {'modrinth','curseforge','local','yandex','shader'}:
+            return False
+        if not isinstance(mod['filename'], str) or not mod['filename'].lower().endswith(('.jar','.zip')):
+            return False
+        try: safe_filename(mod['filename'])
+        except ValueError: return False
 
     return True

@@ -461,8 +461,11 @@ if exist "{current_exe}" (
 del "%~f0" >nul 2>&1
 """)
 
+            # Execute the generated batch file without shell=True; paths are
+            # passed as arguments to cmd and cannot become command fragments.
             subprocess.Popen(
-                [bat_path], shell=True, creationflags=subprocess.CREATE_NO_WINDOW
+                [os.environ.get('COMSPEC', 'cmd.exe'), '/d', '/c', bat_path],
+                shell=False, creationflags=subprocess.CREATE_NO_WINDOW
             )
 
         else:  # Linux/MacOS

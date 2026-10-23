@@ -1108,6 +1108,8 @@ class MainWindow(QMainWindow):
         # Запуск без модов
         no_mods_action = tools_menu.addAction("Запуск без модов")
         no_mods_action.triggered.connect(self.launch_without_mods)
+        restore_mods_action = tools_menu.addAction("Вернуть отключённые моды")
+        restore_mods_action.triggered.connect(self.restore_disabled_mods)
 
         tools_menu.addSeparator()
 
@@ -1499,11 +1501,6 @@ class MainWindow(QMainWindow):
         CONFIG["launch_without_mods_next"] = True
         CONFIG['launch_without_mods_version'] = self.version_combo.currentText()
 
-        if os.path.exists(mods_dir) and os.listdir(mods_dir):
-            backup_path = create_backup(mods_dir, "mods_before_clean_launch")
-            if backup_path:
-                print(f"Создан бэкап модов: {backup_path}")
-
         os.makedirs(disabled_dir, exist_ok=True)
 
         moved_count = 0
@@ -1527,6 +1524,21 @@ class MainWindow(QMainWindow):
                                     f"Моды находятся в: {disabled_dir}")
         else:
             MessageDialog.show_info(self, "Информация", "Модов для отключения не найдено")
+
+    def restore_disabled_mods(self):
+        minecraft_dir = self.selected_game_directory(create=True)
+        mods_dir = os.path.join(minecraft_dir, 'mods')
+        disabled_dir = os.path.join(minecraft_dir, 'mods_disabled_temp')
+        if not os.path.isdir(disabled_dir):
+            MessageDialog.show_info(self, 'Моды', 'Отключённых модов не найдено'); return
+        os.makedirs(mods_dir, exist_ok=True); count=0
+        for filename in os.listdir(disabled_dir):
+            if filename.lower().endswith('.jar'):
+                source=os.path.join(disabled_dir,filename); target=os.path.join(mods_dir,filename)
+                if os.path.exists(target): continue
+                shutil.move(source,target); count += 1
+        if not os.listdir(disabled_dir): os.rmdir(disabled_dir)
+        MessageDialog.show_info(self, 'Моды', f'Восстановлено модов: {count}')
 
     def complete_reinstall(self):
         if is_game_running() or (self.launch_worker and self.launch_worker.isRunning()):
@@ -1935,25 +1947,18 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Закрытие окна - безопасная версия"""
         from Core.run import is_game_running, GAME_PROCESS
-
-        if self.crash_worker and self.crash_worker.isRunning():
-            MessageDialog.show_info(self, 'Анализ вылета', 'Дождитесь завершения анализа логов.')
-            event.ignore()
-            return
-
-        if self.launch_worker and self.launch_worker.isRunning():
-            MessageDialog.show_info(self, 'Подготовка игры', 'Дождитесь завершения подготовки игры перед закрытием лаунчера.')
-            event.ignore()
-            return
-        if getattr(self, 'bugreport_worker', None) and self.bugreport_worker.isRunning():
-            MessageDialog.show_info(self, 'Bugreport.txt', 'Дождитесь сохранения полного отчёта.')
-            event.ignore()
-            return
-        if self.catalog_worker.isRunning():
-            self.catalog_worker.requestInterruption()
-            self.catalog_worker.setParent(None)
-            # Keep the worker alive until its bounded metadata requests finish.
-            QApplication.instance()._catalog_worker = self.catalog_worker
+        for timer_name in ('update_timer', 'game_event_timer'):
+            timer = getattr(self, timer_name, None)
+            if timer is not None: timer.stop()
+        for worker_name in ('catalog_worker', 'launch_worker', 'crash_worker', 'bugreport_worker'):
+            worker = getattr(self, worker_name, None)
+            if worker is not None and worker.isRunning():
+                if hasattr(worker, 'requestInterruption'): worker.requestInterruption()
+                if hasattr(worker, 'cancel'): worker.cancel()
+                worker.wait(2000)
+            if worker is not None and not worker.isRunning():
+                setattr(self, worker_name, None)
+        self.game_log_reader = None
         try:
             if is_game_running():
                 reply = QMessageBox.question(
@@ -1990,8 +1995,11 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, 'worker_thread') and self.worker_thread and self.worker_thread.isRunning():
             try:
-                self.worker_thread.terminate()
-                self.worker_thread.wait(1000)
+                if hasattr(self.worker_thread, 'cancel'):
+                    self.worker_thread.cancel()
+                self.worker_thread.wait(5000)
+                if not self.worker_thread.isRunning():
+                    self.worker_thread = None
             except:
                 pass
 

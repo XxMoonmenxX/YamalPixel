@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
-from Ui.BaseWindow import BaseDialog
+from PyQt6.QtGui import QPalette
 
 import logging
 from typing import Callable, Dict, List
@@ -28,18 +28,23 @@ class DependencyAnalyzerWorker(QThread):
         self.mods = mods
         self.minecraft_version = minecraft_version
         self.loader = loader
-        self.dependency_manager = DependencyManager()
+        # Network setup must happen in run(), never in the GUI thread.
+        self.dependency_manager = None
 
     def run(self):
         try:
+            self.dependency_manager = DependencyManager()
             self.progress.emit("Анализ модов...")
 
             all_dependencies = []
+            installed_ids = {str(m.get(key)).casefold() for m in self.mods
+                             for key in ('mod_id','project_id','modrinth_id','curseforge_id') if m.get(key)}
 
             for i, mod in enumerate(self.mods):
                 mod_name = mod.get('name', 'Unknown')
                 mod_source = mod.get('source')
-                mod_id = mod.get('mod_id') or mod.get('project_id')
+                mod_id = (mod.get('mod_id') or mod.get('project_id') or
+                          mod.get('modrinth_id') or mod.get('curseforge_id'))
 
                 # Критическая проверка: если нет ID, пропускаем
                 if not mod_source or not mod_id:
@@ -63,6 +68,10 @@ class DependencyAnalyzerWorker(QThread):
 
             for dep in all_dependencies:
                 key = f"{dep.source}:{dep.mod_id or dep.project_id}"
+                dep_id = str(dep.mod_id or dep.project_id or '').casefold()
+                if dep_id in installed_ids:
+                    logger.info('Зависимость уже добавлена в сборку: %s', dep.name)
+                    continue
                 if key not in seen:
                     seen.add(key)
                     if dep.dependency_type == 'required':
@@ -71,7 +80,7 @@ class DependencyAnalyzerWorker(QThread):
                         optional.append(dep)
 
             result = {
-                'total_mods': len([m for m in self.mods if m.get('mod_id') or m.get('project_id')]),
+                'total_mods': len([m for m in self.mods if (m.get('mod_id') or m.get('project_id') or m.get('modrinth_id') or m.get('curseforge_id'))]),
                 'required_dependencies': required,
                 'optional_dependencies': optional,
                 'all_dependencies': required + optional
@@ -106,7 +115,12 @@ class DependencyAnalyzerUI:
             return
 
         self.on_complete_callback = on_complete
-        self.analyzer_window = BaseDialog(self.parent)
+        from PyQt6.QtGui import QColor
+        self.analyzer_window = QDialog(self.parent)
+        self.analyzer_window.setObjectName('dependencyAnalyzer')
+        self.analyzer_window.setAutoFillBackground(True)
+        palette = self.analyzer_window.palette(); palette.setColor(QPalette.ColorRole.Window, QColor('#2b2b2b')); self.analyzer_window.setPalette(palette)
+        self.analyzer_window.setStyleSheet('#dependencyAnalyzer { background-color: #2b2b2b; background-image: none; }')
         self.analyzer_window.setWindowTitle("Анализ зависимостей")
         self.analyzer_window.setMinimumSize(800, 600)
         self.analyzer_window.setModal(True)
@@ -293,6 +307,9 @@ class DependencyAnalyzerUI:
 
     def _add_dependency_to_tree(self, dep: ModDependency) -> bool:
         """Добавляет зависимость в Treeview И В selected_mods родительского окна"""
+        if not (dep.mod_id or dep.project_id or getattr(dep, 'curseforge_id', None)):
+            logger.warning('Зависимость без ID требует ручной установки: %s', dep.name)
+            return False
         if not self.tree_widget:
             return False
 
@@ -344,5 +361,6 @@ class DependencyAnalyzerUI:
         """Обработчик закрытия окна"""
         self._is_window_open = False
         if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait(1000)
+            if hasattr(self.worker, 'cancel'):
+                self.worker.cancel()
+            self.worker.wait(5000)

@@ -4,6 +4,7 @@ from Network.proxy_status import proxy_available, mark_proxy_unavailable
 import json
 import os
 from Core.mod_transaction import safe_target
+from Core.mod_transaction import validate_jar_or_zip
 import threading
 import urllib.parse
 from typing import List, Dict, Optional
@@ -141,7 +142,7 @@ class ModrinthAPI:
                     if chunk:
                         f.write(chunk)
 
-            if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 1000 and validate_jar_or_zip(filepath):
                 logger.info(f"✅ Скачан: {filename} ({os.path.getsize(filepath)} байт)")
                 return True
             else:

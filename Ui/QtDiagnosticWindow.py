@@ -560,6 +560,5 @@ class QtDiagnosticWindow(QMainWindow):
 
     def closeEvent(self, event):
         if hasattr(self, 'worker') and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait(1000)
+            self.worker.wait(5000)
         event.accept()

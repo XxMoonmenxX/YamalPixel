@@ -256,8 +256,8 @@ class JavaInstallWorker(QThread):
         self.progress.emit(100, "Установка Java...")
 
         result = subprocess.run(
-            f'msiexec /i "{msi_path}" /quiet /norestart',
-            shell=True,
+            ['msiexec', '/i', str(msi_path), '/quiet', '/norestart'],
+            shell=False,
             timeout=300,
             capture_output=True,
             text=True,

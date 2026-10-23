@@ -7,7 +7,7 @@ import requests
 import asyncio
 import logging
 import zipfile
-from Core.mod_transaction import safe_target
+from Core.mod_transaction import safe_target, validate_jar_or_zip
 from pathlib import Path
 from ConfDir.Configs import API_KEY
 import aiohttp
@@ -145,9 +145,8 @@ def download_file_sync(url, filepath, progress_callback=None):
             if downloaded == 0 or (total_size and downloaded != total_size):
                 raise ValueError('Неполная загрузка')
         if filepath.lower().endswith(('.jar', '.zip')):
-            with zipfile.ZipFile(temporary) as archive:
-                if archive.testzip() is not None:
-                    raise ValueError('Повреждённый архив')
+            if not validate_jar_or_zip(temporary):
+                raise ValueError('Повреждённый архив')
         os.replace(temporary, filepath)
         return True
     except Exception as exc:
@@ -199,7 +198,7 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
         # 1. Проверяем локальный кэш
         if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
             _safe_print(f"✅ Мод уже есть: {filename}")
-            if not file_path.lower().endswith(('.jar', '.zip')) or zipfile.is_zipfile(file_path):
+            if not file_path.lower().endswith(('.jar', '.zip')) or validate_jar_or_zip(file_path):
                 return True
 
         # 2. Пробуем через прокси
@@ -243,6 +242,10 @@ def _download_from_yandex(mod_info, file_path, mods_dir):
             return False
 
         success = download_yandex_file_sync(url, file_path, 'yandex')
+        if success and file_path.lower().endswith(('.jar', '.zip')) and not validate_jar_or_zip(file_path):
+            try: os.remove(file_path)
+            except OSError: pass
+            return False
 
         if success and file_path.endswith(".zip"):
             try:
@@ -549,8 +552,7 @@ def download_mods_turbo_ui(mods_list, parent=None):
         def cancel_download(self):
             if self.worker and self.worker.isRunning():
                 self.worker.cancel()
-                self.worker.terminate()
-                self.worker.wait(1000)
+                self.worker.wait(5000)
                 self.add_log("❌ Загрузка отменена пользователем")
                 self.current_label.setText("❌ Загрузка отменена")
                 self.cancel_btn.setEnabled(False)
@@ -741,8 +743,7 @@ def download_shaders_turbo_ui(shaders_list, parent=None):
         def cancel_download(self):
             if self.worker and self.worker.isRunning():
                 self.worker.cancel()
-                self.worker.terminate()
-                self.worker.wait(1000)
+                self.worker.wait(5000)
                 self.add_log("❌ Загрузка отменена пользователем")
                 self.current_label.setText("❌ Загрузка отменена")
                 self.cancel_btn.setEnabled(False)

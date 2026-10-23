@@ -1,5 +1,6 @@
 """Validate paths and replace mods only after the replacement is ready."""
 import os
+import zipfile
 from pathlib import Path
 
 
@@ -34,3 +35,14 @@ def replace_mods(prepared, destination, rollback):
         if moved:
             os.replace(rollback, destination)
         raise
+
+def validate_jar_or_zip(path):
+    """Validate a downloaded archive before it becomes visible to the game."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            bad = archive.testzip()
+            if bad is not None:
+                return False
+        return True
+    except (OSError, zipfile.BadZipFile):
+        return False

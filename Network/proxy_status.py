@@ -39,6 +39,9 @@ def proxy_available(url=None):
         return False
     status = get_proxy_status(url)
     with status.lock:
+        if status.available is False and status.thread is None:
+            status.thread = threading.Thread(target=probe_proxy, args=(proxy_url(url),), name='proxy-reprobe', daemon=True)
+            status.thread.start()
         # Downloads can start directly while the health check is still running.
         return status.available is True
 
@@ -92,4 +95,5 @@ def mark_proxy_unavailable(url=None):
     with status.lock:
         status.available = False
         status.latency_ms = None
+        status.thread = None
     logger.debug('Proxy %s stopped responding; remaining downloads use direct sources', proxy_url(url))

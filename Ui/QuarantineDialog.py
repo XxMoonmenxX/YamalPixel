@@ -20,6 +20,8 @@ class QuarantineDialog(QDialog):
         if not item:return
         try:
             p=Path(item.text()); folder=p.parent
-            for child in folder.iterdir(): child.unlink()
-            folder.rmdir(); self.status.setText('Запись удалена'); self.refresh()
+            trash=self.q.instance_dir/'mods'/'_quarantine_trash'; trash.mkdir(parents=True,exist_ok=True)
+            target=trash/folder.name
+            folder.replace(target)
+            self.status.setText('Запись перемещена в карантинную корзину'); self.refresh()
         except Exception as e:self.status.setText(str(e))

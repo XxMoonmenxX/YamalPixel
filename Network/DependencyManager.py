@@ -54,7 +54,8 @@ class DependencyManager:
     def resolve_dependencies_for_mod(self, mod_info: Dict, minecraft_version: str, loader: str) -> List[ModDependency]:
         """Основной метод для получения зависимостей"""
         source = mod_info.get('source')
-        mod_id = mod_info.get('mod_id') or mod_info.get('project_id') or mod_info.get('curseforge_id')
+        mod_id = (mod_info.get('mod_id') or mod_info.get('project_id') or
+                  mod_info.get('modrinth_id') or mod_info.get('curseforge_id'))
         mod_name = mod_info.get('name', '')
 
         if not source or not mod_id:
