@@ -122,12 +122,15 @@ class UpdateDownloadWorker(QThread):
 class UpdateDialog(QDialog):
     """Диалог обновления лаунчера"""
 
-    def __init__(self, parent=None, release_data=None):
+    def __init__(self, parent=None, release_data=None, history=None):
         super().__init__(parent)
         self.release_data = release_data
+        # Храним историю отдельно от релиза, который используется для установки.
+        # Это позволяет показать changelog нескольких версий, не меняя payload
+        # последнего релиза и не ломая существующую кнопку установки.
+        self.history = list(history or ([release_data] if release_data else []))
         self.latest_version = release_data["tag_name"].lstrip("v") if release_data else CURRENT_VERSION
-        self.changelog = self._format_changelog(
-            release_data.get("body", "Нет описания изменений")) if release_data else ""
+        self.changelog = self._format_history(self.history)
 
         self.setWindowTitle(f"YamalPixel - Обновление до v{self.latest_version}")
         self.setMinimumSize(600, 500)
@@ -292,6 +295,21 @@ class UpdateDialog(QDialog):
         changelog = re.sub(r"removed", "🗑️ removed", changelog, flags=re.IGNORECASE)
 
         return changelog.strip()
+
+    def _format_history(self, releases):
+        """Возвращает человекочитаемую историю последних десяти релизов."""
+        blocks = []
+        for release in (releases or [])[:10]:
+            if not isinstance(release, dict):
+                continue
+            version = str(release.get("tag_name", "")).lstrip("v") or "неизвестная"
+            published = str(release.get("published_at", ""))[:10]
+            date_suffix = f" ({published})" if published else ""
+            body = self._format_changelog(
+                release.get("body") or "Нет описания изменений"
+            )
+            blocks.append(f"===== Версия {version}{date_suffix} =====\n{body}")
+        return "\n\n".join(blocks) or "✨ Нет истории релизов"
 
     def set_window_icon(self):
         try:
@@ -499,11 +517,11 @@ class UpdateCheckWorker(QThread):
     error = pyqtSignal(str)
     def run(self):
         try:
-            response=requests.get('https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest',timeout=10)
+            response=requests.get('https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases?per_page=10',timeout=10)
             response.raise_for_status(); self.finished.emit(response.json(), '')
         except Exception as exc: self.error.emit(str(exc))
 
-def check_for_updates_local(parent_window=None):
+def check_for_updates_local(parent_window=None, silent=False):
     """
     Проверка обновлений для PyQt6
     parent_window: главное окно лаунчера (QMainWindow)
@@ -521,10 +539,24 @@ def check_for_updates_local(parent_window=None):
         return
 
     worker=UpdateCheckWorker(parent_window); parent_window._update_check_worker=worker
-    worker.finished.connect(lambda release,_: _show_release_result(parent_window,release)); worker.error.connect(lambda error: QMessageBox.warning(parent_window,'Ошибка','Не удалось проверить обновления: '+error)); worker.start()
+    worker.finished.connect(lambda release,_: _show_release_result(parent_window,release,silent)); worker.error.connect(lambda error: (logger.warning('Проверка обновлений: %s',error) if silent else QMessageBox.warning(parent_window,'Ошибка','Не удалось проверить обновления: '+error))); worker.start()
     return worker
 
-def _show_release_result(parent_window, release_data):
-    latest_version=release_data.get('tag_name','').lstrip('v')
-    if latest_version and latest_version != CURRENT_VERSION: UpdateDialog(parent_window,release_data).exec()
-    else: QMessageBox.information(parent_window,'Обновление',f'Вы используете последнюю версию: {CURRENT_VERSION}')
+def _show_release_result(parent_window, releases, silent=False):
+    if isinstance(releases, dict): releases=[releases]
+    releases=[x for x in releases if isinstance(x,dict) and x.get('tag_name')]
+    if not releases: return
+    # GitHub отдаёт релизы в порядке публикации. Сравниваем только самый
+    # свежий релиз: старые теги с нестандартной нумерацией (например 0.9.303)
+    # не должны ошибочно считаться обновлением для 0.9.7.
+    releases.sort(key=lambda item: item.get('published_at') or '', reverse=True)
+    latest=releases[0]
+    latest_version=latest.get('tag_name','').lstrip('v')
+    def version_key(value):
+        import re
+        return tuple(int(x) for x in re.findall(r'\d+',value))
+    if version_key(latest_version) > version_key(CURRENT_VERSION):
+        # В диалоге показываем до десяти последних релизов, а устанавливаем
+        # по-прежнему только самый свежий из них.
+        UpdateDialog(parent_window, latest, history=releases[:10]).exec()
+    elif not silent: QMessageBox.information(parent_window,'Обновление',f'Вы используете последнюю версию: {CURRENT_VERSION}')

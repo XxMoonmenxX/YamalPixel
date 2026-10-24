@@ -622,6 +622,7 @@ class MainWindow(QMainWindow):
 
         # Проверяем java
         self.check_java_on_startup()
+        QTimer.singleShot(5000, lambda: check_for_updates_local(self, silent=True))
 
     def check_java_on_startup(self):
         """Java is resolved for the selected game at launch, including bundled runtimes."""
