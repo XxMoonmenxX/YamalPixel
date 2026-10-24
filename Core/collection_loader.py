@@ -162,6 +162,21 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
     except Exception as e:
         return False, str(e)
 
+def append_mods_to_collection(collection_name: str, mods: List[Dict]) -> tuple:
+    """Persist newly downloaded mods in the active custom collection manifest."""
+    if not collection_name or collection_name == 'YamalPixel':
+        return False, 'system collection has no editable manifest'
+    data = load_collection_data(collection_name)
+    if not data:
+        return False, f'collection not found: {collection_name}'
+    existing = {str(m.get('filename','')).casefold() for m in data.get('mods', [])}
+    for mod in mods:
+        filename = str(mod.get('filename',''))
+        if filename and filename.casefold() not in existing:
+            data.setdefault('mods', []).append(dict(mod)); existing.add(filename.casefold())
+    data['mod_count'] = len(data.get('mods', []))
+    return save_collection(data, data.get('filename'))
+
 
 def delete_collection(filename: str) -> bool:
     """Удаляет сборку"""

@@ -1080,6 +1080,13 @@ class MainWindow(QMainWindow):
 
     def update_status(self):
         """Обновляет статус"""
+        try:
+            from Network.proxy_status import proxy_available
+            if not proxy_available():
+                self.status_label.setText('⚠️ Прокси-сервер недоступен. Загрузка идет напрямую (может быть медленнее).')
+                self.status_label.setStyleSheet('background: transparent; color: #ffaa00;')
+        except Exception:
+            pass
         if hasattr(self, 'rpc') and self.rpc:
             try:
                 self.rpc.update()

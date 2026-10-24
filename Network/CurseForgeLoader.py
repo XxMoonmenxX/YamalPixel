@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Any
 import logging
 from datetime import datetime
 import re
+from ConfDir.Configs import API_KEY, CURSEFORGE_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +20,10 @@ class CurseForgeAPI:
     """Клиент для работы с CurseForge с улучшенным поиском по ID"""
 
     # Единый API ключ для доступа к прокси
-    API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
+    API_KEY = API_KEY
 
-    def __init__(self, proxy_url: str = "http://90.151.59.120:8000"):
-        self.proxy_url = proxy_url.rstrip('/')
+    def __init__(self, proxy_url: str = None):
+        self.proxy_url = (proxy_url or CURSEFORGE_CONFIG.get('proxy_url', '')).rstrip('/')
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'YamalPixelLauncher/1.0',

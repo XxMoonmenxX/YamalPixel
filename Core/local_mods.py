@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 from Core.mod_transaction import safe_filename
+from Core.mod_transaction import link_or_copy
 
 
 def validate_jar(path):
@@ -91,4 +92,4 @@ def copy_local_mod(mod, collections_dir, destination):
     if digest != mod.get('sha256'):
         raise ValueError(f'Локальный мод изменён или повреждён: {mod.get("filename", "")}')
     validate_jar(source)
-    shutil.copy2(source, destination)
+    link_or_copy(str(source), str(destination))

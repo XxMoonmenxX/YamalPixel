@@ -158,7 +158,7 @@ def download_file_sync(url, filepath, progress_callback=None):
 
 
 def download_yandex_file_sync(public_url, filepath, source='yandex', progress_callback=None):
-    if progress_callback is None and proxy_available() and download_through_proxy(public_url, filepath, source):
+    if proxy_available() and download_through_proxy(public_url, filepath, source, progress_callback):
         return True
     public_url = public_url.strip()
     for attempt in range(2):
@@ -753,7 +753,7 @@ def download_shaders_turbo_ui(shaders_list, parent=None):
     dialog.exec()
 
 
-def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> bool:
+def download_through_proxy(url: str, filepath: str, source: str = "unknown", progress_callback=None) -> bool:
     """
     Универсальная загрузка файла через прокси-сервер
     source: "yandex", "curseforge", "modrinth", "shader", "unknown"
@@ -804,6 +804,8 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
                 Path(filepath).parent.mkdir(parents=True, exist_ok=True)
                 with open(temporary, 'wb') as stream:
                     stream.write(content)
+                    if progress_callback:
+                        progress_callback(len(content), len(content))
                 if filepath.lower().endswith(('.jar', '.zip')):
                     with zipfile.ZipFile(temporary) as archive:
                         if archive.testzip() is not None:
@@ -824,7 +826,10 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown") -> 
         mark_proxy_unavailable()
         logger.debug('Proxy unavailable: %s', exc)
         return False
-    except Exception as e:
+    except (ValueError, zipfile.BadZipFile) as e:
         mark_proxy_unavailable()
+        _safe_print(f"❌ Прокси: ошибка - {e}")
+        return False
+    except Exception as e:
         _safe_print(f"❌ Прокси: ошибка - {e}")
         return False

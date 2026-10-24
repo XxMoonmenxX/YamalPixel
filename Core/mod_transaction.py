@@ -1,6 +1,7 @@
 """Validate paths and replace mods only after the replacement is ready."""
 import os
 import zipfile
+import shutil
 from pathlib import Path
 
 
@@ -46,3 +47,14 @@ def validate_jar_or_zip(path):
         return True
     except (OSError, zipfile.BadZipFile):
         return False
+
+def link_or_copy(source: str, destination: str) -> None:
+    """Create a same-filesystem hard link, falling back to a real copy."""
+    try:
+        parent = os.path.dirname(os.path.abspath(destination))
+        os.makedirs(parent, exist_ok=True)
+        if os.path.exists(destination):
+            os.remove(destination)
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import tempfile
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -94,7 +95,25 @@ def _fatal_evidence(text):
         text, re.I))
 
 
-def _suspects(text):
+def map_package_to_mod(package_name, minecraft_dir=None):
+    """Map a Java package to a mod id using fabric.mod.json metadata."""
+    if not minecraft_dir: return None
+    package_name=package_name.rstrip('.').lower()
+    try:
+        for jar in (Path(minecraft_dir)/'mods').glob('*.jar'):
+            with zipfile.ZipFile(jar) as archive:
+                if 'fabric.mod.json' not in archive.namelist(): continue
+                data=json.loads(archive.read('fabric.mod.json'))
+                mod_id=data.get('id'); packages=data.get('provides',[]) or data.get('custom',{}).get('packages',[])
+                candidates=list(packages) if isinstance(packages,list) else []
+                candidates += [str(data.get('id','')).replace('-','_')]
+                if mod_id and any(package_name.startswith(str(p).lower()) for p in candidates if p):
+                    return f'{mod_id} (Высокая уверенность)'
+    except (OSError, zipfile.BadZipFile, ValueError, TypeError):
+        pass
+    return None
+
+def _suspects(text, context=None):
     found = []
     found += re.findall(r"\bMod\s+['\"]([^'\"]+)['\"]\s*\(([\w.-]+)\)", text)
     names = [f'{name} ({mod_id})' for name, mod_id in found]
@@ -103,6 +122,9 @@ def _suspects(text):
     names += re.findall(r'\b(?:Block|Entity|Name|ID):\s*([a-z][a-z0-9_.-]+:[a-z0-9_/.-]+)', text)
     # Package ownership can be ambiguous; only report explicitly named IDs/classes.
     names += re.findall(r'^\s*at\s+([^\s(]+)', text, re.M)[:8]
+    for package in re.findall(r'^\s*at\s+([a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)+)', text, re.M):
+        mapped=map_package_to_mod(package, (context or {}).get('minecraft_dir'))
+        if mapped: names.insert(0,mapped)
     return _unique(names)[:12]
 
 
@@ -240,6 +262,15 @@ def analyze_text(text, exit_code=None, context=None):
                 if result['category'] == 'mod_dependency':
                     result['summary'] = cause['summary']
         result['actions'] = dependency_details + result['actions']
+    missing_ids = []
+    for pattern in (
+        r"requires\s+(?:version\s+[^\s]+\s+of\s+)?['\"]?[^('\"]+['\"]?\s*\(([^)]+)\).*?missing",
+        r"Mod\s+ID:\s*['\"]([^'\"]+)['\"]",
+        r"missing[^\n]*?\(([-\w.]+)\)",
+    ):
+        missing_ids.extend(re.findall(pattern, dependency_source, re.I))
+    missing_ids.extend(re.findall(r"of\s+([\w-]+),\s+which is missing", dependency_source, re.I))
+    result['missing_dependency_ids'] = _unique([x.strip() for x in missing_ids if re.fullmatch(r'[a-z0-9_.-]+', x.strip(), re.I)])
     add('wrong_environment', 'Мод запущен не на той стороне или загрузчике',
         'Код мода обращается к клиентским классам на сервере либо не подходит выбранному окружению.',
         r'Attempted to load class.*for invalid dist|Cannot load class.*in environment type SERVER|client-only mod.*server|requires.*(?:forge|neoforge|fabricloader).*missing|not a valid mod file|is a (?:Fabric|Forge|NeoForge) mod.*cannot be loaded',
@@ -315,7 +346,7 @@ def analyze_text(text, exit_code=None, context=None):
     details = _lines(block, r'^\s*(?:Block(?: entity)?:|Entity Type:|Entity ID:|Name:\s*[a-z][a-z0-9_.-]+:|Block location:|Exact location:|#?\s*Problematic frame:|#?\s*[CVJ]\s+\[[^\]]+\.(?:dll|so))')
     result['evidence'] = _unique(result['evidence'] + details)[:24]
     result['actions'] = _unique(result['actions'])[:8]
-    result['suspects'] = _suspects(block)
+    result['suspects'] = _suspects(block, context)
     if result['category'] in ('world_render', 'world_tick'):
         obj = re.search(r'\b(?:Name|Block|Entity Type):\s*([a-z][a-z0-9_.-]+:[a-z0-9_/.-]+)', block)
         location = re.search(r'(?:Block location:.*?World:|Exact location:)\s*\(([^)]+)\)', block)

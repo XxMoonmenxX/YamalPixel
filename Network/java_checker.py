@@ -12,6 +12,7 @@ import threading
 from pathlib import Path
 from typing import Optional, Tuple
 import re
+import tarfile
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar,
@@ -273,57 +274,31 @@ class JavaInstallWorker(QThread):
         self.finished.emit(True, "Java 17 успешно установлена!")
 
     def _install_linux(self):
-        """Установка Java на Linux"""
-        self.progress.emit(10, "Обновление списка пакетов...")
-
-        commands = [
-            ["sudo", "apt-get", "update", "-y"],
-            ["sudo", "apt-get", "install", "-y", "wget", "apt-transport-https", "gnupg"],
-            ["wget", "-qO", "-", "https://packages.adoptium.net/artifactory/api/gpg/key/public"],
-            ["sudo", "apt-key", "add", "-"],
-            ["echo", '"deb https://packages.adoptium.net/artifactory/deb $(lsb_release -cs) main"', "|", "sudo", "tee", "/etc/apt/sources.list.d/adoptium.list"],
-            ["sudo", "apt-get", "update", "-y"],
-            ["sudo", "apt-get", "install", "-y", "temurin-17-jdk"],
-        ]
-
-        for i, cmd in enumerate(commands):
-            if self._is_cancelled:
-                self.error.emit("Установка отменена")
-                return
-
-            self.progress.emit(10 + i * 12, f"Выполнение: {cmd[0]}...")
-
-            result = subprocess.run(
-                " ".join(cmd) if isinstance(cmd, list) else cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if result.returncode != 0 and "add" not in str(cmd):
-                logger.warning(f"Команда {' '.join(cmd)} завершилась с ошибкой: {result.stderr}")
-
-        self.finished.emit(True, "Java 17 успешно установлена!")
+        self._install_portable()
 
     def _install_macos(self):
-        """Установка Java на macOS"""
-        self.progress.emit(10, "Проверка Homebrew...")
+        self._install_portable()
 
-        # Проверяем установлен ли Homebrew
-        result = subprocess.run(["which", "brew"], capture_output=True)
-        if result.returncode != 0:
-            self.progress.emit(20, "Установка Homebrew...")
-            subprocess.run(
-                '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-                shell=True,
-                timeout=300,
-            )
-
-        self.progress.emit(50, "Установка Java...")
-        subprocess.run(["brew", "tap", "adoptium/temurin"], capture_output=True)
-        subprocess.run(["brew", "install", "--cask", "temurin17"], capture_output=True)
-
-        self.finished.emit(True, "Java 17 успешно установлена!")
+    def _install_portable(self):
+        """Install a user-local Temurin archive without sudo, apt or brew."""
+        url = get_java_installer_url()
+        if not url: raise RuntimeError('Нет portable Java для этой архитектуры')
+        runtime = Path.home() / 'YamalPixel' / 'runtime' / 'java17'
+        archive = runtime.parent / 'temurin17.tar.gz'; runtime.parent.mkdir(parents=True, exist_ok=True)
+        self.progress.emit(5, 'Скачивание portable Java...')
+        urllib.request.urlretrieve(url, str(archive))
+        if self._is_cancelled: return
+        self.progress.emit(60, 'Распаковка portable Java...')
+        with tarfile.open(archive, 'r:gz') as tar:
+            tar.extractall(runtime.parent)
+        candidates=list(runtime.parent.glob('jdk-17*/bin/java'))
+        if not candidates: raise RuntimeError('В архиве не найден java')
+        if runtime.exists():
+            import shutil; shutil.rmtree(runtime)
+        candidates[0].parent.parent.rename(runtime)
+        archive.unlink(missing_ok=True)
+        self.progress.emit(100, 'Portable Java 17 установлена')
+        self.finished.emit(True, 'Java 17 установлена в пользовательский runtime')
 
 
 class JavaCheckDialog(QDialog):

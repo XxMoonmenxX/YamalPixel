@@ -9,6 +9,7 @@ import threading
 import urllib.parse
 from typing import List, Dict, Optional
 import logging
+from ConfDir.Configs import CURSEFORGE_CONFIG
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -17,16 +18,13 @@ logger = logging.getLogger(__name__)
 class ModrinthAPI:
     """API для работы с Modrinth с поддержкой API ключа"""
 
-    API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
+    API_KEY = ""
 
-    def __init__(self, proxy_url: str = "http://90.151.59.120:8000"):
-        self.proxy_url = proxy_url.rstrip('/')
+    def __init__(self, proxy_url: str = None):
+        self.proxy_url = (proxy_url or CURSEFORGE_CONFIG.get('proxy_url', '')).rstrip('/')
         self.session = requests.Session()
         self.base_url = "https://api.modrinth.com/v2"
-        self.session.headers.update({
-            "User-Agent": "YamalPixel-Launcher/1.0 (moonmen@example.com)",
-            'X-API-Key': self.API_KEY
-        })
+        self.session.headers.update({"User-Agent": "YamalPixel-Launcher/1.0"})
 
         self.direct_timeout = 15
         self.proxy_timeout = 30
@@ -124,7 +122,7 @@ class ModrinthAPI:
         return f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{encoded_filename}"
 
     def _download_direct(self, url: str, filename: str, mods_dir: str) -> bool:
-        print('try2')
+        logger.debug('Direct Modrinth download')
         try:
             logger.debug(f"🔄 Прямое скачивание: {url}")
 
@@ -161,7 +159,7 @@ class ModrinthAPI:
             return False
 
     def download_mod_alternative(self, project_slug: str, version_id: str, filename: str, mods_dir: str) -> bool:
-        print ('try3')
+        logger.debug('Alternative Modrinth download')
         try:
             logger.debug(f"🔄 Альтернативный метод для: {filename}")
 

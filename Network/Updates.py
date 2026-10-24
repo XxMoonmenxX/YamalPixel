@@ -25,6 +25,22 @@ from launcher_paths import launcher_executable
 
 logger = logging.getLogger("YamalPixel.Updates")
 
+def apply_staged_update(executable=None):
+    """Replace the launcher with a validated .new file at next startup."""
+    current = Path(executable or launcher_executable())
+    staged = Path(str(current) + '.new')
+    if not staged.is_file(): return False
+    try:
+        if staged.stat().st_size < 1024 * 1024: return False
+        if staged.read_bytes()[:2] != b'MZ': return False
+        backup = current.with_name(current.stem + '_Backup' + current.suffix)
+        if current.exists(): os.replace(current, backup)
+        os.replace(staged, current)
+        if backup.exists(): backup.unlink()
+        return True
+    except OSError:
+        return False
+
 
 def set_window_icon(window):
     """Set icon for all windows (PyQt6 version)"""
@@ -424,92 +440,12 @@ class UpdateProgressDialog(QDialog):
             QMessageBox.information(self, 'Обновление исходников',
                                     'При запуске из Python обновите исходники проекта. Автообновление доступно для EXE.')
             return
-        backup_exe = os.path.join(os.path.dirname(current_exe), "YamalPixelLauncher_Backup.exe")
-        temp_dir = tempfile.gettempdir()
-
-        if os.name == "nt":  # Windows
-            bat_path = os.path.join(temp_dir, "yamalpixel_update.bat")
-            with open(bat_path, "w", encoding="utf-8") as bat_file:
-                bat_file.write(f"""@echo off
-chcp 65001 >nul
-echo YamalPixel - Обновление
-timeout /t 2 /nobreak >nul
-
-:: Закрываем лаунчер
-taskkill /f /im "{os.path.basename(current_exe)}" >nul 2>&1
-
-:: Создаем бэкап
-if exist "{current_exe}" (
-    copy "{current_exe}" "{backup_exe}" >nul 2>&1
-)
-
-:: Заменяем файл
-if exist "{temp_exe}" (
-    del "{current_exe}" >nul 2>&1
-    move "{temp_exe}" "{current_exe}" >nul 2>&1
-)
-
-:: Запускаем новую версию
-if exist "{current_exe}" (
-    start "" "{current_exe}"
-)
-
-:: Удаляем резервную копию только после успешной проверки заменённого файла
-if exist "{current_exe}" (
-    for %%A in ("{current_exe}") do if %%~zA GTR 1000000 del "{backup_exe}" >nul 2>&1
-)
-del "%~f0" >nul 2>&1
-""")
-
-            # Execute the generated batch file without shell=True; paths are
-            # passed as arguments to cmd and cannot become command fragments.
-            subprocess.Popen(
-                [os.environ.get('COMSPEC', 'cmd.exe'), '/d', '/c', bat_path],
-                shell=False, creationflags=subprocess.CREATE_NO_WINDOW
-            )
-
-        else:  # Linux/MacOS
-            sh_path = os.path.join(temp_dir, "yamalpixel_update.sh")
-            with open(sh_path, "w", encoding="utf-8") as sh_file:
-                sh_file.write(f"""#!/bin/bash
-echo "YamalPixel - Обновление"
-sleep 2
-
-# Закрываем лаунчер
-pkill -f "{os.path.basename(current_exe)}" 2>/dev/null
-sleep 1
-
-# Создаем бэкап
-if [ -f "{current_exe}" ]; then
-    cp "{current_exe}" "{backup_exe}" 2>/dev/null
-fi
-
-# Заменяем файл
-if [ -f "{temp_exe}" ]; then
-    rm -f "{current_exe}" 2>/dev/null
-    mv "{temp_exe}" "{current_exe}" 2>/dev/null
-    chmod +x "{current_exe}" 2>/dev/null
-fi
-
-# Запускаем новую версию
-if [ -f "{current_exe}" ]; then
-    "{current_exe}" &
-fi
-
-# Очистка
-rm -f "{backup_exe}" 2>/dev/null
-rm -f "$0" 2>/dev/null
-""")
-            os.chmod(sh_path, 0o755)
-            subprocess.Popen(
-                ["nohup", "bash", sh_path],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+        staged = current_exe + '.new'
+        os.replace(temp_exe, staged)
 
         # Закрываем текущий лаунчер
+        QMessageBox.information(self, 'Обновление', 'Обновление подготовлено и будет применено при следующем запуске лаунчера.')
         QApplication.quit()
-        sys.exit(0)
 
     def show_manual_update(self):
         """Показывает опцию ручного обновления"""
@@ -558,69 +494,37 @@ def can_update_launcher():
                 pass
 
 
+class UpdateCheckWorker(QThread):
+    finished = pyqtSignal(object, str)
+    error = pyqtSignal(str)
+    def run(self):
+        try:
+            response=requests.get('https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest',timeout=10)
+            response.raise_for_status(); self.finished.emit(response.json(), '')
+        except Exception as exc: self.error.emit(str(exc))
+
 def check_for_updates_local(parent_window=None):
     """
     Проверка обновлений для PyQt6
     parent_window: главное окно лаунчера (QMainWindow)
     """
-    try:
-        logging.info("Проверка обновлений...")
+    logging.info("Проверка обновлений...")
 
-        # Проверяем права доступа
-        if not can_update_launcher():
-            logging.warning("Недостаточно прав для автоматического обновления")
-            QMessageBox.information(
-                parent_window,
-                "Обновление",
-                "Недостаточно прав для автоматического обновления.\n\n"
-                "Запустите лаунчер от имени администратора для автоматического обновления,\n"
-                "или скачайте новую версию вручную с GitHub."
-            )
-            return
-
-        response = requests.get(
-            "https://api.github.com/repos/XxMoonmenxX/YamalPixel/releases/latest",
-            timeout=10
+    # Проверяем права доступа
+    if not can_update_launcher():
+        logging.warning("Недостаточно прав для автоматического обновления")
+        QMessageBox.information(
+            parent_window, "Обновление", "Недостаточно прав для автоматического обновления.\n\n"
+            "Запустите лаунчер от имени администратора для автоматического обновления,\n"
+            "или скачайте новую версию вручную с GitHub."
         )
-        response.raise_for_status()
+        return
 
-        release_data = response.json()
-        latest_version = release_data["tag_name"].lstrip("v")
+    worker=UpdateCheckWorker(parent_window); parent_window._update_check_worker=worker
+    worker.finished.connect(lambda release,_: _show_release_result(parent_window,release)); worker.error.connect(lambda error: QMessageBox.warning(parent_window,'Ошибка','Не удалось проверить обновления: '+error)); worker.start()
+    return worker
 
-        if latest_version != CURRENT_VERSION:
-            logging.info(f"Найдена новая версия: {latest_version}")
-
-            # Показываем диалог обновления
-            dialog = UpdateDialog(parent_window, release_data)
-            dialog.exec()
-
-        else:
-            QMessageBox.information(
-                parent_window,
-                "Обновление",
-                f"Вы используете последнюю версию: {CURRENT_VERSION}"
-            )
-
-    except requests.exceptions.Timeout:
-        logging.error("Таймаут при проверке обновлений")
-        QMessageBox.warning(
-            parent_window,
-            "Ошибка",
-            "Не удалось проверить обновления: превышен таймаут.\n\n"
-            "Проверьте интернет-соединение и попробуйте позже."
-        )
-    except requests.exceptions.ConnectionError:
-        logging.error("Ошибка подключения при проверке обновлений")
-        QMessageBox.warning(
-            parent_window,
-            "Ошибка",
-            "Не удалось подключиться к серверу обновлений.\n\n"
-            "Проверьте интернет-соединение и попробуйте позже."
-        )
-    except Exception as e:
-        logging.error(f"Ошибка проверки обновлений: {str(e)}")
-        QMessageBox.critical(
-            parent_window,
-            "Ошибка",
-            f"Не удалось проверить обновления: {str(e)}"
-        )
+def _show_release_result(parent_window, release_data):
+    latest_version=release_data.get('tag_name','').lstrip('v')
+    if latest_version and latest_version != CURRENT_VERSION: UpdateDialog(parent_window,release_data).exec()
+    else: QMessageBox.information(parent_window,'Обновление',f'Вы используете последнюю версию: {CURRENT_VERSION}')

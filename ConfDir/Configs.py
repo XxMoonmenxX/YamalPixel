@@ -46,8 +46,8 @@ RESOURCES = {
     "icon.ico": "https://disk.yandex.ru/i/nRwZp3AzRI16qQ"
 }
 
-# Конфигурация
-API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
+# Secrets and proxy endpoints are deployment configuration, never source code.
+API_KEY = os.getenv('YAMALPIXEL_PROXY_API_KEY', '')
 CONFIG = {
     "version": "1.20.1",
     "fabric_loader": "0.17.2",
@@ -400,7 +400,7 @@ messages = [
 
 # CurseForge Proxy Configuration
 CURSEFORGE_CONFIG = {
-    "proxy_url": "http://90.151.59.120:8000",
+    "proxy_url": os.getenv('YAMALPIXEL_PROXY_URL', 'http://127.0.0.1:8000'),
     "enabled": True,
     "api_version": "v1",
     "timeout": 10,

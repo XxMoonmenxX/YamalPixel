@@ -126,3 +126,19 @@ def rollback(result):
         if 'to' in data: Path(data['to']).replace(data['from']); return True
     except OSError: return False
     return False
+
+def rollback_to_last_ok(minecraft_dir):
+    from .repair_last_ok import read
+    import shutil
+    root=Path(minecraft_dir); snapshot_data=read(root)
+    if not snapshot_data: raise FileNotFoundError('Снимок последней рабочей сборки не найден')
+    mods=root/'mods'; mods.mkdir(parents=True,exist_ok=True)
+    allowed={x.get('filename') for x in snapshot_data.get('mods',[]) if x.get('filename')}
+    for p in mods.glob('*.jar'):
+        if p.name not in allowed: p.unlink()
+    missing=[]
+    for item in snapshot_data.get('mods',[]):
+        p=mods/item['filename']
+        if not p.exists(): missing.append(item['filename'])
+    if missing: raise FileNotFoundError('Не хватает модов: '+', '.join(missing))
+    return True

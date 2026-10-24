@@ -18,10 +18,12 @@ class ProxyStatus:
     thread: threading.Thread | None = None
     ready: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    recheck_started: bool = False
 
 
 _servers = {}
 _servers_lock = threading.Lock()
+RECHECK_SECONDS = 300
 
 
 def proxy_url(url=None):
@@ -96,4 +98,15 @@ def mark_proxy_unavailable(url=None):
         status.available = False
         status.latency_ms = None
         status.thread = None
+        if not status.recheck_started:
+            status.recheck_started = True
+            threading.Thread(target=_recheck_loop, args=(proxy_url(url),), name='proxy-recheck', daemon=True).start()
     logger.debug('Proxy %s stopped responding; remaining downloads use direct sources', proxy_url(url))
+
+def _recheck_loop(url):
+    while True:
+        time.sleep(RECHECK_SECONDS)
+        if probe_proxy(url):
+            status = get_proxy_status(url)
+            with status.lock: status.recheck_started = False
+            return
