@@ -340,6 +340,14 @@ class MainWindow(QMainWindow):
 
         # Настройка окна
         self.setWindowTitle(f"YamalPixel Launcher v{CURRENT_VERSION}")
+        # Явно задаём иконку главному окну: QApplication.setWindowIcon()
+        # не всегда наследуется окном после запуска PyInstaller/Nuitka.
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.isfile(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+        except Exception:
+            logger.debug("Не удалось установить иконку главного окна", exc_info=True)
         self.setMinimumSize(1200, 800)
 
         # ВАЖНО: Делаем фон окна прозрачным для отображения фонового изображения

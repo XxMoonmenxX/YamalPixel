@@ -9,7 +9,7 @@ import threading
 import urllib.parse
 from typing import List, Dict, Optional
 import logging
-from ConfDir.Configs import CURSEFORGE_CONFIG
+from ConfDir.Configs import API_KEY, CURSEFORGE_CONFIG
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ModrinthAPI:
     """API для работы с Modrinth с поддержкой API ключа"""
 
-    API_KEY = ""
+    API_KEY = API_KEY
 
     def __init__(self, proxy_url: str = None):
         self.proxy_url = (proxy_url or CURSEFORGE_CONFIG.get('proxy_url', '')).rstrip('/')

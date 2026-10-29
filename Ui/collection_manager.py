@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTreeWidget, QTreeWidgetItem, QMessageBox, QWidget, QSplitter,
     QTextEdit, QFrame, QTabWidget, QLineEdit, QComboBox,
-    QProgressBar, QApplication
+    QProgressBar, QApplication, QFileDialog
 )
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, pyqtSlot
@@ -18,14 +18,14 @@ from Core.collection_loader import (
     load_all_collections, delete_collection, install_collection,
     get_collections_dir, get_collection_mods_info, save_collection, load_collection_file
 )
-from ConfDir.Configs import COLLECTIONS_CONFIG
+from ConfDir.Configs import API_KEY, COLLECTIONS_CONFIG, CURSEFORGE_CONFIG
 from ConfDir.Versions import CURRENT_VERSION, all_versions
 
 from Ui.BaseWindow import BaseDialog
 
 # Конфигурация сервера сообщества
-COMMUNITY_SERVER_URL = "http://90.151.59.120:8000"
-SERVER_API_KEY = "F9bK7pL2sR5wX8zQ3vN6yT1mC4eB7gH0jU"
+COMMUNITY_SERVER_URL = CURSEFORGE_CONFIG.get("proxy_url", "").rstrip("/")
+SERVER_API_KEY = API_KEY
 
 try:
     from Ui.CollectionCreator import CollectionCreator
@@ -190,7 +190,8 @@ class CommunityCollectionsTab(QWidget):
         filter_layout.addWidget(QLabel("Категория:"))
         self.category_combo = QComboBox()
         self.category_combo.setMinimumWidth(150)
-        self.category_combo.currentTextChanged.connect(self.load_collections)
+        # currentTextChanged passes the text; load_collections expects a page.
+        self.category_combo.currentTextChanged.connect(lambda _text: self.load_collections(1))
         filter_layout.addWidget(self.category_combo)
 
         filter_layout.addStretch()
@@ -199,6 +200,10 @@ class CommunityCollectionsTab(QWidget):
         self.refresh_btn = QPushButton("🔄 Обновить")
         self.refresh_btn.clicked.connect(lambda: self.load_collections(1))
         filter_layout.addWidget(self.refresh_btn)
+
+        self.upload_btn = QPushButton("📤 Загрузить JSON")
+        self.upload_btn.clicked.connect(self.upload_json_collection)
+        filter_layout.addWidget(self.upload_btn)
 
         layout.addLayout(filter_layout)
 
@@ -237,6 +242,54 @@ class CommunityCollectionsTab(QWidget):
         self.status_label = QLabel("Готов")
         self.status_label.setStyleSheet("color: #888888; font-size: 10px;")
         layout.addWidget(self.status_label)
+
+    def upload_json_collection(self):
+        """Publish a local collection manifest to the community server."""
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите JSON-файл сборки",
+            get_collections_dir(),
+            "JSON-файлы (*.json)"
+        )
+        if not filename:
+            return
+
+        try:
+            with open(filename, "r", encoding="utf-8") as stream:
+                collection = json.load(stream)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Ошибка JSON", f"Не удалось открыть файл:\n{exc}")
+            return
+
+        if not isinstance(collection, dict):
+            QMessageBox.warning(self, "Ошибка JSON", "Корень файла должен быть JSON-объектом.")
+            return
+
+        required = ("name", "minecraft_version", "loader", "mods")
+        missing = [field for field in required if field not in collection]
+        if missing or not isinstance(collection.get("mods"), list):
+            details = ", ".join(missing) if missing else "mods должен быть массивом"
+            QMessageBox.warning(self, "Неполная сборка", f"Проверьте поля: {details}")
+            return
+
+        self.upload_btn.setEnabled(False)
+        try:
+            result = self.api.upload_collection(collection)
+            if result.get("success"):
+                QMessageBox.information(
+                    self,
+                    "Сборка опубликована",
+                    f"Сборка «{collection['name']}» загружена в сообщество."
+                )
+                self.load_collections(1)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Ошибка загрузки",
+                    result.get("error", "Сервер не принял сборку")
+                )
+        finally:
+            self.upload_btn.setEnabled(True)
 
     def load_categories(self):
         try:
@@ -431,6 +484,48 @@ class CommunityCollectionDetailsDialog(BaseDialog):
 
     collection_imported = pyqtSignal()
 
+    def setup_background(self):
+        """Use the lightweight manager theme for details, without wallpaper I/O."""
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QDialog#backgroundDialog {
+                background: #102033;
+                color: #dce8f5;
+            }
+            QDialog#backgroundDialog QWidget {
+                background-image: none;
+                color: #dce8f5;
+            }
+            QDialog#backgroundDialog QTextEdit,
+            QDialog#backgroundDialog QTreeWidget {
+                background: #0b192a;
+                color: #dce8f5;
+                border: 1px solid #30475e;
+                border-radius: 8px;
+            }
+            QDialog#backgroundDialog QHeaderView::section {
+                background: #1c3047;
+                color: #b7d7d5;
+                padding: 8px;
+                border: none;
+            }
+            QDialog#backgroundDialog QPushButton {
+                background: #203b53;
+                color: #eaf2fa;
+                border: 1px solid #385971;
+                border-radius: 8px;
+                padding: 8px 14px;
+            }
+            QDialog#backgroundDialog QPushButton:hover {
+                background: #2b506a;
+                border-color: #68e0cc;
+            }
+        """)
+
+    def load_background(self):
+        """Disable the shared wallpaper loader for this lightweight dialog."""
+        return False
+
     def __init__(self, parent, collection_id, collection_data, api):
         super().__init__(parent)
         self.collection_id = collection_id
@@ -494,7 +589,7 @@ class CommunityCollectionDetailsDialog(BaseDialog):
 
         self.download_btn = QPushButton("⬇️ Скачать и импортировать")
         self.download_btn.setStyleSheet(
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FF6B6B, stop:1 #4ECDC4);")
+            "background: #24566a; color: #efffff; border: 1px solid #397d86;")
         self.download_btn.clicked.connect(self.download_and_import)
         buttons_layout.addWidget(self.download_btn)
 

@@ -141,6 +141,9 @@ if __name__ == "__main__":
 
     # СОЗДАЁМ ОКНО
     window = MainWindow()
+    # Дублируем установку после создания окна для корректного значка
+    # в заголовке и на панели задач Windows.
+    window.setWindowIcon(QIcon(resource_path('icon.ico')))
     if keep_mods:
         from ConfDir.Configs import CONFIG
         CONFIG['launch_without_mods_next'] = True

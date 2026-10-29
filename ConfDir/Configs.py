@@ -7,6 +7,44 @@ import logging
 from launcher_paths import resource_path
 
 
+def _load_local_env():
+    """Load optional launcher settings without requiring python-dotenv.
+
+    Environment variables already set by the OS always win.  A ``.env`` file
+    next to the executable makes the same build portable to another machine.
+    """
+    candidates = []
+    explicit = os.getenv("YAMALPIXEL_ENV_FILE")
+    if explicit:
+        candidates.append(Path(explicit))
+    # In a Nuitka onefile build ``sys.executable`` may point at the temporary
+    # extracted runtime.  ``sys.argv[0]`` still points at the installed EXE.
+    executable_dirs = [Path(sys.executable).resolve().parent,
+                       Path(sys.argv[0]).resolve().parent]
+    candidates.extend(directory / ".env" for directory in executable_dirs)
+    candidates.append(Path(__file__).resolve().parents[1] / ".env")
+
+    for path in candidates:
+        try:
+            if not path.is_file():
+                continue
+            for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, value = line.split("=", 1)
+                name = name.strip()
+                value = value.strip().strip('"').strip("'").replace("$$", "$")
+                if name and name not in os.environ:
+                    os.environ[name] = value
+            break
+        except OSError:
+            continue
+
+
+_load_local_env()
+
+
 def set_window_icon(window):
     """Set icon for all windows"""
     try:
@@ -47,7 +85,7 @@ RESOURCES = {
 }
 
 # Secrets and proxy endpoints are deployment configuration, never source code.
-API_KEY = os.getenv('YAMALPIXEL_PROXY_API_KEY', '')
+API_KEY = os.getenv('YAMALPIXEL_PROXY_API_KEY', '').strip().replace('$$', '$')
 CONFIG = {
     "version": "1.20.1",
     "fabric_loader": "0.17.2",
@@ -279,7 +317,7 @@ COLLECTIONS_CONFIG = {
     "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),  # ← Теперь всегда в папке игры
     "max_mods_per_collection": 200,
     "supported_sources": ["modrinth", "curseforge", "local"],
-    "curseforge_proxy_url": "http://90.151.59.120:8000"
+    "curseforge_proxy_url": os.getenv("YAMALPIXEL_PROXY_URL", "http://127.0.0.1:8000").strip().rstrip("/")
 }
 
 messages = [
@@ -400,7 +438,7 @@ messages = [
 
 # CurseForge Proxy Configuration
 CURSEFORGE_CONFIG = {
-    "proxy_url": os.getenv('YAMALPIXEL_PROXY_URL', 'http://127.0.0.1:8000'),
+    "proxy_url": os.getenv('YAMALPIXEL_PROXY_URL', 'http://127.0.0.1:8000').strip().rstrip('/'),
     "enabled": True,
     "api_version": "v1",
     "timeout": 10,

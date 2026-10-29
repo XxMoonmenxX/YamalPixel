@@ -318,7 +318,14 @@ class CollectionCreator(QDialog):
         self.original_filename = original_filename
         self.setWindowTitle("Создание новой сборки")
         self.setObjectName("collectionCreator")
-        self.setMinimumSize(1100, 750)
+        # The dialog used to expose only a close button at its fixed minimum
+        # size, which made the mod cards unreadable on high-DPI displays.
+        # Keep a sensible minimum but allow normal resize/maximize controls.
+        self.setMinimumSize(900, 600)
+        self.resize(1450, 900)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+        self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint, True)
+        self.setSizeGripEnabled(True)
         self.setModal(True)
 
         self.selected_mods = []
@@ -774,6 +781,7 @@ class CollectionCreator(QDialog):
     def create_mod_card(self, project: ModProject, index: int) -> QWidget:
         card = QWidget()
         card.setObjectName("modCard")
+        card.setMinimumHeight(96)
         self.card_widgets[index] = card
 
         layout = QHBoxLayout(card)

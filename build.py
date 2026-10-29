@@ -70,6 +70,10 @@ def build_command(root=ROOT, standalone=False, console=False, output_dir=None, j
     for filename in ('icon.ico', 'Comfortaa-VariableFont_wght.ttf'):
         if (root / filename).is_file():
             command.append(f'--include-data-files={root / filename}={filename}')
+    # Embed local launcher settings in the onefile build.  The file is ignored
+    # by Git and can be overridden by a .env placed next to the EXE.
+    if (root / '.env').is_file():
+        command.append(f'--include-data-files={root / ".env"}=.env')
     if os.name == 'nt':
         command += ['--windows-console-mode=force' if console else '--windows-console-mode=disable',
                     '--file-version=' + numeric, '--product-version=' + numeric,
