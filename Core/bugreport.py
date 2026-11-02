@@ -21,9 +21,11 @@ _secret = re.compile(
 
 
 def redact(text):
+    # Redact the complete bearer credential before matching the header value;
+    # otherwise the generic rule consumes "Bearer" and leaves the token behind.
+    text = re.sub(r'(?i)(Bearer\s+)[\w.\-~+/=]+', r'\1[REDACTED]', text)
     text = _secret.sub(r'\1"[REDACTED]"', text)
     text = re.sub(r'(?i)(--(?:accessToken|clientId|xuid)\s+)[^\s]+', r'\1[REDACTED]', text)
-    text = re.sub(r'(?i)(Bearer\s+)[\w.\-]+', r'\1[REDACTED]', text)
     # Temporary Yandex download URLs contain credentials in the query string.
     return re.sub(r'(https?://[^\s"<>]*disk\.yandex\.[^\s"<>?]+)\?[^\s"<>]+',
                   r'\1?[REDACTED]', text)

@@ -65,19 +65,25 @@ class DependencyManager:
         logger.info(f"🔍 Анализ зависимостей для: {mod_name} (ID: {mod_id}, источник: {source})")
 
         if source == 'modrinth':
-            return self._get_modrinth_dependencies(mod_id, minecraft_version, loader)
+            return self._get_modrinth_dependencies(mod_id, minecraft_version, loader,
+                                                    mod_info.get('version_id'))
         elif source == 'curseforge':
             return self._get_curseforge_dependencies(mod_id, minecraft_version, loader)
 
         return []
 
-    def _get_modrinth_dependencies(self, project_id: str, minecraft_version: str, loader: str) -> List[ModDependency]:
+    def _get_modrinth_dependencies(self, project_id: str, minecraft_version: str, loader: str,
+                                    version_id=None) -> List[ModDependency]:
         """Получение зависимостей из Modrinth API"""
         try:
             api = self._get_modrinth_api()
             logger.info(f"🔍 Modrinth: получаем версии для {project_id}")
 
-            versions = api.get_mod_versions(project_id, minecraft_version, loader)
+            if version_id and version_id != 'latest':
+                version = api.get_version(version_id)
+                versions = [version] if version else []
+            else:
+                versions = api.get_mod_versions(project_id, minecraft_version, loader)
 
             if not versions:
                 logger.warning(f"❌ Нет версий для {project_id} под MC={minecraft_version}, loader={loader}")
@@ -147,10 +153,10 @@ class DependencyManager:
                     logger.info(f"🔍 Найдены зависимости в API")
                     dependencies = []
                     for dep in latest_version["dependencies"]:
-                        dep_type = dep.get("dependencyType")
+                        dep_type = dep.get("relationType", dep.get("dependencyType"))
                         dep_mod_id = dep.get("modId")
 
-                        if dep_mod_id and (dep_type == 1 or dep_type == "required"):
+                        if dep_mod_id and (dep_type in (1, 3, "required", "RequiredDependency", "EmbeddedLibrary")):
                             logger.info(f"   → Найдена зависимость через API: {dep_mod_id}")
                             dependencies.append(ModDependency({
                                 'source': 'curseforge',

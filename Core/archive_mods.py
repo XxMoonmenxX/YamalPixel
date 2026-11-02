@@ -2,7 +2,6 @@
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
-import shutil
 import time
 import zipfile
 import requests
@@ -10,6 +9,10 @@ import rarfile
 
 from Core.mod_transaction import safe_filename
 from Network.Downloader import download_yandex_file_sync
+
+MAX_MOD_BYTES = 2 * 1024 * 1024 * 1024
+MAX_EXTRACTED_BYTES = 16 * 1024 * 1024 * 1024
+MAX_ENTRIES = 10000
 
 
 def prepare_archive_mods(url, destination, progress=None, cancel_event=None):
@@ -65,6 +68,7 @@ def prepare_archive_mods(url, destination, progress=None, cancel_event=None):
     with archive:
         jars = []
         names = set()
+        total_size = 0
         for entry in archive.infolist():
             path = PurePosixPath(entry.filename.replace('\\', '/'))
             if path.is_absolute() or '..' in path.parts:
@@ -73,8 +77,12 @@ def prepare_archive_mods(url, destination, progress=None, cancel_event=None):
                 continue
             for part in path.parts:
                 safe_filename(part)
-            if (entry.external_attr >> 16) & 0o170000 == 0o120000:
+            if (getattr(entry, 'external_attr', 0) >> 16) & 0o170000 == 0o120000:
                 raise ValueError('Символическая ссылка в архиве')
+            total_size += entry.file_size
+            if (entry.file_size > MAX_MOD_BYTES or total_size > MAX_EXTRACTED_BYTES
+                    or len(jars) >= MAX_ENTRIES):
+                raise ValueError('Архив модов слишком большой')
             name = safe_filename(path.name)
             if name.casefold() in names:
                 raise ValueError('Повторяющийся мод в архиве: ' + name)
@@ -88,7 +96,17 @@ def prepare_archive_mods(url, destination, progress=None, cancel_event=None):
             if progress:
                 progress(index, len(jars), name, status='archive_extract')
             with archive.open(entry) as source, (Path(destination) / name).open('wb') as target:
-                shutil.copyfileobj(source, target)
+                size = 0
+                while True:
+                    if cancel_event and cancel_event.is_set():
+                        raise InterruptedError('Установка отменена')
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > MAX_MOD_BYTES:
+                        raise ValueError('Мод в архиве слишком большой')
+                    target.write(chunk)
     if progress:
         progress(len(jars), len(jars), 'Архив распакован', status='archive_ready')
     return len(jars)

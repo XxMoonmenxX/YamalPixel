@@ -1,5 +1,6 @@
 # Ui/CollectionCreator.py
 import os
+from pathlib import Path
 from copy import deepcopy
 import logging
 logger = logging.getLogger(__name__)
@@ -344,6 +345,18 @@ class CollectionCreator(QDialog):
 
     def load_for_editing(self):
         data = self.original_data
+        self._mrpack_edit_error = None
+        if data.get('source') == 'mrpack' and data.get('mrpack_installed') and not data.get('mods'):
+            # Older imports did not record their installed mods. Capture them
+            # before editing so the next install cannot silently delete them.
+            from Core.instances import collection_directory
+            mods_dir = collection_directory(data) / 'mods'
+            if mods_dir.is_dir() and any(p.is_file() and p.suffix.lower() == '.jar'
+                                        for p in mods_dir.iterdir()):
+                try:
+                    data['mods'] = import_local_mods([mods_dir], get_collections_dir())
+                except Exception as exc:
+                    self._mrpack_edit_error = str(exc)
         self.setWindowTitle('Редактирование сборки')
         self.title_label.setText('📦 Редактирование сборки')
         self.save_btn.setText('✅ Сохранить изменения')
@@ -987,6 +1000,10 @@ class CollectionCreator(QDialog):
         analyzer.show_analyzer(self.selected_mods, on_analysis_complete)
 
     def save_collection(self):
+        if getattr(self, '_mrpack_edit_error', None):
+            QMessageBox.warning(self, 'Ошибка импорта модов',
+                                'Не удалось сохранить существующие моды сборки: ' + self._mrpack_edit_error)
+            return
         name = self.name_input.text().strip()
         if not name:
             QMessageBox.warning(self, "Ошибка", "Введите название сборки!")
@@ -1026,6 +1043,8 @@ class CollectionCreator(QDialog):
                       for key in ('minecraft_version', 'loader', 'mods'))
         if changed:
             collection_data['dependencies_analyzed'] = False
+            if collection_data.get('source') == 'mrpack' and original.get('mrpack_installed'):
+                collection_data['mrpack_installed'] = False
             collection_data.pop('dependency_info', None)
             for mod in collection_data['mods']:
                 mod.pop('dependencies_resolved', None)

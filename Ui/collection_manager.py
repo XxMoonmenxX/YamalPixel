@@ -11,21 +11,21 @@ from PyQt6.QtWidgets import (
     QProgressBar, QApplication, QFileDialog
 )
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, pyqtSlot
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt6.QtGui import QFont, QIcon, QColor
 
 from Core.collection_loader import (
     load_all_collections, delete_collection, install_collection,
     get_collections_dir, get_collection_mods_info, save_collection, load_collection_file
 )
-from ConfDir.Configs import API_KEY, COLLECTIONS_CONFIG, CURSEFORGE_CONFIG
+from ConfDir.Configs import CURSEFORGE_CONFIG
+from Network.proxy_auth import generate_auth_header
 from ConfDir.Versions import CURRENT_VERSION, all_versions
 
 from Ui.BaseWindow import BaseDialog
 
 # Конфигурация сервера сообщества
 COMMUNITY_SERVER_URL = CURSEFORGE_CONFIG.get("proxy_url", "").rstrip("/")
-SERVER_API_KEY = API_KEY
 
 try:
     from Ui.CollectionCreator import CollectionCreator
@@ -39,15 +39,15 @@ class CommunityAPI:
 
     def __init__(self):
         self.base_url = COMMUNITY_SERVER_URL
-        self.headers = {
-            "X-API-Key": SERVER_API_KEY,
-            "Content-Type": "application/json"
-        }
         self.timeout = 30
+
+    @property
+    def headers(self):
+        return {"Content-Type": "application/json", **generate_auth_header()}
 
     def test_connection(self):
         try:
-            response = requests.get(f"{self.base_url}/api/v1/community/ping", timeout=10, headers=self.headers)
+            response = requests.get(f"{self.base_url}/api/v1/community/ping", timeout=10, headers=self.headers, allow_redirects=False)
             return response.status_code == 200
         except:
             return False
@@ -58,7 +58,7 @@ class CommunityAPI:
                 f"{self.base_url}/api/v1/community/collections",
                 params={"page": page, "limit": limit, "category": category, "sort_by": "downloads"},
                 timeout=self.timeout,
-                headers=self.headers
+                headers=self.headers, allow_redirects=False
             )
             if response.status_code == 200:
                 return response.json()
@@ -71,7 +71,7 @@ class CommunityAPI:
             response = requests.get(
                 f"{self.base_url}/api/v1/community/collection/{collection_id}",
                 timeout=self.timeout,
-                headers=self.headers
+                headers=self.headers, allow_redirects=False
             )
             if response.status_code == 200:
                 return response.json()
@@ -84,7 +84,7 @@ class CommunityAPI:
             response = requests.get(
                 f"{self.base_url}/api/v1/community/download/{collection_id}",
                 timeout=self.timeout,
-                headers=self.headers
+                headers=self.headers, allow_redirects=False
             )
             if response.status_code == 200:
                 return response.json()
@@ -97,7 +97,7 @@ class CommunityAPI:
             response = requests.post(
                 f"{self.base_url}/api/v1/community/stats/download/{collection_id}",
                 timeout=10,
-                headers=self.headers
+                headers=self.headers, allow_redirects=False
             )
             return response.status_code == 200
         except:
@@ -109,7 +109,7 @@ class CommunityAPI:
                 f"{self.base_url}/api/v1/community/search",
                 params={"q": query, "page": page, "limit": limit},
                 timeout=self.timeout,
-                headers=self.headers
+                headers=self.headers, allow_redirects=False
             )
             if response.status_code == 200:
                 return response.json()
@@ -127,7 +127,7 @@ class CommunityAPI:
                 f"{self.base_url}/api/v1/community/upload",
                 json=collection_data,
                 timeout=self.timeout,
-                headers=self.headers
+                headers=self.headers, allow_redirects=False
             )
             if response.status_code == 200:
                 return response.json()
@@ -137,7 +137,7 @@ class CommunityAPI:
 
     def get_categories(self):
         try:
-            response = requests.get(f"{self.base_url}/api/v1/community/categories", timeout=10, headers=self.headers)
+            response = requests.get(f"{self.base_url}/api/v1/community/categories", timeout=10, headers=self.headers, allow_redirects=False)
             if response.status_code == 200:
                 return response.json()
         except:
@@ -152,6 +152,8 @@ class CommunityCollectionsTab(QWidget):
     collection_selected = pyqtSignal(dict)
     display_collections_signal = pyqtSignal(dict)
     display_search_results_signal = pyqtSignal(dict)
+    categories_signal = pyqtSignal(list)
+    upload_result_signal = pyqtSignal(dict, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -162,6 +164,8 @@ class CommunityCollectionsTab(QWidget):
 
         self.display_collections_signal.connect(self._display_collections)
         self.display_search_results_signal.connect(self._display_search_results)
+        self.categories_signal.connect(self._display_categories)
+        self.upload_result_signal.connect(self._display_upload_result)
 
         self.setup_ui()
         self.load_categories()
@@ -273,49 +277,62 @@ class CommunityCollectionsTab(QWidget):
             return
 
         self.upload_btn.setEnabled(False)
-        try:
-            result = self.api.upload_collection(collection)
-            if result.get("success"):
-                QMessageBox.information(
-                    self,
-                    "Сборка опубликована",
-                    f"Сборка «{collection['name']}» загружена в сообщество."
-                )
-                self.load_collections(1)
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Ошибка загрузки",
-                    result.get("error", "Сервер не принял сборку")
-                )
-        finally:
-            self.upload_btn.setEnabled(True)
+        def upload():
+            try:
+                result = self.api.upload_collection(collection)
+            except Exception as exc:
+                result = {'success': False, 'error': str(exc)}
+            try:
+                self.upload_result_signal.emit(result, collection['name'])
+            except RuntimeError:
+                pass
+        threading.Thread(target=upload, daemon=True).start()
+
+    def _display_upload_result(self, result, name):
+        self.upload_btn.setEnabled(True)
+        if result.get('success'):
+            QMessageBox.information(self, 'Сборка опубликована', f'Сборка «{name}» загружена в сообщество.')
+            self.load_collections(1)
+        else:
+            QMessageBox.warning(self, 'Ошибка загрузки', result.get('error', 'Сервер не принял сборку'))
 
     def load_categories(self):
-        try:
-            data = self.api.get_categories()
-            categories = data.get("categories",
-                                  ["Все", "Оптимизация", "Технологии", "Приключения", "Квесты", "Магия", "Биомы",
-                                   "Строительство", "Выживание", "PvP"])
-            self.category_combo.clear()
-            self.category_combo.addItems(categories)
-        except:
-            self.category_combo.addItems(
-                ["Все", "Оптимизация", "Технологии", "Приключения", "Квесты", "Магия", "Биомы", "Строительство",
-                 "Выживание", "PvP"])
+        defaults = ['Все', 'Оптимизация', 'Технологии', 'Приключения', 'Квесты',
+                    'Магия', 'Биомы', 'Строительство', 'Выживание', 'PvP']
+        self.category_combo.addItem('Все')
+        def load():
+            try:
+                categories = self.api.get_categories().get('categories', defaults)
+                if not isinstance(categories, list) or not all(isinstance(item, str) for item in categories):
+                    categories = defaults
+            except Exception:
+                categories = defaults
+            try:
+                self.categories_signal.emit(categories)
+            except RuntimeError:
+                pass
+        threading.Thread(target=load, daemon=True).start()
+
+    def _display_categories(self, categories):
+        self.category_combo.blockSignals(True)
+        self.category_combo.clear()
+        self.category_combo.addItems(categories)
+        self.category_combo.blockSignals(False)
 
     def load_collections(self, page=1):
         self.current_page = page
         self.status_label.setText("Загрузка сборок...")
         self.tree.clear()
 
-        def load_thread():
-            category = self.category_combo.currentText()
-            category_param = "all" if category == "Все" else category.lower()
+        category = self.category_combo.currentText()
+        category_param = "all" if category == "Все" else category.lower()
 
+        def load_thread():
             result = self.api.get_collections(page=page, limit=20, category=category_param)
-            # Используем сигнал вместо invokeMethod
-            self.display_collections_signal.emit(result)
+            try:
+                self.display_collections_signal.emit(result)
+            except RuntimeError:
+                pass
 
         threading.Thread(target=load_thread, daemon=True).start()
 
@@ -379,61 +396,15 @@ class CommunityCollectionsTab(QWidget):
 
         def search_thread():
             result = self.api.search_collections(query, limit=50)
-            # Используем сигнал вместо invokeMethod
-            self.display_search_results_signal.emit(result)
+            try:
+                self.display_search_results_signal.emit(result)
+            except RuntimeError:
+                pass
 
         threading.Thread(target=search_thread, daemon=True).start()
 
     def _display_search_results(self, result):
         """Отображает результаты поиска (вызывается через сигнал)"""
-        if not result.get("success", False):
-            self.status_label.setText(f"❌ Ошибка поиска: {result.get('error', 'Неизвестная ошибка')}")
-            return
-
-        collections = result.get("collections", [])
-
-        if not collections:
-            item = QTreeWidgetItem(["Ничего не найдено", "", "", "", "", "", ""])
-            self.tree.addTopLevelItem(item)
-            self.status_label.setText("Ничего не найдено")
-            return
-
-        for col in collections:
-            item = QTreeWidgetItem()
-            item.setText(0, col["name"])
-            item.setText(1, col.get("uploader", "Неизвестно"))
-            item.setText(2, col.get("minecraft_version", "1.20.1"))
-            item.setText(3, str(col.get("mod_count", 0)))
-            item.setText(4, f"{col.get('downloads', 0):,}")
-            item.setText(5, "Нет оценок")
-            item.setText(6, col.get("upload_date", "Неизвестно")[:10])
-            item.setData(0, Qt.ItemDataRole.UserRole, col["id"])
-            item.setData(0, Qt.ItemDataRole.UserRole + 1, col)
-            self.tree.addTopLevelItem(item)
-
-        self.status_label.setText(f"✅ Найдено {len(collections)} сборок")
-        self.page_label.setText("Результаты поиска")
-        self.prev_btn.setEnabled(False)
-        self.next_btn.setEnabled(False)
-
-    def search_collections(self):
-        query = self.search_input.text().strip()
-        if not query:
-            self.load_collections(1)
-            return
-
-        self.status_label.setText(f"Поиск: {query}...")
-        self.tree.clear()
-
-        def search_thread():
-            result = self.api.search_collections(query, limit=50)
-            from PyQt6.QtCore import QMetaObject, Q_ARG
-            QMetaObject.invokeMethod(self, "display_search_results", Qt.ConnectionType.QueuedConnection,
-                                     Q_ARG(dict, result))
-
-        threading.Thread(target=search_thread, daemon=True).start()
-
-    def display_search_results(self, result):
         if not result.get("success", False):
             self.status_label.setText(f"❌ Ошибка поиска: {result.get('error', 'Неизвестная ошибка')}")
             return
@@ -686,204 +657,133 @@ class CommunityCollectionDetailsDialog(BaseDialog):
         QMessageBox.information(self, "Скопировано", f"ID сборки скопирован: {self.collection_id}")
 
 
-class ImportProgressDialog(BaseDialog):
-    """Диалог прогресса импорта сборки"""
+class CommunityImportWorker(QThread):
+    status = pyqtSignal(str)
+    succeeded = pyqtSignal()
+    failed = pyqtSignal(str)
+    cancelled = pyqtSignal()
 
+    def __init__(self, collection_id, api, parent=None):
+        super().__init__(parent)
+        self.collection_id, self.api = collection_id, api
+        self._cancel = threading.Event()
+        self._commit_lock = threading.Lock()
+        self._committed = False
+
+    def cancel(self):
+        with self._commit_lock:
+            if self._committed:
+                return False
+            self._cancel.set()
+            return True
+
+    def run(self):
+        try:
+            self.status.emit('Скачивание сборки...')
+            result = self.api.download_collection(self.collection_id)
+            if self._cancel.is_set():
+                self.cancelled.emit()
+                return
+            if not result.get('success'):
+                raise RuntimeError(result.get('error', 'Ошибка скачивания'))
+            collection = result.get('collection')
+            if not isinstance(collection, dict) or not isinstance(collection.get('mods'), list):
+                raise ValueError('Сервер вернул некорректную сборку')
+            if not all(isinstance(collection.get(field), str) and collection[field].strip()
+                       for field in ('name', 'minecraft_version', 'loader')):
+                raise ValueError('В сборке отсутствуют обязательные поля')
+            collection = dict(collection)
+            collection.update(source='community', original_id=self.collection_id,
+                              imported_date=datetime.now().isoformat())
+            base_name = collection['name']
+            self.status.emit('Сохранение сборки...')
+            with self._commit_lock:
+                if self._cancel.is_set():
+                    self.cancelled.emit()
+                    return
+                for number in range(10000):
+                    collection['name'] = base_name if number == 0 else f'{base_name[:42]}_{number}'
+                    ok, message = save_collection(collection)
+                    if ok:
+                        self._committed = True
+                        break
+                    if message != 'Сборка с таким именем уже существует':
+                        raise RuntimeError(message)
+                else:
+                    raise RuntimeError('Не удалось подобрать уникальное имя сборки')
+            self.succeeded.emit()
+            try:
+                self.api.increment_downloads(self.collection_id)
+            except Exception:
+                pass
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class ImportProgressDialog(BaseDialog):
     finished = pyqtSignal()
 
     def __init__(self, parent, collection_id, collection_data, api):
         super().__init__(parent)
-        self.collection_id = collection_id
-        self.collection_data = collection_data
-        self.api = api
-        self.cancelled = False
-
         self.setWindowTitle(f"Импорт сборки: {collection_data['name']}")
         self.setFixedSize(450, 200)
         self.setModal(True)
-
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(25, 25, 25, 25)
-
-        self.status_label = QLabel("Загрузка сборки...")
+        self.status_label = QLabel('Загрузка сборки...')
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
-
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # Indeterminate
+        self.progress_bar.setRange(0, 0)
         layout.addWidget(self.progress_bar)
-
-        self.cancel_btn = QPushButton("Отмена")
+        self.cancel_btn = QPushButton('Отмена')
         self.cancel_btn.clicked.connect(self.cancel_import)
         layout.addWidget(self.cancel_btn)
+        self._result = None
+        self.worker = CommunityImportWorker(collection_id, api, self)
+        self.worker.status.connect(self.status_label.setText)
+        self.worker.succeeded.connect(lambda: setattr(self, '_result', 'success'))
+        self.worker.cancelled.connect(lambda: setattr(self, '_result', 'cancelled'))
+        self.worker.failed.connect(self._on_error)
+        self.worker.finished.connect(self._on_finished)
+        self.worker.start()
 
-        # Запускаем импорт в отдельном потоке
-        threading.Thread(target=self.import_thread, daemon=True).start()
+    def _on_error(self, message):
+        self._result = 'error'
+        self.status_label.setText(f'❌ Ошибка: {message}')
 
-    def import_thread(self):
-        try:
-            # Скачиваем сборку
-            self.update_status("Скачивание сборки...")
-            result = self.api.download_collection(self.collection_id)
-
-            if not result.get("success", False):
-                self.show_error(result.get("error", "Ошибка скачивания"))
-                return
-
-            # Сохраняем локально
-            self.update_status("Сохранение сборки...")
-            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
-            os.makedirs(collections_dir, exist_ok=True)
-
-            # Создаем имя файла
-            safe_name = "".join(
-                c for c in self.collection_data["name"] if c.isalnum() or c in (' ', '-', '_')).rstrip()[:50]
-            filename = f"{safe_name}.json"
-            filepath = os.path.join(collections_dir, filename)
-
-            # Добавляем суффикс если файл существует
-            counter = 1
-            while os.path.exists(filepath):
-                filename = f"{safe_name}_{counter}.json"
-                filepath = os.path.join(collections_dir, filename)
-                counter += 1
-
-            # Получаем данные сборки
-            collection = result["collection"]
-            collection["source"] = "community"
-            collection["original_id"] = self.collection_id
-            collection["imported_date"] = datetime.now().isoformat()
-
-            # Сохраняем
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(collection, f, indent=2, ensure_ascii=False)
-
-            # Увеличиваем счетчик (в фоне, не блокируем)
-            self.update_status("Обновление статистики...")
-            self.api.increment_downloads(self.collection_id)
-
-            # Успешное завершение
-            self.import_success()
-
-        except Exception as e:
-            self.show_error(str(e))
-
-    def update_status(self, text):
-        """Обновляет статус из потока"""
-        from PyQt6.QtCore import QMetaObject, Q_ARG
-        QMetaObject.invokeMethod(
-            self.status_label, "setText",
-            Qt.ConnectionType.QueuedConnection,
-            Q_ARG(str, text)
-        )
-
-    def show_error(self, error_msg):
-        """Показывает ошибку и закрывает диалог"""
-        from PyQt6.QtCore import QMetaObject, Q_ARG
-
-        def display_error():
-            self.status_label.setText(f"❌ Ошибка: {error_msg}")
+    def _on_finished(self):
+        if self._result == 'success':
+            self.finished.emit()
+            self.accept()
+        elif self._result == 'cancelled':
+            self.reject()
+        else:
             self.progress_bar.setRange(0, 1)
             self.progress_bar.setValue(1)
-            self.cancel_btn.setText("Закрыть")
-            self.cancel_btn.clicked.disconnect()
-            self.cancel_btn.clicked.connect(self.accept)
-
-        QMetaObject.invokeMethod(
-            self, "close_delayed",
-            Qt.ConnectionType.QueuedConnection,
-            Q_ARG(str, error_msg)
-        )
-
-    def import_success(self):
-        """Успешное завершение импорта"""
-        from PyQt6.QtCore import QMetaObject, Q_ARG
-
-        def on_success():
-            self.finished.emit()
-            self.accept()
-
-        QMetaObject.invokeMethod(
-            self, "on_success",
-            Qt.ConnectionType.QueuedConnection
-        )
-
-    @pyqtSlot()
-    def on_success(self):
-        """Слот для успешного завершения"""
-        self.finished.emit()
-        self.accept()
-
-    @pyqtSlot(str)
-    def close_delayed(self, error_msg):
-        """Слот для закрытия с ошибкой"""
-        self.status_label.setText(f"❌ Ошибка: {error_msg}")
-        self.progress_bar.setRange(0, 1)
-        self.progress_bar.setValue(1)
-        self.cancel_btn.setText("Закрыть")
-        self.cancel_btn.clicked.disconnect()
-        self.cancel_btn.clicked.connect(self.accept)
+            self.cancel_btn.setEnabled(True)
+            self.cancel_btn.setText('Закрыть')
 
     def cancel_import(self):
-        """Отмена импорта"""
-        self.cancelled = True
-        self.accept()
+        if not self.worker.isRunning():
+            self.reject()
+        elif self.worker.cancel():
+            self.cancel_btn.setEnabled(False)
+            self.status_label.setText('Отмена: ожидание завершения запроса...')
+        else:
+            self.status_label.setText('Сборка уже сохранена; завершение импорта...')
 
-    def start_import(self):
-        def import_thread():
-            # Скачиваем сборку
-            result = self.api.download_collection(self.collection_id)
+    def reject(self):
+        if self.worker.isRunning():
+            self.cancel_import()
+            return
+        super().reject()
 
-            if not result.get("success", False):
-                self.show_error(result.get("error", "Ошибка скачивания"))
-                return
-
-            # Сохраняем локально
-            collections_dir = COLLECTIONS_CONFIG["collections_dir"]
-            os.makedirs(collections_dir, exist_ok=True)
-
-            # Создаем имя файла
-            safe_name = "".join(
-                c for c in self.collection_data["name"] if c.isalnum() or c in (' ', '-', '_')).rstrip()[:50]
-            filename = f"{safe_name}.json"
-            filepath = os.path.join(collections_dir, filename)
-
-            # Добавляем суффикс если файл существует
-            counter = 1
-            while os.path.exists(filepath):
-                filename = f"{safe_name}_{counter}.json"
-                filepath = os.path.join(collections_dir, filename)
-                counter += 1
-
-            # Получаем данные сборки
-            collection = result["collection"]
-            collection["source"] = "community"
-            collection["original_id"] = self.collection_id
-            collection["imported_date"] = datetime.now().isoformat()
-
-            # Сохраняем
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(collection, f, indent=2, ensure_ascii=False)
-
-            # Увеличиваем счетчик
-            self.api.increment_downloads(self.collection_id)
-
-            # Эмитим сигнал для завершения
-            self.finished.emit()
-            self.accept()
-
-        threading.Thread(target=import_thread, daemon=True).start()
-
-    def show_error(self, error_msg):
-        self.status_label.setText(f"❌ Ошибка: {error_msg}")
-        self.progress_bar.setRange(0, 1)
-        self.progress_bar.setValue(1)
-        self.cancel_btn.setText("Закрыть")
-
-    def cancel_import(self):
-        self.cancelled = True
-        self.accept()
+    def closeEvent(self, event):
+        if self.worker.isRunning():
+            self.cancel_import()
+            event.ignore()
+        else:
+            super().closeEvent(event)
 
 
 class CollectionManager(BaseDialog):
@@ -1141,6 +1041,10 @@ class LocalCollectionsTab(QWidget):
         """Установка сборки"""
         if not self.current_collection:
             return
+        from Core.run import is_game_running
+        if is_game_running():
+            QMessageBox.warning(self, 'Установка сборки', 'Сначала закройте Minecraft.')
+            return
 
         print("=== install_collection button clicked ===")
         import sys
@@ -1315,8 +1219,13 @@ class CollectionInstallWorker(QThread):
 
             from Core.instances import collection_directory, ensure_directory
             directory = ensure_directory(collection_directory(self.collection_data))
-            success = install_collection(self.collection_data, callback, create_backup=True,
-                                         cancel_event=self.cancel_event, minecraft_dir=directory)
+            if (self.collection_data.get('source') == 'mrpack' and
+                    self.collection_data.get('mrpack_installed')):
+                # Imported archives already contain the installed mods and overrides.
+                success = True
+            else:
+                success = install_collection(self.collection_data, callback, create_backup=True,
+                                             cancel_event=self.cancel_event, minecraft_dir=directory)
 
             print(f"install_collection returned: {success}")
             print(f"Installed mods count: {len(installed_mods)}")

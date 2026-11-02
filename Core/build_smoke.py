@@ -1,6 +1,9 @@
 """Offline checks executed inside the compiled launcher after a build."""
 import argparse
+import hashlib
+import hmac
 import json
+import os
 import tempfile
 import traceback
 import zipfile
@@ -58,6 +61,17 @@ def main(argv=None):
         check(bool(MCLIB.utils.get_library_version()), 'Не найден MCLIB/version.txt')
         check(Path(certifi.where()).is_file(), 'Не найдены CA-сертификаты')
         report['checks'].append('dependencies')
+        expected_proxy_hash = os.getenv('YAMALPIXEL_SMOKE_PROXY_SHA256')
+        if expected_proxy_hash:
+            from ConfDir.Configs import CURSEFORGE_CONFIG, PROXY_HMAC_SECRET
+            from Network.proxy_auth import generate_auth_header
+            settings = CURSEFORGE_CONFIG['proxy_url'] + '\0' + PROXY_HMAC_SECRET
+            actual = hashlib.sha256(settings.encode('utf-8')).hexdigest()
+            check(hmac.compare_digest(actual, expected_proxy_hash),
+                  'Не удалось загрузить настройки прокси из EXE')
+            check(generate_auth_header().get('Authorization', '').startswith('HMAC '),
+                  'Не удалось сформировать HMAC-токен из встроенных настроек')
+            report['checks'].append('embedded-proxy-auth')
         check(not QIcon(resource_path('icon.ico')).isNull(), 'Не загружается иконка')
         check(Path(resource_path('Ui/assets/chevron-down.svg')).is_file(), 'Не найден SVG')
         check(not QPixmap(resource_path('YamalPixelRes/logo2.png')).isNull(), 'Не загружается фон')

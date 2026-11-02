@@ -5,7 +5,8 @@ import time
 from dataclasses import dataclass, field
 
 import requests
-from ConfDir.Configs import API_KEY, CONFIG, CURSEFORGE_CONFIG
+from ConfDir.Configs import CONFIG, CURSEFORGE_CONFIG
+from Network.proxy_auth import generate_auth_header, ProxyAuthError
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,13 @@ def probe_proxy(url=None):
     if CONFIG.get('use_proxy_for_downloads', True) and CURSEFORGE_CONFIG.get('enabled', True):
         start = time.perf_counter()
         try:
-            with requests.get(url + '/api/v1/health', headers={'X-API-Key': API_KEY},
-                              timeout=(1, 2)) as response:
+            try:
+                headers = generate_auth_header()
+            except ProxyAuthError:
+                # Health is public; protected requests report the missing secret.
+                headers = {}
+            with requests.get(url + '/api/v1/health', headers=headers,
+                              timeout=(1, 2), allow_redirects=False) as response:
                 available = response.status_code == 200
                 if available:
                     try:

@@ -11,7 +11,8 @@ from typing import List, Dict, Optional, Any
 import logging
 from datetime import datetime
 import re
-from ConfDir.Configs import API_KEY, CURSEFORGE_CONFIG
+from ConfDir.Configs import CURSEFORGE_CONFIG
+from Network.proxy_auth import generate_auth_header, ProxyAuthError
 
 logger = logging.getLogger(__name__)
 
@@ -19,16 +20,12 @@ logger = logging.getLogger(__name__)
 class CurseForgeAPI:
     """Клиент для работы с CurseForge с улучшенным поиском по ID"""
 
-    # Единый API ключ для доступа к прокси
-    API_KEY = API_KEY
-
     def __init__(self, proxy_url: str = None):
         self.proxy_url = (proxy_url or CURSEFORGE_CONFIG.get('proxy_url', '')).rstrip('/')
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'YamalPixelLauncher/1.0',
             'Accept': 'application/json',
-            'X-API-Key': self.API_KEY
         })
         self.timeout = 30
         self.direct_timeout = 30
@@ -46,9 +43,10 @@ class CurseForgeAPI:
         url = f"{self.proxy_url}{endpoint}"
 
         try:
-            headers = kwargs.get('headers', {})
-            headers['X-API-Key'] = self.API_KEY
+            headers = dict(kwargs.get('headers', {}))
+            headers.update(generate_auth_header())
             kwargs['headers'] = headers
+            kwargs['allow_redirects'] = False
 
             response = self.session.request(method, url, timeout=self.timeout, **kwargs)
 
@@ -60,6 +58,8 @@ class CurseForgeAPI:
                 logger.debug(f"Прокси вернул {response.status_code} для {endpoint}")
                 return None
 
+        except ProxyAuthError:
+            raise
         except requests.RequestException:
             mark_proxy_unavailable(self.proxy_url)
             logger.debug(f"🔌 Не удалось подключиться к прокси: {self.proxy_url}")
@@ -92,6 +92,68 @@ class CurseForgeAPI:
         except Exception as e:
             logger.error(f"Ошибка поиска: {e}")
             return None
+
+    def search_modpacks(self, query: str = "", sort_field: int = 6,
+                        limit: int = 30) -> List[Dict]:
+        """Search CurseForge modpacks (classId 4471) through the proxy."""
+        params = {
+            'classId': 4471,
+            'sortOrder': 'desc',
+            'limit': limit,
+        }
+        if sort_field is not None:
+            params['sortField'] = sort_field
+        if query:
+            params['query'] = query
+        response = self._make_proxy_request(
+            'GET',
+            '/api/v1/curseforge/search',
+            params=params,
+        )
+        if not response:
+            return []
+        payload = response.json()
+        if isinstance(payload, dict) and payload.get('success'):
+            return payload.get('data') or []
+        if isinstance(payload, dict):
+            return payload.get('data') or payload.get('results') or []
+        return payload if isinstance(payload, list) else []
+
+    def get_modpack_files(self, mod_id: str, limit: int = 20) -> List[Dict]:
+        """Return downloadable ZIP files for a CurseForge modpack project."""
+        response = self._make_proxy_request(
+            'GET',
+            f'/api/v1/curseforge/mod/{mod_id}/files',
+            params={'classId': 4471, 'pageSize': limit, 'sortField': 2,
+                    'sortOrder': 'desc'},
+        )
+        if not response:
+            return []
+        payload = response.json()
+        if isinstance(payload, dict) and payload.get('success'):
+            return payload.get('data') or []
+        if isinstance(payload, dict):
+            return payload.get('data') or payload.get('results') or []
+        return payload if isinstance(payload, list) else []
+
+    def get_file_info(self, mod_id: str, file_id: str) -> Optional[Dict]:
+        """Fetch a CurseForge file's filename and direct download URL."""
+        for endpoint in (
+            f'/api/v1/curseforge/mod/{mod_id}/file/{file_id}',
+            f'/api/v1/curseforge/file/{file_id}',
+        ):
+            response = self._make_proxy_request('GET', endpoint,
+                                                params={'mod_id': mod_id})
+            if not response:
+                continue
+            payload = response.json()
+            if isinstance(payload, dict) and payload.get('success'):
+                return payload.get('data') or {}
+            if isinstance(payload, dict) and isinstance(payload.get('data'), dict):
+                return payload['data']
+            if isinstance(payload, dict) and ('fileName' in payload or 'downloadUrl' in payload):
+                return payload
+        return None
 
     def get_mod_info(self, mod_id: str, force_refresh: bool = False) -> Optional[Dict]:
         """
@@ -274,9 +336,9 @@ class CurseForgeAPI:
     def _build_direct_cdn_url(self, file_id: str, filename: str) -> str:
         """Формирование прямой ссылки на CurseForge CDN"""
         if len(file_id) >= 7:
-            folder1 = file_id[:4]
-            folder2 = file_id[4:7]
-            return f"https://edge.forgecdn.net/files/{folder1}/{folder2}/{filename}"
+            folder1 = file_id[:-3]
+            folder2 = file_id[-3:]
+            return f"https://edge.forgecdn.net/files/{folder1}/{folder2}/{urllib.parse.quote(filename)}"
         return f"https://media.forgecdn.net/files/{file_id}/{filename}"
 
     def _download_direct(self, url: str, filename: str, destination_dir: str) -> bool:
@@ -323,10 +385,10 @@ class CurseForgeAPI:
                     "source": "curseforge",
                     "timestamp": datetime.now().isoformat()
                 }
-                headers = {'X-API-Key': self.API_KEY}
-                requests.post(cache_url, json=payload, headers=headers, timeout=5)
-            except:
-                pass
+                headers = generate_auth_header()
+                requests.post(cache_url, json=payload, headers=headers, timeout=5, allow_redirects=False)
+            except Exception as exc:
+                logger.warning('Не удалось уведомить прокси: %s', exc)
 
         threading.Thread(target=_send_notification, daemon=True).start()
 
@@ -351,7 +413,13 @@ class CurseForgeAPI:
                 return False
 
             os.makedirs(destination_dir, exist_ok=True)
-            file_response = self.session.get(download_url, stream=True, timeout=60)
+            download_url = urllib.parse.urljoin(self.proxy_url + '/', download_url)
+            proxy_origin = urllib.parse.urlsplit(self.proxy_url)
+            file_origin = urllib.parse.urlsplit(download_url)
+            same_origin = (proxy_origin.scheme, proxy_origin.hostname, proxy_origin.port) == (
+                file_origin.scheme, file_origin.hostname, file_origin.port)
+            file_options = {'headers': generate_auth_header(), 'allow_redirects': False} if same_origin else {}
+            file_response = self.session.get(download_url, stream=True, timeout=60, **file_options)
             file_response.raise_for_status()
 
             destination_path = safe_target(destination_dir, filename)
@@ -362,6 +430,8 @@ class CurseForgeAPI:
 
             return os.path.exists(destination_path) and os.path.getsize(destination_path) > 1000
 
+        except ProxyAuthError:
+            raise
         except requests.RequestException as exc:
             if locals().get('download_url', '').startswith(self.proxy_url + '/'):
                 mark_proxy_unavailable(self.proxy_url)

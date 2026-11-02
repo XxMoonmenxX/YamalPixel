@@ -6,7 +6,6 @@ import threading
 import time
 import json
 import subprocess
-import zipfile
 import shutil
 import logging
 import re
@@ -35,6 +34,7 @@ from ConfDir.utils import aggressive_clean_name, calculate_similarity, extract_c
     COLLECTIONS_CONFIG
 
 from Core.run import is_game_running, set_current_collection, get_current_collection
+from Core.backup import BackupCancelled, BackupCancelToken, ModsBackupManager
 
 from Network.proxy_status import start_proxy_probe
 from Network.Updates import check_for_updates_local
@@ -60,58 +60,6 @@ LAUNCH_START_TIME = None
 from ConfDir.Versions import get_all_versions
 
 ALL_VERSIONS = get_all_versions()
-
-
-def create_backup(folder_path, backup_type):
-    """Создает zip-бэкап указанной папки"""
-    try:
-        print(f"🔄 Создаем бэкап {backup_type} из: {folder_path}")
-
-        if not os.path.exists(folder_path):
-            print(f"❌ Папка {folder_path} не существует")
-            return None
-
-        files_in_folder = []
-        if os.path.exists(folder_path):
-            for root, dirs, files in os.walk(folder_path):
-                files_in_folder.extend(files)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_dir = os.path.join(CONFIG["minecraft_dir"], "backups")
-        os.makedirs(backup_dir, exist_ok=True)
-
-        backup_filename = f"{backup_type}_backup_{timestamp}.zip"
-        backup_path = os.path.join(backup_dir, backup_filename)
-
-        with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            if os.path.exists(folder_path) and files_in_folder:
-                for root, dirs, files in os.walk(folder_path):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        if os.path.isfile(file_path):
-                            arcname = os.path.relpath(file_path, folder_path)
-                            zipf.write(file_path, arcname)
-
-        print(f"✅ Создан бэкап {backup_type}: {backup_path}")
-        return backup_path
-
-    except Exception as e:
-        print(f"❌ Ошибка создания бэкапа {backup_type}: {str(e)}")
-        return None
-
-
-def clear_mods_directory(mods_dir):
-    """Очистка папки модов"""
-    count = 0
-    if os.path.exists(mods_dir):
-        for file in os.listdir(mods_dir):
-            if file.endswith(".jar"):
-                try:
-                    os.remove(os.path.join(mods_dir, file))
-                    count += 1
-                except Exception as e:
-                    print(f"Не удалось удалить {file}: {e}")
-    return count
 
 
 def check_fabric_installed():
@@ -298,6 +246,99 @@ class LaunchWorker(QThread):
         self.completed.emit(success)
 
 
+class BackupWorker(QThread):
+    progress = pyqtSignal(int, str)
+    succeeded = pyqtSignal(object)
+    failed = pyqtSignal(str)
+    cancelled = pyqtSignal()
+
+    def __init__(self, operation, version, archive_path=None, parent=None):
+        super().__init__(parent)
+        self.operation = operation
+        self.version = version
+        self.archive_path = archive_path
+        self.cancel_token = BackupCancelToken()
+
+    def cancel(self):
+        return self.cancel_token.cancel()
+
+    def run(self):
+        try:
+            from Core.instances import ensure_game_directory
+            self.progress.emit(0, 'Подготовка папки инстанса…')
+            self.cancel_token.check()
+            instance_dir = ensure_game_directory(self.version, cancel_check=self.cancel_token.check)
+            self.cancel_token.check()
+            manager = ModsBackupManager(instance_dir)
+            if self.operation == 'create':
+                result = manager.create_backup(progress_callback=self.progress.emit,
+                                               cancel_token=self.cancel_token)
+                if not result:
+                    raise RuntimeError(manager.last_error or 'Нет данных для резервного копирования')
+            elif self.operation == 'restore':
+                result = manager.restore_archive(self.archive_path, progress_callback=self.progress.emit,
+                                                 cancel_token=self.cancel_token)
+                if not result:
+                    raise RuntimeError(manager.last_error or 'Не удалось восстановить бэкап')
+            else:
+                raise ValueError('Неизвестная операция с бэкапом')
+            self.succeeded.emit(result)
+        except BackupCancelled:
+            self.cancelled.emit()
+        except Exception as exc:
+            logger.exception('Ошибка операции с бэкапом')
+            self.failed.emit(str(exc))
+
+
+class BackupProgressDialog(QDialog):
+    """A non-modal progress window with cooperative cancellation."""
+
+    cancel_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Работа с бэкапом')
+        self.setMinimumWidth(440)
+        self._finished = False
+        self._cancelling = False
+        layout = QVBoxLayout(self)
+        self.status = QLabel('Подготовка…')
+        self.status.setWordWrap(True)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.cancel_button = QPushButton('Отмена')
+        self.cancel_button.clicked.connect(lambda: self.cancel_requested.emit())
+        layout.addWidget(self.status)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.cancel_button)
+
+    @pyqtSlot(int, str)
+    def set_progress(self, percent, message):
+        self.progress_bar.setValue(max(0, min(100, percent)))
+        if not self._cancelling:
+            self.status.setText(message)
+
+    def set_cancelling(self, accepted):
+        self._cancelling = True
+        self.cancel_button.setEnabled(False)
+        self.status.setText('Отмена операции и очистка временных файлов…' if accepted else
+                            'Операция завершается; отмена уже недоступна.')
+
+    def reject(self):
+        if self._finished:
+            super().reject()
+
+    def closeEvent(self, event):
+        if self._finished:
+            event.accept()
+        else:
+            event.ignore()
+
+    def finish(self):
+        self._finished = True
+        self.close()
+
+
 class VersionCatalogWorker(QObject):
     ready = pyqtSignal(list)
     error = pyqtSignal(str)
@@ -316,6 +357,12 @@ class VersionCatalogWorker(QObject):
 
     def requestInterruption(self):
         self.cancelled.set()
+
+    def wait(self, milliseconds=2000):
+        if self.thread is None:
+            return True
+        self.thread.join(milliseconds / 1000)
+        return not self.thread.is_alive()
 
     def run(self):
         from ConfDir.Versions import refresh_catalog
@@ -619,6 +666,7 @@ class MainWindow(QMainWindow):
         # Рабочий поток для сетевых операций
         self.worker_thread = None
         self.launch_worker = None
+        self.backup_worker = None
         self.crash_worker = None
         self.game_event_timer = QTimer(self)
         self.game_event_timer.timeout.connect(self.check_game_events)
@@ -630,7 +678,10 @@ class MainWindow(QMainWindow):
 
         # Проверяем java
         self.check_java_on_startup()
-        QTimer.singleShot(5000, lambda: check_for_updates_local(self, silent=True))
+        self.update_check_timer = QTimer(self)
+        self.update_check_timer.setSingleShot(True)
+        self.update_check_timer.timeout.connect(lambda: check_for_updates_local(self, silent=True))
+        self.update_check_timer.start(5000)
 
     def check_java_on_startup(self):
         """Java is resolved for the selected game at launch, including bundled runtimes."""
@@ -894,6 +945,17 @@ class MainWindow(QMainWindow):
             self.version_combo.setCurrentText(selected)
         self.version_combo.blockSignals(False)
 
+    def import_mrpack_dialog(self):
+        """Open the standalone modpack browser from the tools menu."""
+        from Ui.ModpackBrowser import ModpackBrowserDialog
+        dialog = ModpackBrowserDialog(self)
+        dialog.imported.connect(lambda metadata: self.refresh_versions())
+        self._modpack_browser = dialog
+        dialog.exec()
+        self._modpack_browser = None
+        # Also retry any interrupted registration after the browser closes.
+        self.refresh_versions()
+
     @pyqtSlot(bool)
     def on_beta_changed(self, checked):
         CONFIG['show_beta_versions'] = checked
@@ -919,7 +981,7 @@ class MainWindow(QMainWindow):
         self.run_game_launch(self.version_combo.currentText(), self.username_input.text().strip())
 
     def run_game_launch(self, selected_version, username):
-        if self.launch_worker and self.launch_worker.isRunning():
+        if (self.launch_worker and self.launch_worker.isRunning()) or self.backup_worker is not None:
             return
         valid, message = self.validate_username(username)
         if not valid:
@@ -1133,6 +1195,9 @@ class MainWindow(QMainWindow):
         backup_action = tools_menu.addAction("Сделать бэкап")
         backup_action.triggered.connect(self.create_backup)
 
+        restore_backup_action = tools_menu.addAction("Восстановить из бэкапа")
+        restore_backup_action.triggered.connect(self.restore_backup_dialog)
+
         backup_info_action = tools_menu.addAction("Показать бэкапы")
         backup_info_action.triggered.connect(self.show_backup_info)
 
@@ -1147,6 +1212,9 @@ class MainWindow(QMainWindow):
         manager_action = collections_menu.addAction("Менеджер сборок")
         manager_action.triggered.connect(self.show_collection_manager)
 
+        self.mrpack_import_action = collections_menu.addAction("Импорт сборок mrpack")
+        self.mrpack_import_action.triggered.connect(self.import_mrpack_dialog)
+
         tools_menu.addSeparator()
 
         # Переустановка
@@ -1158,11 +1226,11 @@ class MainWindow(QMainWindow):
         # Диагностика
         diagnostic_action = tools_menu.addAction("Диагностика проблем")
         diagnostic_action.triggered.connect(self.show_diagnostic)
-        #self.crash_action = tools_menu.addAction('Разобрать последний вылет')
-        #self.crash_action.triggered.connect(self.analyze_last_crash)
-        #crash_file_action = tools_menu.addAction('Разобрать файл лога…')
-        #crash_file_action.triggered.connect(self.analyze_crash_file)
-        #self.bugreport_action = tools_menu.addAction("Сохранить полный Bugreport.txt")
+        self.crash_action = tools_menu.addAction('Разобрать последний вылет')
+        self.crash_action.triggered.connect(self.analyze_last_crash)
+        crash_file_action = tools_menu.addAction('Разобрать файл лога…')
+        crash_file_action.triggered.connect(self.analyze_crash_file)
+        self.bugreport_action = tools_menu.addAction("Сохранить полный Bugreport.txt")
 
         #self.bugreport_action.triggered.connect(self.save_bugreport)
 
@@ -1401,35 +1469,119 @@ class MainWindow(QMainWindow):
             MessageDialog.show_warning(self, "Папка не найдена", f"Папка {minecraft_dir} не существует!")
 
     def create_backup(self):
-        """Создает бэкап"""
-        minecraft_dir = self.selected_game_directory(create=True)
-        mods_dir = os.path.join(minecraft_dir, "mods")
+        """Создаёт общий бэкап модов, миров и настроек текущего инстанса."""
+        self._start_backup_operation('create')
 
-        backups_created = []
+    def restore_backup_dialog(self):
+        """Safely restore mods, worlds and config from a selected ZIP."""
+        if is_game_running():
+            MessageDialog.show_warning(
+                self, "Восстановление", "Сначала закройте Minecraft и повторите попытку.")
+            return
 
-        os.makedirs(mods_dir, exist_ok=True)
+        if self.backup_worker is not None or (self.launch_worker and self.launch_worker.isRunning()):
+            return
+        minecraft_dir = self.selected_game_directory()
+        backup_dir = os.path.join(minecraft_dir, "backups")
+        archive_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Восстановить из бэкапа",
+            backup_dir,
+            "ZIP-архивы (*.zip);;Все файлы (*)",
+        )
+        if not archive_path:
+            return
 
-        if os.path.exists(mods_dir):
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_dir = os.path.join(minecraft_dir, "backups")
-            os.makedirs(backup_dir, exist_ok=True)
+        reply = MessageDialog.show_question(
+            self,
+            "Восстановить из бэкапа",
+            "Заменить текущие папки mods, saves и config содержимым выбранного архива?\n\n"
+            "Перед изменением архив проверяется, а данные распаковываются во временную папку.",
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
-            backup_path = os.path.join(backup_dir, f"mods_backup_{timestamp}.zip")
-            with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(mods_dir):
-                    for file in files:
-                        if file.endswith(".jar"):
-                            file_path = os.path.join(root, file)
-                            arcname = os.path.relpath(file_path, mods_dir)
-                            zipf.write(file_path, arcname)
-            backups_created.append(backup_path)
+        self._start_backup_operation('restore', archive_path)
 
-        if backups_created:
-            MessageDialog.show_info(self, "Бэкапы созданы",
-                                    f"Созданы бэкапы:\n" + "\n".join(
-                                        [f"• {os.path.basename(b)}" for b in backups_created]))
+    def _start_backup_operation(self, operation, archive_path=None):
+        if self.backup_worker is not None:
+            return
+        if self.launch_worker and self.launch_worker.isRunning():
+            MessageDialog.show_warning(self, 'Бэкап', 'Дождитесь окончания подготовки игры.')
+            return
+        if is_game_running():
+            MessageDialog.show_warning(self, 'Бэкап', 'Сначала закройте Minecraft.')
+            return
+
+        version = self.version_combo.currentText()
+        widgets = (self.launch_btn, self.version_combo, self.beta_checkbox, self.menuBar())
+        self._backup_ui_state = [(widget, widget.isEnabled()) for widget in widgets]
+        for widget, _enabled in self._backup_ui_state:
+            widget.setEnabled(False)
+        self._backup_result = None
+        self._backup_error = None
+        self._backup_was_cancelled = False
+        self._backup_progress_dialog = BackupProgressDialog(self)
+        self._backup_progress_dialog.show()
+        self.backup_worker = BackupWorker(operation, version, archive_path, self)
+        self._backup_progress_dialog.cancel_requested.connect(self._cancel_backup)
+        self.backup_worker.progress.connect(self._backup_progress_dialog.set_progress)
+        self.backup_worker.succeeded.connect(self._backup_succeeded)
+        self.backup_worker.failed.connect(self._backup_failed)
+        self.backup_worker.cancelled.connect(self._backup_cancelled)
+        self.backup_worker.finished.connect(self._backup_finished)
+        self.backup_worker.finished.connect(self.backup_worker.deleteLater)
+        try:
+            self.backup_worker.start()
+        except Exception as exc:
+            worker = self.backup_worker
+            self._backup_error = str(exc)
+            self._backup_finished()
+            worker.deleteLater()
+
+    @pyqtSlot(object)
+    def _backup_succeeded(self, result):
+        self._backup_result = result
+
+    @pyqtSlot(str)
+    def _backup_failed(self, message):
+        self._backup_error = message
+
+    @pyqtSlot()
+    def _backup_cancelled(self):
+        self._backup_was_cancelled = True
+
+    @pyqtSlot()
+    def _cancel_backup(self):
+        if self.backup_worker is not None:
+            accepted = self.backup_worker.cancel()
+            self._backup_progress_dialog.set_cancelling(accepted)
+
+    @pyqtSlot()
+    def _backup_finished(self):
+        operation = self.backup_worker.operation
+        self.backup_worker = None
+        self._backup_progress_dialog.finish()
+        self._backup_progress_dialog.deleteLater()
+        self._backup_progress_dialog = None
+        for widget, enabled in self._backup_ui_state:
+            widget.setEnabled(enabled)
+        self._backup_ui_state = []
+        if self._backup_was_cancelled:
+            self.status_label.setText('Операция с бэкапом отменена')
+            MessageDialog.show_info(self, 'Бэкап', 'Операция отменена. Временные файлы удалены.')
+        elif self._backup_error is not None or self._backup_result is None:
+            self.status_label.setText('Не удалось выполнить операцию с бэкапом')
+            MessageDialog.show_error(self, 'Ошибка бэкапа', self._backup_error or 'Неизвестная ошибка')
+        elif operation == 'create':
+            self.status_label.setText('Бэкап создан')
+            MessageDialog.show_info(self, 'Бэкап создан',
+                                    f"Создан общий бэкап:\n• {os.path.basename(self._backup_result)}\n\n"
+                                    'В архив включены mods, saves и config.')
         else:
-            MessageDialog.show_info(self, "Бэкапы", "Не удалось создать бэкапы")
+            self.status_label.setText('Бэкап восстановлен')
+            MessageDialog.show_info(self, 'Восстановление завершено',
+                                    'Данные из бэкапа восстановлены.')
 
     def show_backup_info(self):
         """Показывает информацию о бэкапах"""
@@ -1448,7 +1600,7 @@ class MainWindow(QMainWindow):
                 time_created = datetime.fromtimestamp(os.path.getctime(file_path))
 
                 if filename.startswith("mods_backup_"):
-                    backup_type = "Моды"
+                    backup_type = "Моды, миры и настройки"
                 elif filename.startswith("versions_backup_"):
                     backup_type = "Версии"
                 elif filename.startswith("world_backup_"):
@@ -1501,6 +1653,9 @@ class MainWindow(QMainWindow):
 
     def launch_without_mods(self):
         """Запуск игры полностью без модов"""
+        if is_game_running() or (self.launch_worker and self.launch_worker.isRunning()):
+            MessageDialog.show_warning(self, 'Моды', 'Сначала закройте Minecraft и дождитесь подготовки.')
+            return
         reply = MessageDialog.show_question(self, "Запуск без модов",
                                             "Запустить игру БЕЗ ВСЕХ модов?\n\n"
                                             "Это поможет определить:\n"
@@ -1542,6 +1697,9 @@ class MainWindow(QMainWindow):
             MessageDialog.show_info(self, "Информация", "Модов для отключения не найдено")
 
     def restore_disabled_mods(self):
+        if is_game_running() or (self.launch_worker and self.launch_worker.isRunning()):
+            MessageDialog.show_warning(self, 'Моды', 'Сначала закройте Minecraft и дождитесь подготовки.')
+            return
         minecraft_dir = self.selected_game_directory(create=True)
         mods_dir = os.path.join(minecraft_dir, 'mods')
         disabled_dir = os.path.join(minecraft_dir, 'mods_disabled_temp')
@@ -1963,18 +2121,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Закрытие окна - безопасная версия"""
         from Core.run import is_game_running, GAME_PROCESS
-        for timer_name in ('update_timer', 'game_event_timer'):
-            timer = getattr(self, timer_name, None)
-            if timer is not None: timer.stop()
-        for worker_name in ('catalog_worker', 'launch_worker', 'crash_worker', 'bugreport_worker'):
-            worker = getattr(self, worker_name, None)
-            if worker is not None and worker.isRunning():
-                if hasattr(worker, 'requestInterruption'): worker.requestInterruption()
-                if hasattr(worker, 'cancel'): worker.cancel()
-                worker.wait(2000)
-            if worker is not None and not worker.isRunning():
-                setattr(self, worker_name, None)
-        self.game_log_reader = None
+        if getattr(self, 'backup_worker', None) is not None:
+            self.status_label.setText('Дождитесь завершения операции с бэкапом')
+            self._backup_progress_dialog.show()
+            self._backup_progress_dialog.raise_()
+            event.ignore()
+            return
         try:
             if is_game_running():
                 reply = QMessageBox.question(
@@ -1989,6 +2141,23 @@ class MainWindow(QMainWindow):
                     return
         except Exception as e:
             print(f"Ошибка проверки игры: {e}")
+
+        for worker_name in ('catalog_worker', 'launch_worker', 'crash_worker',
+                            'bugreport_worker', '_update_check_worker'):
+            worker = getattr(self, worker_name, None)
+            if worker is not None and worker.isRunning():
+                if hasattr(worker, 'requestInterruption'): worker.requestInterruption()
+                if hasattr(worker, 'cancel'): worker.cancel()
+                if not worker.wait(2000):
+                    self.status_label.setText('Дождитесь завершения фоновой операции и закройте окно снова')
+                    event.ignore()
+                    return
+            if worker is not None and not worker.isRunning():
+                setattr(self, worker_name, None)
+        for timer_name in ('update_timer', 'game_event_timer', 'update_check_timer'):
+            timer = getattr(self, timer_name, None)
+            if timer is not None: timer.stop()
+        self.game_log_reader = None
 
         try:
             self.save_session()

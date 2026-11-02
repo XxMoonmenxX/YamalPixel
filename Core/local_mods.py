@@ -1,17 +1,26 @@
 """Import local JARs into a persistent, content-addressed collection store."""
 import hashlib
+import os
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
 from Core.mod_transaction import safe_filename
-from Core.mod_transaction import link_or_copy
+
+MAX_MOD_BYTES = 2 * 1024 * 1024 * 1024
+MAX_IMPORT_BYTES = 16 * 1024 * 1024 * 1024
+MAX_ENTRIES = 10000
 
 
 def validate_jar(path):
     with zipfile.ZipFile(path) as archive:
-        if not archive.namelist() or archive.testzip() is not None:
+        entries = archive.infolist()
+        if (len(entries) > MAX_ENTRIES or
+                sum(entry.file_size for entry in entries) > MAX_MOD_BYTES or
+                any(entry.file_size > MAX_MOD_BYTES for entry in entries)):
+            raise ValueError(f'Слишком большой JAR: {Path(path).name}')
+        if not entries or archive.testzip() is not None:
             raise ValueError(f'Повреждённый JAR: {Path(path).name}')
 
 
@@ -23,12 +32,25 @@ def import_local_mods(paths, collections_dir):
     names = {}
     with tempfile.TemporaryDirectory(prefix='.local-import-', dir=root) as temporary:
         staging = Path(temporary)
+        total = 0
 
         def add(name, stream):
+            nonlocal total
+            if len(result) >= MAX_ENTRIES:
+                raise ValueError('Слишком много локальных модов')
             name = safe_filename(name)
             candidate = staging / str(len(result))
             with candidate.open('wb') as target:
-                shutil.copyfileobj(stream, target)
+                size = 0
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    total += len(chunk)
+                    if size > MAX_MOD_BYTES or total > MAX_IMPORT_BYTES:
+                        raise ValueError('Слишком большой размер локальных модов')
+                    target.write(chunk)
             validate_jar(candidate)
             with candidate.open('rb') as source:
                 digest = hashlib.file_digest(source, 'sha256').hexdigest()
@@ -92,4 +114,14 @@ def copy_local_mod(mod, collections_dir, destination):
     if digest != mod.get('sha256'):
         raise ValueError(f'Локальный мод изменён или повреждён: {mod.get("filename", "")}')
     validate_jar(source)
-    link_or_copy(str(source), str(destination))
+    # A hard link would let in-game or external edits corrupt the shared cache.
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.local-copy-', dir=destination.parent)
+    os.close(fd)
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)

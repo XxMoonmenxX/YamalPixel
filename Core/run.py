@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Optional
 import MCLIB
 from ConfDir.Configs import CONFIG
@@ -47,7 +48,57 @@ def validate_username(username):
 
 
 def is_game_running():
-    return GAME_PROCESS is not None and GAME_PROCESS.poll() is None
+    if GAME_PROCESS is not None and GAME_PROCESS.poll() is None:
+        return True
+    # A game is intentionally allowed to outlive the launcher.  A new launcher
+    # process must check its persisted PID and creation time before touching it.
+    try:
+        import psutil
+        marker = Path(CONFIG['minecraft_dir']) / '.running-game.json'
+        data = json.loads(marker.read_text(encoding='utf-8'))
+        pid, created = int(data['pid']), float(data['create_time'])
+        process = psutil.Process(pid)
+        return process.is_running() and abs(process.create_time() - created) < 0.01
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return False
+    except Exception as exc:
+        # If the OS denies inspection of a still-existing PID, avoid changing
+        # its files until the user has closed the process.
+        try:
+            import psutil
+            if isinstance(exc, psutil.AccessDenied):
+                return psutil.pid_exists(pid)
+        except Exception:
+            pass
+        return False
+
+
+def _save_running_process(process, directory):
+    import psutil
+    root = Path(CONFIG['minecraft_dir'])
+    root.mkdir(parents=True, exist_ok=True)
+    data = {'pid': int(process.pid), 'create_time': psutil.Process(process.pid).create_time(),
+            'game_directory': str(directory)}
+    descriptor, temporary = tempfile.mkstemp(prefix='.running-game-', suffix='.tmp', dir=root)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, root / '.running-game.json')
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _clear_running_process(process):
+    marker = Path(CONFIG['minecraft_dir']) / '.running-game.json'
+    try:
+        data = json.loads(marker.read_text(encoding='utf-8'))
+        if int(data.get('pid', -1)) == int(process.pid):
+            marker.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        logger.debug('Не удалось очистить маркер запущенной игры', exc_info=True)
 
 
 def is_minecraft_process_running(process):
@@ -146,6 +197,7 @@ def _finish_game_session(process, exit_code):
         logger.exception('Не удалось сохранить Bugreport.txt')
     if GAME_PROCESS is process:
         GAME_PROCESS = None
+    _clear_running_process(process)
     update_discord_status('В меню', 'YamalPixel')
 
 
@@ -225,7 +277,7 @@ def install_modloader_sync(minecraft_version, loader_type, loader_version=None, 
 
 
 def switch_mods_for_version(version_name, progress_callback=None, raise_on_error=False):
-    from Core.collection_loader import load_collection_data, install_collection
+    from Core.collection_loader import load_collection_data, install_collection, collection_is_installed
     config = get_version_config(version_name)
     if not config:
         if raise_on_error:
@@ -244,11 +296,23 @@ def switch_mods_for_version(version_name, progress_callback=None, raise_on_error
             if raise_on_error:
                 raise ValueError(f'Не найдена сборка: {version_name}')
             return False
+        # A local .mrpack import has already installed its complete instance.
+        # Rebuilding the mods folder from an empty/local manifest would delete
+        # those JARs and the archive's other overrides.
+        if data.get('source') == 'mrpack' and data.get('mrpack_installed'):
+            set_current_collection(data.get('name'))
+            return True
+        if collection_is_installed(data, directory):
+            set_current_collection(data.get('name'))
+            return True
     elif version_name == 'YamalPixel':
         data = {'name': 'YamalPixel', 'minecraft_version': config[0], 'loader': config[1],
                 'mods': [], 'archive_url': CONFIG['mods_archive_url']}
     else:
-        data = {'name': None, 'minecraft_version': config[0], 'loader': config[1], 'mods': []}
+        # Ordinary versions own their mod directory; there is no collection
+        # manifest authorizing its replacement with an empty folder.
+        set_current_collection(None)
+        return True
 
     def progress(i, total, name, **kwargs):
         if progress_callback:
@@ -400,6 +464,10 @@ def run_game_launch(selected_version, username, progress_callback=None):
             GAME_PROCESS = process
             process._yamal_context.update(selected_version=selected_version, minecraft=mc, loader=loader)
             process._yamal_context.update(minecraft_dir=directory, shared_dir=CONFIG['minecraft_dir'], java=command[0], memory=memory)
+            try:
+                _save_running_process(process, directory)
+            except Exception:
+                logger.exception('Не удалось сохранить маркер запущенной игры')
             try:
                 _save_launch_context(directory, process._yamal_context)
             except OSError:

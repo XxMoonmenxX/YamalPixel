@@ -58,7 +58,22 @@ def game_directory(version=None, root=None):
     return _directory('version:' + version, version, root)
 
 
-def ensure_directory(directory, migrate_legacy=False, root=None):
+def _copy_with_cancel(source, destination, cancel_check):
+    """Copy legacy data in chunks so a pending operation can be cancelled."""
+    cancel_check()
+    with open(source, 'rb') as src, open(destination, 'wb') as dst:
+        while True:
+            cancel_check()
+            chunk = src.read(1024 * 1024)
+            if not chunk:
+                break
+            dst.write(chunk)
+    cancel_check()
+    shutil.copystat(source, destination)
+    return destination
+
+
+def ensure_directory(directory, migrate_legacy=False, root=None, cancel_check=None):
     root = Path(root).resolve() if root is not None else launcher_root()
     directory = Path(directory).resolve()
     base = root / 'instances'
@@ -66,7 +81,11 @@ def ensure_directory(directory, migrate_legacy=False, root=None):
         raise ValueError('Папка instances не должна быть символической ссылкой')
     if directory.parent != base.resolve():
         raise ValueError('Игровая папка должна находиться внутри instances')
+    if cancel_check:
+        cancel_check()
     with _lock:
+        if cancel_check:
+            cancel_check()
         if directory.exists():
             if directory.is_symlink() or not directory.is_dir():
                 raise ValueError('Неверная папка сборки')
@@ -80,20 +99,32 @@ def ensure_directory(directory, migrate_legacy=False, root=None):
             staging = Path(temporary) / 'game'
             staging.mkdir()
             for entry in LEGACY_ENTRIES:
+                if cancel_check:
+                    cancel_check()
                 source = root / entry
                 if source.is_symlink():
                     continue
                 if source.is_dir():
+                    options = {}
+                    if cancel_check:
+                        options['copy_function'] = lambda src, dst: _copy_with_cancel(src, dst, cancel_check)
                     shutil.copytree(source, staging / entry, symlinks=False,
-                                    ignore=lambda folder, names: [n for n in names if (Path(folder) / n).is_symlink()])
+                                    ignore=lambda folder, names: [n for n in names if (Path(folder) / n).is_symlink()],
+                                    **options)
                 elif source.is_file():
-                    shutil.copy2(source, staging / entry)
+                    if cancel_check:
+                        _copy_with_cancel(source, staging / entry, cancel_check)
+                    else:
+                        shutil.copy2(source, staging / entry)
             (staging / '.legacy-import.json').write_text(
                 json.dumps({'copied_from': str(root), 'originals_preserved': True}), encoding='utf-8')
+            if cancel_check:
+                cancel_check()
             os.replace(staging, directory)
         return str(directory)
 
 
-def ensure_game_directory(version=None):
+def ensure_game_directory(version=None, cancel_check=None):
     version = version or _selected_version
-    return ensure_directory(game_directory(version), migrate_legacy=version == 'YamalPixel')
+    return ensure_directory(game_directory(version), migrate_legacy=version == 'YamalPixel',
+                            cancel_check=cancel_check)

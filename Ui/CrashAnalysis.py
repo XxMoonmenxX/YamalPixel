@@ -162,6 +162,10 @@ class CrashAnalysisDialog(QDialog):
         button=QPushButton(text); button.clicked.connect(callback); self.action_row.addWidget(button); self._action_buttons.append(button)
 
     def _run_action(self, fn, label):
+        from Core.run import is_game_running
+        if is_game_running():
+            QMessageBox.warning(self, 'Починка', 'Сначала закройте Minecraft.')
+            return
         self.progress=QProgressDialog(label, 'Отмена', 0, 0, self); self.progress.setWindowTitle('Починка'); self.progress.setAutoClose(False); self.progress.show(); QApplication.processEvents()
         try: fn()
         except Exception as exc: QMessageBox.critical(self,'Починка',str(exc))
@@ -181,6 +185,10 @@ class CrashAnalysisDialog(QDialog):
         self._run_action(lambda: match.rename(match.with_name(match.name+'.broken')),'Переименование конфига...')
 
     def install_dependencies(self):
+        from Core.run import is_game_running
+        if is_game_running():
+            QMessageBox.warning(self, 'Зависимости', 'Сначала закройте Minecraft.')
+            return
         ids=list(dict.fromkeys(self.analysis.get('missing_dependency_ids') or []))
         if not ids: QMessageBox.warning(self,'Зависимости','Точные ID недостающих зависимостей не найдены в логе.'); return
         self.progress=QProgressDialog('', 'Отмена', 0, len(ids), self); self.progress.setWindowTitle('Установка зависимостей'); self.progress.setAutoClose(False)

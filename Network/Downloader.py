@@ -7,9 +7,10 @@ import requests
 import asyncio
 import logging
 import zipfile
+from urllib.parse import urljoin, urlparse
 from Core.mod_transaction import safe_target, validate_jar_or_zip
 from pathlib import Path
-from ConfDir.Configs import API_KEY
+from Network.proxy_auth import generate_auth_header, ProxyAuthError
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 
@@ -23,6 +24,20 @@ from PyQt6.QtGui import QFont, QTextCursor
 from ConfDir.Configs import CONFIG, CURSEFORGE_CONFIG
 
 logger = logging.getLogger(__name__)
+
+
+def _is_trusted_modpack_url(url, source):
+    """Allow direct URLs only from the marketplace CDN domains."""
+    if not isinstance(url, str) or not url.strip():
+        return False
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or '').lower().rstrip('.')
+    if parsed.scheme.lower() != 'https' or not host or parsed.username or parsed.password:
+        return False
+    if source == 'modrinth':
+        return host == 'modrinth.com' or host.endswith('.modrinth.com')
+    return (host == 'curseforge.com' or host.endswith('.curseforge.com')
+            or host == 'forgecdn.net' or host.endswith('.forgecdn.net'))
 
 def _safe_print(message):
     """Keep diagnostic output from crashing on legacy Windows consoles."""
@@ -124,22 +139,45 @@ def get_yandex_direct_link_sync(public_key):
         return None
 
 
-def download_file_sync(url, filepath, progress_callback=None):
+def download_file_sync(url, filepath, progress_callback=None, url_validator=None, max_bytes=None):
     temporary = filepath + '.part'
     try:
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        with requests.get(url, stream=True, timeout=60, headers={'Accept-Encoding': 'identity'}) as response:
+        request_url = url
+        if url_validator is None:
+            response = requests.get(request_url, stream=True, timeout=60,
+                                    headers={'Accept-Encoding': 'identity'})
+        else:
+            for _ in range(6):
+                if not url_validator(request_url):
+                    raise ValueError('Небезопасная ссылка загрузки')
+                response = requests.get(request_url, stream=True, timeout=60,
+                                        headers={'Accept-Encoding': 'identity'}, allow_redirects=False)
+                if response.status_code not in (301, 302, 303, 307, 308):
+                    break
+                location = response.headers.get('Location')
+                response.close()
+                if not location:
+                    raise ValueError('Перенаправление без адреса')
+                request_url = urljoin(request_url, location)
+            else:
+                raise ValueError('Слишком много перенаправлений')
+        with response:
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
             # requests decodes HTTP compression; Content-Length describes encoded bytes.
             if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
                 total_size = 0
+            if max_bytes is not None and total_size > max_bytes:
+                raise ValueError('Файл превышает допустимый размер')
             downloaded = 0
             with open(temporary, 'wb') as output:
                 for chunk in response.iter_content(8192):
                     if chunk:
                         output.write(chunk)
                         downloaded += len(chunk)
+                        if max_bytes is not None and downloaded > max_bytes:
+                            raise ValueError('Файл превышает допустимый размер')
                         if progress_callback and total_size:
                             progress_callback(downloaded, total_size)
             if downloaded == 0 or (total_size and downloaded != total_size):
@@ -277,6 +315,18 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
     """Загрузка с Modrinth"""
     _safe_print(f"🔄 Загрузка Modrinth")
     try:
+        # Modrinth modpacks provide a pinned direct URL for every file.  Keep
+        # it when present instead of inferring a project/version pair that the
+        # pack manifest does not contain.
+        direct_url = (mod_info.get('url') or mod_info.get('download_url') or
+                      mod_info.get('direct_link'))
+        if direct_url:
+            if not _is_trusted_modpack_url(direct_url, 'modrinth'):
+                _safe_print('❌ Небезопасный прямой URL Modrinth')
+                return False
+            return bool(download_file_sync(direct_url, file_path,
+                                           url_validator=lambda url: _is_trusted_modpack_url(url, 'modrinth')))
+
         from Network.ModrinthLoader import ModrinthAPI
 
         api = ModrinthAPI()
@@ -312,7 +362,6 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
             return False
         # Пробуем альтернативный метод
         _safe_print(f"🔄 Пробуем альтернативную загрузку...")
-        from Network.Downloader import download_file_sync
         cdn_url = f"https://cdn.modrinth.com/data/{mod_id}/versions/latest/{filename}"
         return download_file_sync(cdn_url, file_path)
 
@@ -324,6 +373,15 @@ def _download_from_modrinth(mod_info, file_path, mods_dir, minecraft_version=Non
 def _download_from_curseforge(mod_info, file_path, mods_dir):
     """Загрузка с CurseForge"""
     try:
+        direct_url = (mod_info.get('url') or mod_info.get('download_url') or
+                      mod_info.get('direct_link'))
+        if direct_url:
+            if not _is_trusted_modpack_url(direct_url, 'curseforge'):
+                _safe_print('❌ Небезопасный прямой URL CurseForge')
+                return False
+            return bool(download_file_sync(direct_url, file_path,
+                                           url_validator=lambda url: _is_trusted_modpack_url(url, 'curseforge')))
+
         from Network.CurseForgeLoader import CurseForgeAPI
         from ConfDir.Configs import CURSEFORGE_CONFIG
 
@@ -792,36 +850,52 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown", pro
             proxy_endpoint,
             json=payload,
             timeout=60,
-            headers={"Content-Type": "application/json", "X-API-Key": API_KEY}
+            stream=True,
+            headers={"Content-Type": "application/json", **generate_auth_header()},
+            allow_redirects=False,
         )
 
         if response.status_code == 200:
-            content = response.content
-            if not content:
-                raise ValueError('Прокси вернул пустой файл')
             temporary = filepath + '.proxy.part'
             try:
+                if response.headers.get('Content-Type', '').lower().startswith(('text/html', 'application/json')):
+                    raise ValueError('Прокси вернул страницу ошибки вместо файла')
                 Path(filepath).parent.mkdir(parents=True, exist_ok=True)
                 with open(temporary, 'wb') as stream:
-                    stream.write(content)
-                    if progress_callback:
-                        progress_callback(len(content), len(content))
+                    total = int(response.headers.get('Content-Length') or 0)
+                    written = 0
+                    for chunk in response.iter_content(chunk_size=1024 * 1024):
+                        if not chunk:
+                            continue
+                        written += len(chunk)
+                        if written > 4 * 1024 * 1024 * 1024:
+                            raise ValueError('Файл прокси слишком большой')
+                        stream.write(chunk)
+                        if progress_callback:
+                            progress_callback(written, total)
+                    if not written:
+                        raise ValueError('Прокси вернул пустой файл')
                 if filepath.lower().endswith(('.jar', '.zip')):
                     with zipfile.ZipFile(temporary) as archive:
-                        if archive.testzip() is not None:
+                        entries = archive.infolist()
+                        if (len(entries) > 10000 or
+                                sum(entry.file_size for entry in entries) > 16 * 1024 * 1024 * 1024 or
+                                archive.testzip() is not None):
                             raise ValueError('Прокси вернул повреждённый архив')
-                elif response.headers.get('Content-Type', '').startswith(('text/html', 'application/json')):
-                    raise ValueError('Прокси вернул страницу ошибки вместо файла')
                 os.replace(temporary, filepath)
                 return True
             finally:
+                response.close()
                 if os.path.exists(temporary):
                     os.remove(temporary)
 
+        response.close()
         if response.status_code >= 500:
             mark_proxy_unavailable()
         return False
 
+    except ProxyAuthError:
+        raise
     except requests.RequestException as exc:
         mark_proxy_unavailable()
         logger.debug('Proxy unavailable: %s', exc)

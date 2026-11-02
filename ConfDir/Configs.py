@@ -2,9 +2,10 @@
 from pathlib import Path
 import os
 import sys
+import json
 import requests
 import logging
-from launcher_paths import resource_path
+from launcher_paths import resource_path, is_compiled
 
 
 def _load_local_env():
@@ -43,6 +44,23 @@ def _load_local_env():
 
 
 _load_local_env()
+
+
+def _load_bundled_proxy_settings():
+    """Read the two release settings packaged with the compiled launcher."""
+    if not is_compiled():
+        return {}
+    try:
+        data = json.loads(Path(resource_path('launcher-proxy-settings.json')).read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            return {}
+        return {key: value for key, value in data.items()
+                if key in ('proxy_url', 'hmac_secret') and isinstance(value, str)}
+    except (OSError, UnicodeError, ValueError):
+        return {}
+
+
+_BUNDLED_PROXY_SETTINGS = _load_bundled_proxy_settings()
 
 
 def set_window_icon(window):
@@ -84,8 +102,10 @@ RESOURCES = {
     "icon.ico": "https://disk.yandex.ru/i/nRwZp3AzRI16qQ"
 }
 
-# Secrets and proxy endpoints are deployment configuration, never source code.
-API_KEY = os.getenv('YAMALPIXEL_PROXY_API_KEY', '').strip().replace('$$', '$')
+# Environment and a local .env override the settings packaged at build time.
+PROXY_HMAC_SECRET = os.getenv('PROXY_HMAC_SECRET', _BUNDLED_PROXY_SETTINGS.get('hmac_secret', '')).strip()
+PROXY_URL = os.getenv('YAMALPIXEL_PROXY_URL', _BUNDLED_PROXY_SETTINGS.get('proxy_url',
+                      'http://127.0.0.1:8000')).strip().rstrip('/')
 CONFIG = {
     "version": "1.20.1",
     "fabric_loader": "0.17.2",
@@ -317,7 +337,7 @@ COLLECTIONS_CONFIG = {
     "collections_dir": os.path.join(CONFIG["minecraft_dir"], "collections"),  # ← Теперь всегда в папке игры
     "max_mods_per_collection": 200,
     "supported_sources": ["modrinth", "curseforge", "local"],
-    "curseforge_proxy_url": os.getenv("YAMALPIXEL_PROXY_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+    "curseforge_proxy_url": PROXY_URL
 }
 
 messages = [
@@ -438,7 +458,7 @@ messages = [
 
 # CurseForge Proxy Configuration
 CURSEFORGE_CONFIG = {
-    "proxy_url": os.getenv('YAMALPIXEL_PROXY_URL', 'http://127.0.0.1:8000').strip().rstrip('/'),
+    "proxy_url": PROXY_URL,
     "enabled": True,
     "api_version": "v1",
     "timeout": 10,

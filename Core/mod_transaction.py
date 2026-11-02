@@ -41,6 +41,10 @@ def validate_jar_or_zip(path):
     """Validate a downloaded archive before it becomes visible to the game."""
     try:
         with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+            if (len(entries) > 10000 or
+                    sum(entry.file_size for entry in entries) > 16 * 1024 * 1024 * 1024):
+                return False
             bad = archive.testzip()
             if bad is not None:
                 return False

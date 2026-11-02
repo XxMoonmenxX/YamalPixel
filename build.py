@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 MODULES = ('PyQt6', 'requests', 'aiohttp', 'bs4', 'pygame', 'pypresence', 'mcstatus', 'psutil')
@@ -45,7 +46,44 @@ def check_output_available(path):
     kernel.CloseHandle(handle)
 
 
-def build_command(root=ROOT, standalone=False, console=False, output_dir=None, jobs=4, lto=False):
+def read_proxy_build_settings(root=ROOT, environment=None):
+    """Collect only the proxy URL and signing secret; never print their values."""
+    environment = os.environ if environment is None else environment
+    explicit = environment.get('YAMALPIXEL_ENV_FILE')
+    env_file = Path(explicit).expanduser() if explicit else Path(root) / '.env'
+    if explicit and not env_file.is_file():
+        raise ValueError('Не найден файл YAMALPIXEL_ENV_FILE для сборки')
+    values = {}
+    if env_file.is_file():
+        for raw in env_file.read_text(encoding='utf-8-sig').splitlines():
+            line = raw.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                if key.strip() in ('YAMALPIXEL_PROXY_URL', 'PROXY_HMAC_SECRET'):
+                    values[key.strip()] = value.strip().strip('"').strip("'").replace('$$', '$')
+    for key in ('YAMALPIXEL_PROXY_URL', 'PROXY_HMAC_SECRET'):
+        if key in environment:
+            values[key] = environment[key]
+    url = values.get('YAMALPIXEL_PROXY_URL', '').strip().rstrip('/')
+    secret = values.get('PROXY_HMAC_SECRET', '').strip()
+    if not secret:
+        raise ValueError('Для автономной сборки задайте PROXY_HMAC_SECRET в .env или окружении')
+    if not url or any(ord(char) <= 32 for char in url):
+        raise ValueError('Для автономной сборки задайте YAMALPIXEL_PROXY_URL в .env или окружении')
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+        if (parsed.scheme not in ('http', 'https') or not parsed.hostname or
+                parsed.username is not None or parsed.password is not None or
+                parsed.query or parsed.fragment or (port is not None and not 1 <= port <= 65535)):
+            raise ValueError('invalid URL')
+    except ValueError as exc:
+        raise ValueError('Некорректный YAMALPIXEL_PROXY_URL') from exc
+    return {'proxy_url': url, 'hmac_secret': secret}
+
+
+def build_command(root=ROOT, standalone=False, console=False, output_dir=None, jobs=4, lto=False,
+                  proxy_settings_path=None):
     root = Path(root).resolve()
     output_dir = Path(output_dir or root / 'dist' / 'nuitka').resolve()
     version = project_version(root)
@@ -70,10 +108,8 @@ def build_command(root=ROOT, standalone=False, console=False, output_dir=None, j
     for filename in ('icon.ico', 'Comfortaa-VariableFont_wght.ttf'):
         if (root / filename).is_file():
             command.append(f'--include-data-files={root / filename}={filename}')
-    # Embed local launcher settings in the onefile build.  The file is ignored
-    # by Git and can be overridden by a .env placed next to the EXE.
-    if (root / '.env').is_file():
-        command.append(f'--include-data-files={root / ".env"}=.env')
+    if proxy_settings_path is not None:
+        command.append(f'--include-data-files={proxy_settings_path}=launcher-proxy-settings.json')
     if os.name == 'nt':
         command += ['--windows-console-mode=force' if console else '--windows-console-mode=disable',
                     '--file-version=' + numeric, '--product-version=' + numeric,
@@ -85,13 +121,19 @@ def build_command(root=ROOT, standalone=False, console=False, output_dir=None, j
     return command
 
 
-def smoke_test(executable, output_dir):
+def smoke_test(executable, output_dir, proxy_settings=None):
     report = Path(output_dir) / 'smoke-test.json'
     if report.exists():
         report.unlink()
     with tempfile.TemporaryDirectory(prefix='yamalpixel-build-check-') as directory:
         environment = dict(os.environ, USERPROFILE=directory, HOME=directory,
                            QT_QPA_PLATFORM='offscreen', SDL_AUDIODRIVER='dummy', PYTHONUTF8='1')
+        if proxy_settings is not None:
+            import hashlib
+            for key in ('PROXY_HMAC_SECRET', 'YAMALPIXEL_PROXY_URL', 'YAMALPIXEL_ENV_FILE'):
+                environment.pop(key, None)
+            fingerprint = proxy_settings['proxy_url'] + '\0' + proxy_settings['hmac_secret']
+            environment['YAMALPIXEL_SMOKE_PROXY_SHA256'] = hashlib.sha256(fingerprint.encode('utf-8')).hexdigest()
         result = subprocess.run([str(executable), '--smoke-test', '--smoke-report', str(report)],
                                 cwd=directory, env=environment, timeout=90,
                                 capture_output=True, text=True, encoding='utf-8', errors='replace')
@@ -122,8 +164,9 @@ def main(argv=None):
     if sys.version_info < (3, 12):
         parser.error('Нужен Python 3.12 или новее')
     args.output_dir = args.output_dir.resolve()
-    command = build_command(ROOT, args.standalone, args.console, args.output_dir, args.jobs, args.lto)
     if args.dry_run:
+        command = build_command(ROOT, args.standalone, args.console, args.output_dir, args.jobs, args.lto,
+                                Path('<temporary>') / 'launcher-proxy-settings.json')
         print(subprocess.list2cmdline(command))
         return 0
     try:
@@ -142,13 +185,19 @@ def main(argv=None):
                 raise FileNotFoundError('Отсутствует ресурс: ' + filename)
         args.output_dir.mkdir(parents=True, exist_ok=True)
         print('Python: ' + sys.executable, flush=True)
-        result = subprocess.run(command, cwd=ROOT)
+        proxy_settings = read_proxy_build_settings(ROOT)
+        with tempfile.TemporaryDirectory(prefix='yamalpixel-proxy-build-') as temporary:
+            settings_file = Path(temporary) / 'launcher-proxy-settings.json'
+            settings_file.write_text(json.dumps(proxy_settings, ensure_ascii=False), encoding='utf-8')
+            command = build_command(ROOT, args.standalone, args.console, args.output_dir, args.jobs, args.lto,
+                                    settings_file)
+            result = subprocess.run(command, cwd=ROOT)
         if result.returncode:
             return result.returncode
         executable = output_executable(args.output_dir, args.standalone)
         if not executable.is_file():
             raise FileNotFoundError('Nuitka не создала ' + str(executable))
-        if not args.skip_smoke_test and not smoke_test(executable, args.output_dir):
+        if not args.skip_smoke_test and not smoke_test(executable, args.output_dir, proxy_settings):
             return 1
         print('Готово: ' + str(executable))
         if args.standalone:

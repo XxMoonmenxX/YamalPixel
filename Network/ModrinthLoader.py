@@ -9,7 +9,8 @@ import threading
 import urllib.parse
 from typing import List, Dict, Optional
 import logging
-from ConfDir.Configs import API_KEY, CURSEFORGE_CONFIG
+from ConfDir.Configs import CURSEFORGE_CONFIG
+from Network.proxy_auth import generate_auth_header, ProxyAuthError
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -17,8 +18,6 @@ logger = logging.getLogger(__name__)
 
 class ModrinthAPI:
     """API для работы с Modrinth с поддержкой API ключа"""
-
-    API_KEY = API_KEY
 
     def __init__(self, proxy_url: str = None):
         self.proxy_url = (proxy_url or CURSEFORGE_CONFIG.get('proxy_url', '')).rstrip('/')
@@ -59,6 +58,29 @@ class ModrinthAPI:
         except Exception as e:
             logger.error(f"Ошибка поиска модов: {e}")
             return None
+
+    def search_modpacks(self, query: str = "", sort: str = "relevance", limit: int = 50) -> List[Dict]:
+        """Search only Modrinth modpacks, including empty-query top lists."""
+        if sort not in ("relevance", "downloads", "updated"):
+            sort = "relevance"
+        try:
+            params = {
+                "limit": limit,
+                "index": sort,
+                "facets": json.dumps([["project_type:modpack"]]),
+            }
+            if query:
+                params["query"] = query
+            response = self.session.get(
+                f"{self.base_url}/search",
+                params=params,
+                timeout=15,
+            )
+            response.raise_for_status()
+            return response.json().get("hits", [])
+        except Exception as e:
+            logger.error(f"Ошибка поиска модпаков Modrinth: {e}")
+            raise
 
     def _get_latest_version_id(self, project_slug: str, minecraft_version: str, loader: str) -> Optional[tuple]:
         """
@@ -207,10 +229,10 @@ class ModrinthAPI:
                     "source": "modrinth",
                     "timestamp": datetime.now().isoformat()
                 }
-                headers = {'X-API-Key': self.API_KEY}
-                requests.post(cache_url, json=payload, headers=headers, timeout=5)
-            except:
-                pass
+                headers = generate_auth_header()
+                requests.post(cache_url, json=payload, headers=headers, timeout=5, allow_redirects=False)
+            except Exception as exc:
+                logger.warning('Не удалось уведомить прокси: %s', exc)
 
         threading.Thread(target=_send_notification, daemon=True).start()
 
@@ -221,7 +243,8 @@ class ModrinthAPI:
             logger.info(f"🔄 Загрузка через прокси: {filename}")
 
             proxy_url = f"{self.proxy_url}/api/v1/cache/file/{project_slug}/{version_id}"
-            response = self.session.get(proxy_url, stream=True, timeout=60)
+            response = self.session.get(proxy_url, stream=True, timeout=60,
+                                        headers=generate_auth_header(), allow_redirects=False)
 
             if response.status_code == 200:
                 os.makedirs(mods_dir, exist_ok=True)
@@ -245,6 +268,8 @@ class ModrinthAPI:
 
             return False
 
+        except ProxyAuthError:
+            raise
         except requests.RequestException as exc:
             mark_proxy_unavailable(self.proxy_url)
             logger.debug('Proxy download failed: %s', exc)
@@ -317,9 +342,10 @@ class ModrinthAPI:
     def _make_proxy_request(self, method: str, endpoint: str, **kwargs) -> Optional[requests.Response]:
         url = f"{self.proxy_url}{endpoint}"
         try:
-            headers = kwargs.get('headers', {})
-            headers['X-API-Key'] = self.API_KEY
+            headers = dict(kwargs.get('headers', {}))
+            headers.update(generate_auth_header())
             kwargs['headers'] = headers
+            kwargs['allow_redirects'] = False
             response = self.session.request(method, url, timeout=30, **kwargs)
 
             if response.status_code in [401, 403]:
@@ -331,6 +357,8 @@ class ModrinthAPI:
                 logger.error(f"❌ Ошибка {response.status_code} для {endpoint}")
                 return None
 
+        except ProxyAuthError:
+            raise
         except Exception as e:
             logger.error(f"❌ Ошибка запроса к {endpoint}: {e}")
             return None

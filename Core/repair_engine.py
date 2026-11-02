@@ -20,7 +20,7 @@ def scan(instance_dir,snap=None):
             else:
                 with zipfile.ZipFile(p) as z:
                     if z.testzip() is not None: reason='corrupt archive member'
-                    elif not any(x in z.namelist() for x in ('fabric.mod.json','META-INF/mods.toml','META-INF/neoforge.mods.toml')): reason='missing mod metadata'
+                    elif not any(x in z.namelist() for x in ('fabric.mod.json','quilt.mod.json','META-INF/mods.toml','META-INF/neoforge.mods.toml')): reason='missing mod metadata'
         except (OSError,zipfile.BadZipFile) as e: reason=str(e)
         if reason:
             iid=hashlib.sha256((item['filename']+'|'+reason).encode()).hexdigest()[:16]
@@ -129,16 +129,50 @@ def rollback(result):
 
 def rollback_to_last_ok(minecraft_dir):
     from .repair_last_ok import read
-    import shutil
+    from .mod_transaction import safe_filename, replace_mods
+    import os, shutil, tempfile, uuid
     root=Path(minecraft_dir); snapshot_data=read(root)
     if not snapshot_data: raise FileNotFoundError('Снимок последней рабочей сборки не найден')
-    mods=root/'mods'; mods.mkdir(parents=True,exist_ok=True)
-    allowed={x.get('filename') for x in snapshot_data.get('mods',[]) if x.get('filename')}
-    for p in mods.glob('*.jar'):
-        if p.name not in allowed: p.unlink()
-    missing=[]
-    for item in snapshot_data.get('mods',[]):
-        p=mods/item['filename']
-        if not p.exists(): missing.append(item['filename'])
-    if missing: raise FileNotFoundError('Не хватает модов: '+', '.join(missing))
+    items=snapshot_data.get('mods')
+    if not isinstance(items,list): raise ValueError('Неверный снимок модов')
+    mods=root/'mods'
+    if mods.is_symlink(): raise ValueError('Папка mods является ссылкой')
+    objects=root/'_repair'/'last-ok'/'objects'
+    sources=[]; seen=set(); missing=[]
+    for item in items:
+        if not isinstance(item,dict): raise ValueError('Неверная запись снимка')
+        name=safe_filename(item.get('filename'))
+        checksum=item.get('sha256')
+        if not isinstance(checksum,str) or len(checksum)!=64 or any(c not in '0123456789abcdef' for c in checksum):
+            raise ValueError(f'Неверный хэш снимка: {name}')
+        if name.casefold() in seen: raise ValueError(f'Повторяющееся имя мода: {name}')
+        seen.add(name.casefold())
+        candidates=[objects/(checksum+'.jar'),mods/name]
+        source=None
+        for candidate in candidates:
+            if candidate.is_symlink() or not candidate.is_file(): continue
+            if Quarantine.sha256(candidate)==checksum:
+                source=candidate; break
+        if source is None: missing.append(name)
+        else: sources.append((name,source,checksum))
+    if missing: raise FileNotFoundError('Нет проверенных копий модов: '+', '.join(missing))
+
+    root.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.last-ok-restore-',dir=root) as temporary:
+        prepared=Path(temporary)/'mods'; prepared.mkdir()
+        if mods.is_dir():
+            for entry in mods.iterdir():
+                if entry.suffix.lower()=='.jar': continue
+                target=prepared/entry.name
+                if entry.is_symlink(): raise ValueError('Папка mods содержит ссылку')
+                if entry.is_dir(): shutil.copytree(entry,target,symlinks=True)
+                else: shutil.copy2(entry,target)
+        for name,source,checksum in sources:
+            target=prepared/name
+            shutil.copy2(source,target)
+            if Quarantine.sha256(target)!=checksum: raise ValueError(f'Ошибка копирования мода: {name}')
+        backup_root=root/'_repair'/'rollback-backups'
+        backup_root.mkdir(parents=True,exist_ok=True)
+        backup=backup_root/('mods-'+uuid.uuid4().hex)
+        replace_mods(str(prepared),str(mods),str(backup))
     return True

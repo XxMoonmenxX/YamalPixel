@@ -3,6 +3,7 @@ import logging
 import requests
 import re
 import os
+import shutil
 import sys
 import subprocess
 import tempfile
@@ -30,15 +31,32 @@ def apply_staged_update(executable=None):
     current = Path(executable or launcher_executable())
     staged = Path(str(current) + '.new')
     if not staged.is_file(): return False
+    backup = None
+    moved_old = False
     try:
         if staged.stat().st_size < 1024 * 1024: return False
-        if staged.read_bytes()[:2] != b'MZ': return False
+        with staged.open('rb') as stream:
+            if stream.read(2) != b'MZ': return False
         backup = current.with_name(current.stem + '_Backup' + current.suffix)
-        if current.exists(): os.replace(current, backup)
-        os.replace(staged, current)
-        if backup.exists(): backup.unlink()
+        if backup.exists():
+            backup = current.with_name(current.stem + '_Backup_' + uuid.uuid4().hex + current.suffix)
+        if current.exists():
+            os.replace(current, backup)
+            moved_old = True
+        try:
+            os.replace(staged, current)
+        except OSError:
+            if moved_old:
+                os.replace(backup, current)
+            raise
+        if moved_old:
+            try:
+                backup.unlink()
+            except OSError:
+                logger.warning('Не удалось удалить резервную копию обновления: %s', backup)
         return True
-    except OSError:
+    except OSError as exc:
+        logger.error('Не удалось применить обновление: %s', exc)
         return False
 
 
@@ -339,7 +357,7 @@ class UpdateDialog(QDialog):
             return
 
         self.accept()  # Закрываем диалог обновления
-        digest = update_asset.get('digest', '')
+        digest = update_asset.get('digest') or ''
         expected = digest.removeprefix('sha256:') if digest.startswith('sha256:') else None
         self.start_download_and_install(update_asset["browser_download_url"], expected)
 
@@ -459,7 +477,26 @@ class UpdateProgressDialog(QDialog):
                                     'При запуске из Python обновите исходники проекта. Автообновление доступно для EXE.')
             return
         staged = current_exe + '.new'
-        os.replace(temp_exe, staged)
+        temporary = None
+        try:
+            fd, temporary = tempfile.mkstemp(prefix='.update-', suffix='.tmp',
+                                               dir=str(Path(current_exe).parent))
+            with os.fdopen(fd, 'wb') as output, open(temp_exe, 'rb') as source:
+                shutil.copyfileobj(source, output, length=1024 * 1024)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, staged)
+            temporary = None
+            try:
+                os.remove(temp_exe)
+            except OSError:
+                logger.warning('Не удалось удалить временный файл обновления: %s', temp_exe)
+        except OSError as exc:
+            self.on_download_error(str(exc))
+            return
+        finally:
+            if temporary and os.path.exists(temporary):
+                os.remove(temporary)
 
         # Закрываем текущий лаунчер
         QMessageBox.information(self, 'Обновление', 'Обновление подготовлено и будет применено при следующем запуске лаунчера.')

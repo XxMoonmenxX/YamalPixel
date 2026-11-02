@@ -1,24 +1,40 @@
 ## Core/collection_loader.py
 import os
 import json
+import hashlib
 import logging
 import traceback
 from datetime import datetime, timezone
 import tempfile
-import zipfile
 import shutil
 from pathlib import Path
-from Core.mod_transaction import safe_filename, safe_target, replace_mods
+from Core.mod_transaction import safe_filename, safe_target, replace_mods, validate_jar_or_zip
 from Core.local_mods import copy_local_mod
 from typing import List, Dict, Optional
 
 from ConfDir.Configs import COLLECTIONS_CONFIG, CONFIG
 from Network.Downloader import download_single_mod_turbo_sync
-from Core.backup import ModsBackupManager
+from Core.backup import BackupCancelled, ModsBackupManager
 
 # Настройка логгера
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+class _InstallBackupCancel:
+    """Adapt collection cancellation to the backup manager's token API."""
+
+    def __init__(self, event):
+        self.event = event
+
+    def check(self):
+        if self.event.is_set():
+            raise BackupCancelled('Установка отменена')
+
+    def commit(self, action=None):
+        self.check()
+        if action is not None:
+            action()
 
 # Добавляем обработчик для вывода в консоль, если его нет
 if not logger.handlers:
@@ -32,6 +48,53 @@ if not logger.handlers:
 def get_collections_dir() -> str:
     """Возвращает путь к папке со сборками"""
     return COLLECTIONS_CONFIG["collections_dir"]
+
+
+def _collection_fingerprint(data):
+    relevant = {key: data.get(key) for key in
+                ('minecraft_version', 'loader', 'loader_version', 'mods', 'archive_url')}
+    return hashlib.sha256(json.dumps(relevant, sort_keys=True, ensure_ascii=False,
+                                     separators=(',', ':')).encode('utf-8')).hexdigest()
+
+
+def _installed_mod_hashes(directory):
+    mods_dir = Path(directory) / 'mods'
+    hashes = {}
+    if not mods_dir.is_dir() or mods_dir.is_symlink():
+        return None
+    for path in mods_dir.iterdir():
+        if path.name.lower().endswith('.jar'):
+            if path.is_symlink() or not path.is_file():
+                return None
+            with path.open('rb') as stream:
+                hashes[path.name] = hashlib.file_digest(stream, 'sha256').hexdigest()
+    return hashes
+
+
+def collection_is_installed(data, directory):
+    """Skip downloads only while both the manifest and installed JARs match."""
+    try:
+        stamp = json.loads((Path(directory) / '.installed-collection.json').read_text(encoding='utf-8'))
+        hashes = _installed_mod_hashes(directory)
+        return (hashes is not None and stamp.get('manifest') == _collection_fingerprint(data)
+                and stamp.get('mods') == hashes)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def _write_installed_stamp(data, directory):
+    hashes = _installed_mod_hashes(directory)
+    if hashes is None:
+        return
+    payload = {'manifest': _collection_fingerprint(data), 'mods': hashes}
+    fd, name = tempfile.mkstemp(prefix='.installed-', suffix='.tmp', dir=directory)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(payload, stream, ensure_ascii=False)
+        os.replace(name, Path(directory) / '.installed-collection.json')
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
 
 
 def load_collection_file(filename: str) -> Dict:
@@ -74,6 +137,8 @@ def load_collection_data(collection_name: str) -> Optional[Dict]:
 
 def load_all_collections() -> List[Dict]:
     """Загружает все сборки"""
+    from Core.modpack_install_transaction import recover_pending_modpacks
+    recover_pending_modpacks()
     collections = []
     collections_dir = get_collections_dir()
 
@@ -118,7 +183,8 @@ def load_all_collections() -> List[Dict]:
                         'created_at': created_date.astimezone(timezone.utc),
                         'created_str': created_date.strftime("%d.%m.%Y"),
                         'description': data.get('description', ''),
-                        'source': data.get('source', 'local')
+                        'source': data.get('source', 'local'),
+                        'mrpack_installed': bool(data.get('mrpack_installed')),
                     })
             except Exception as e:
                 logger.error(f"Ошибка загрузки сборки {filename}: {e}")
@@ -133,9 +199,12 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
         collections_dir = get_collections_dir()
         os.makedirs(collections_dir, exist_ok=True)
 
-        if not filename:
+        creating = not filename
+        if creating:
             safe_name = "".join(c for c in collection_data['name'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
             safe_name = safe_name[:50]
+            if not safe_name:
+                raise ValueError('Название сборки не содержит допустимых символов')
             filename = f"{safe_name}.json"
 
         filepath = safe_target(collections_dir, filename)
@@ -153,12 +222,20 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
                 json.dump(collection_data, stream, indent=2, ensure_ascii=False)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, filepath)
+            if creating:
+                # Publish without overwriting a collection created concurrently.
+                os.link(temporary, filepath)
+                os.unlink(temporary)
+                temporary = None
+            else:
+                os.replace(temporary, filepath)
         finally:
             if temporary and os.path.exists(temporary):
                 os.remove(temporary)
 
         return True, filename
+    except FileExistsError:
+        return False, 'Сборка с таким именем уже существует'
     except Exception as e:
         return False, str(e)
 
@@ -300,17 +377,25 @@ def install_collection(collection_data: Dict, progress_callback=None, create_bac
                 raise InterruptedError("Установка отменена")
             # Validate once, after all downloads, before modifying the current installation.
             for candidate in Path(prepared).rglob('*.jar'):
-                with zipfile.ZipFile(candidate) as archive:
-                    if archive.testzip() is not None:
-                        raise ValueError(f'Повреждённый мод: {candidate.name}')
+                if not validate_jar_or_zip(candidate):
+                    raise ValueError(f'Повреждённый мод: {candidate.name}')
             manager = ModsBackupManager(minecraft_dir)
             existing = [f for f in os.listdir(mods_dir) if f.lower().endswith('.jar')]
-            if create_backup and existing and not manager.create_backup():
-                raise RuntimeError("Не удалось создать бэкап: текущие моды сохранены")
+            if create_backup and existing:
+                backup = (manager.create_backup(cancel_token=_InstallBackupCancel(cancel_event))
+                          if cancel_event else manager.create_backup())
+                if not backup:
+                    raise RuntimeError("Не удалось создать бэкап: текущие моды сохранены")
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("Установка отменена")
             replace_mods(prepared, mods_dir, os.path.join(staging, 'previous'))
             if progress_callback and collection_data.get('archive_url'):
                 progress_callback(1, 1, 'Моды установлены', status='archive_complete')
         set_current_collection(collection_data.get('name'))
+        try:
+            _write_installed_stamp(collection_data, minecraft_dir)
+        except (OSError, ValueError, TypeError):
+            logger.warning('Не удалось сохранить состояние установленной сборки', exc_info=True)
         return True
     except Exception as exc:
         logger.exception("Установка сборки отменена без замены текущих модов: %s", exc)
