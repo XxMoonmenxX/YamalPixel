@@ -4,7 +4,7 @@ from Network.proxy_status import proxy_available, mark_proxy_unavailable
 import json
 import os
 from Core.mod_transaction import safe_target
-from Core.mod_transaction import validate_jar_or_zip
+from Network.file_transfer import save_response
 import threading
 import urllib.parse
 from typing import List, Dict, Optional
@@ -144,75 +144,30 @@ class ModrinthAPI:
         return f"https://cdn.modrinth.com/data/{project_slug}/versions/{version_id}/{encoded_filename}"
 
     def _download_direct(self, url: str, filename: str, mods_dir: str) -> bool:
-        logger.debug('Direct Modrinth download')
         try:
-            logger.debug(f"🔄 Прямое скачивание: {url}")
-
-            direct_session = requests.Session()
-            direct_session.headers.update({'User-Agent': 'YamalPixel-Launcher/1.0'})
-
-            response = direct_session.get(url, stream=True, timeout=self.direct_timeout)
-            response.raise_for_status()
-
-            os.makedirs(mods_dir, exist_ok=True)
             filepath = safe_target(mods_dir, filename)
-
-            with open(filepath, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-            if os.path.exists(filepath) and os.path.getsize(filepath) > 1000 and validate_jar_or_zip(filepath):
-                logger.info(f"✅ Скачан: {filename} ({os.path.getsize(filepath)} байт)")
-                return True
-            else:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                return False
-
-        except requests.exceptions.Timeout:
-            logger.debug(f"⏰ Таймаут: {filename}")
-            return False
-        except requests.exceptions.ConnectionError:
-            logger.debug(f"🔌 Ошибка подключения: {filename}")
-            return False
-        except Exception as e:
-            logger.debug(f"⚠️ Ошибка: {e}")
+            with requests.Session() as direct_session:
+                direct_session.headers.update({'User-Agent': 'YamalPixelLauncher'})
+                response = direct_session.get(url, stream=True, timeout=self.direct_timeout)
+                return save_response(response, filepath)
+        except Exception as exc:
+            logger.debug('Direct download failed for %s: %s', filename, exc)
             return False
 
     def download_mod_alternative(self, project_slug: str, version_id: str, filename: str, mods_dir: str) -> bool:
-        logger.debug('Alternative Modrinth download')
         try:
-            logger.debug(f"🔄 Альтернативный метод для: {filename}")
-
-            version_url = f"{self.base_url}/version/{version_id}"
-            response = self.session.get(version_url, timeout=30)
-            response.raise_for_status()
-            version_data = response.json()
-
-            if "files" in version_data and version_data["files"]:
-                for file_info in version_data["files"]:
-                    if file_info["filename"] == filename and "url" in file_info:
-                        download_url = file_info["url"]
-                        response = self.session.get(download_url, stream=True, timeout=30)
-                        response.raise_for_status()
-
-                        os.makedirs(mods_dir, exist_ok=True)
-                        filepath = safe_target(mods_dir, filename)
-
-                        with open(filepath, "wb") as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-
-                        if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
-                            logger.info(f"✅ Альтернативный метод: {filename}")
-                            return True
-
+            response = self.session.get(f'{self.base_url}/version/{version_id}', timeout=30)
+            try:
+                response.raise_for_status()
+                version_data = response.json()
+            finally:
+                response.close()
+            for file_info in version_data.get('files', []):
+                if file_info.get('filename') == filename and file_info.get('url'):
+                    return self._download_direct(file_info['url'], filename, mods_dir)
             return False
-
-        except Exception as e:
-            logger.debug(f"❌ Альтернативный метод не удался: {e}")
+        except Exception as exc:
+            logger.debug('Alternative download failed for %s: %s', filename, exc)
             return False
 
     def _notify_proxy_to_cache(self, mod_id: str, file_id: str, filename: str, source_url: str):
@@ -247,17 +202,7 @@ class ModrinthAPI:
                                         headers=generate_auth_header(), allow_redirects=False)
 
             if response.status_code == 200:
-                os.makedirs(mods_dir, exist_ok=True)
-                filepath = safe_target(mods_dir, filename)
-
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-
-                if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
-                    logger.info(f"✅ Скачан через прокси: {filename}")
-                    return True
+                return save_response(response, safe_target(mods_dir, filename))
 
             elif response.status_code == 404:
                 logger.warning(f"⚠️ Файл {filename} не найден на прокси (404)")
@@ -266,6 +211,7 @@ class ModrinthAPI:
                     mark_proxy_unavailable(self.proxy_url)
                 logger.debug('Proxy returned %s', response.status_code)
 
+            response.close()
             return False
 
         except ProxyAuthError:

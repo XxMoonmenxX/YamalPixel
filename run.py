@@ -12,9 +12,10 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QIcon
 
 try:
-    from Network.Updates import apply_staged_update
+    from Network.Updates import handoff_staged_update
     if getattr(sys, 'frozen', False) or '__compiled__' in globals():
-        apply_staged_update()
+        if handoff_staged_update():
+            sys.exit(0)
 except Exception:
     logging.getLogger(__name__).debug('Staged update was not applied', exc_info=True)
 

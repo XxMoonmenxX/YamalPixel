@@ -19,6 +19,8 @@ import json
 import sys
 import re
 import os
+import tempfile
+import time
 
 if os.name == "nt":
     info = subprocess.STARTUPINFO()  # type: ignore
@@ -40,7 +42,13 @@ def check_path_inside_minecraft_directory(minecraft_directory: str | os.PathLike
     """
     Raises a FileOutsideMinecraftDirectory if the Path is not in the given Directory
     """
-    if not os.path.abspath(path).startswith(os.path.abspath(minecraft_directory)):
+    root = os.path.normcase(os.path.realpath(minecraft_directory))
+    target = os.path.normcase(os.path.realpath(path))
+    try:
+        inside = os.path.commonpath((root, target)) == root
+    except ValueError:
+        inside = False
+    if not inside:
         raise FileOutsideMinecraftDirectory(os.path.abspath(path), os.path.abspath(minecraft_directory))
 
 
@@ -65,27 +73,36 @@ def download_file(url: str, path: str, callback: CallbackDict = {}, sha1: str | 
 
     callback.get("setStatus", empty)("Download " + os.path.basename(path))
 
-    if session is None:
-        r = requests.get(url, stream=True, headers={"user-agent": get_user_agent()})
-    else:
-        r = session.get(url, stream=True, headers={"user-agent": get_user_agent()})
-
-    if r.status_code != 200:
-        return False
-
-    with open(path, 'wb') as f:
-        r.raw.decode_content = True
-        if lzma_compressed:
-            f.write(lzma.decompress(r.content))
-        else:
-            shutil.copyfileobj(r.raw, f)
-
-    if sha1 is not None:
-        checksum = get_sha1_hash(path)
-        if checksum != sha1:
-            raise InvalidChecksum(url, path, sha1, checksum)
-
-    return True
+    get = session.get if session is not None else requests.get
+    # Connection resets during parallel asset downloads must not leave partial
+    # files behind or abort the installation after one transient failure.
+    for attempt in range(3):
+        fd, temporary = tempfile.mkstemp(prefix='.minecraft-', dir=os.path.dirname(os.path.abspath(path)))
+        os.close(fd)
+        try:
+            with get(url, stream=True, headers={"user-agent": get_user_agent()},
+                     timeout=(10, 60)) as response:
+                response.raise_for_status()
+                with open(temporary, 'wb') as output:
+                    if lzma_compressed:
+                        output.write(lzma.decompress(response.content))
+                    else:
+                        for chunk in response.iter_content(64 * 1024):
+                            output.write(chunk)
+            if sha1 is not None:
+                checksum = get_sha1_hash(temporary)
+                if checksum != sha1:
+                    raise InvalidChecksum(url, path, sha1, checksum)
+            os.replace(temporary, path)
+            return True
+        except (requests.RequestException, InvalidChecksum):
+            if attempt == 2:
+                raise
+            time.sleep(0.3 * (attempt + 1))
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+    return False
 
 
 def parse_single_rule(rule: ClientJsonRule, options: MinecraftOptions) -> bool:

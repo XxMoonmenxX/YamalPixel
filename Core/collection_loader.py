@@ -208,7 +208,12 @@ def save_collection(collection_data: Dict, filename: str = None) -> tuple:
             filename = f"{safe_name}.json"
 
         filepath = safe_target(collections_dir, filename)
-        collection_data.setdefault('instance_id', 'file:' + filename)
+        if creating:
+            # A new import/clone always gets its own worlds and mods directory,
+            # including a retry after a filename collision.
+            collection_data['instance_id'] = 'file:' + filename
+        else:
+            collection_data.setdefault('instance_id', 'file:' + filename)
 
         collection_data['updated_at'] = datetime.now().isoformat()
         if 'created_at' not in collection_data:
@@ -366,8 +371,10 @@ def install_collection(collection_data: Dict, progress_callback=None, create_bac
                 info['loader'] = loader
                 source = mod.get('source', 'modrinth')
                 if source == 'local':
+                    community_id = collection_data.get('original_id') or collection_data.get('id')
+                    options = {'community_id': community_id} if community_id else {}
                     copy_local_mod(mod, get_collections_dir(),
-                                   os.path.join(prepared, safe_filename(info['file'])))
+                                   os.path.join(prepared, safe_filename(info['file'])), **options)
                 elif not download_single_mod_turbo_sync(info, staging, source=source,
                                                         minecraft_version=version, loader=loader):
                     raise RuntimeError(f"Не удалось скачать {name}")

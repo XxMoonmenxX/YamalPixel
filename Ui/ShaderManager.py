@@ -1,72 +1,16 @@
-## Ui/ShaderManager.py
+"""Shader selection UI; downloads use the shared progress dialog."""
 import os
-import threading
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QTextEdit, QTreeWidget,
-    QTreeWidgetItem, QApplication, QMessageBox
-)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor, QColor
-
-
-from ConfDir.Configs import SHADERS_CONFIG, CONFIG
-from Network.Downloader import TurboDownloader, download_yandex_file_sync
-from Core.mod_transaction import safe_target
+from PyQt6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTreeWidget, QTreeWidgetItem, QMessageBox, QApplication)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
+from ConfDir.Configs import SHADERS_CONFIG
 from Core.instances import ensure_game_directory
-from Ui.BaseWindow import BaseDialog
-import asyncio
+from Ui.BaseWindow import PlainDialog
+from Ui.DownloadDialog import DownloadProgressDialog, ShaderDownloadWorker
 
 
-class ShaderDownloadWorker(QThread):
-    """Поток для загрузки шейдеров"""
-    progress = pyqtSignal(int, int, str)  # current, total, shader_name
-    finished = pyqtSignal(int, int)  # success_count, total
-    log = pyqtSignal(str)
-
-    def __init__(self, shaders_list):
-        super().__init__()
-        self.shaders_list = shaders_list
-        self.cancelled = False
-
-    def cancel(self):
-        self.cancelled = True
-
-    def run(self):
-        shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
-        os.makedirs(shaders_dir, exist_ok=True)
-
-        downloader = TurboDownloader()
-        total = len(self.shaders_list)
-        success_count = 0
-
-        for i, shader in enumerate(self.shaders_list):
-            if self.cancelled:
-                self.log.emit("❌ Загрузка отменена")
-                break
-
-            self.progress.emit(i, total, shader["name"])
-            self.log.emit(f"⬇️ Загрузка: {shader['name']}")
-
-            try:
-                shader_path = safe_target(shaders_dir, shader['file'])
-                success = download_yandex_file_sync(shader['url'], shader_path, 'shader')
-
-                if success:
-                    success_count += 1
-                    self.log.emit(f"✅ Успешно: {shader['name']}")
-
-                    # Keep the ZIP intact as a shader pack.
-                else:
-                    self.log.emit(f"❌ Ошибка: {shader['name']}")
-            except Exception as e:
-                self.log.emit(f"💥 Ошибка {shader['name']}: {str(e)}")
-
-        asyncio.run(downloader.cleanup())
-        self.finished.emit(success_count, total)
-
-
-class ShaderManagerDialog(BaseDialog):
+class ShaderManagerDialog(PlainDialog):
     """Диалог выбора и загрузки шейдеров"""
 
     def __init__(self, parent=None):
@@ -259,111 +203,15 @@ class ShaderManagerDialog(BaseDialog):
         else:
             subprocess.Popen(["xdg-open", shaders_dir])
 
-
-class ShaderDownloadProgressDialog(BaseDialog):
-
-    """Диалог прогресса загрузки шейдеров"""
-
+class ShaderDownloadProgressDialog(DownloadProgressDialog):
     def __init__(self, parent, shaders):
-        super().__init__(parent)
-        self.shaders = shaders
-        self.setWindowTitle("Загрузка шейдеров")
-        self.setFixedSize(500, 400)
-        self.setModal(True)
+        super().__init__(parent, shaders, kind='shaders')
 
-        self.setup_ui()
-        self.start_download()
 
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+def show_shader_manager(parent=None):
+    ShaderManagerDialog(parent).exec()
 
-        # Заголовок
-        title = QLabel("📥 Загрузка шейдеров")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #4ECDC4;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
 
-        # Информация
-        self.info_label = QLabel(f"Всего шейдеров: {len(self.shaders)}")
-        self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.info_label)
-
-        # Прогресс
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        layout.addWidget(self.progress_bar)
-
-        # Текущий шейдер
-        self.current_label = QLabel("Подготовка к загрузке...")
-        self.current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.current_label)
-
-        # Лог
-        log_label = QLabel("📋 Лог загрузки:")
-        log_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(log_label)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 9))
-        self.log_text.setMaximumHeight(200)
-        layout.addWidget(self.log_text)
-
-        # Кнопки
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        self.cancel_btn = QPushButton("Отмена")
-        self.cancel_btn.clicked.connect(self.cancel_download)
-        button_layout.addWidget(self.cancel_btn)
-
-        self.close_btn = QPushButton("Закрыть")
-        self.close_btn.clicked.connect(self.accept)
-        self.close_btn.setEnabled(False)
-        button_layout.addWidget(self.close_btn)
-
-        layout.addLayout(button_layout)
-
-    def start_download(self):
-        """Запускает загрузку"""
-        self.worker = ShaderDownloadWorker(self.shaders)
-        self.worker.progress.connect(self.update_progress)
-        self.worker.finished.connect(self.on_download_finished)
-        self.worker.log.connect(self.add_log)
-        self.worker.start()
-
-    def update_progress(self, current, total, shader_name):
-        """Обновляет прогресс"""
-        percent = int((current + 1) * 100 / total) if total > 0 else 0
-        self.progress_bar.setValue(percent)
-        self.current_label.setText(f"Загрузка: {shader_name} ({current + 1}/{total})")
-
-    def add_log(self, message):
-        """Добавляет сообщение в лог"""
-        self.log_text.append(message)
-        self.log_text.moveCursor(QTextCursor.MoveOperation.End)
-
-    def on_download_finished(self, success_count, total):
-        """Обработка завершения загрузки"""
-        self.progress_bar.setValue(100)
-        self.cancel_btn.setEnabled(False)
-        self.close_btn.setEnabled(True)
-
-        if success_count == total:
-            self.current_label.setText("✅ Все шейдеры успешно загружены!")
-            self.add_log(f"\n✅ Успешно загружено {success_count} из {total} шейдеров")
-        else:
-            self.current_label.setText(f"⚠️ Загружено {success_count} из {total} шейдеров")
-            self.add_log(f"\n⚠️ Загружено {success_count} из {total} шейдеров")
-
-    def cancel_download(self):
-        """Отмена загрузки"""
-        if self.worker and self.worker.isRunning():
-            self.worker.cancel()
-            self.worker.wait(5000)
-            self.add_log("❌ Загрузка отменена пользователем")
-            self.current_label.setText("❌ Загрузка отменена")
-            self.cancel_btn.setEnabled(False)
-            self.close_btn.setEnabled(True)
+def download_shaders_turbo_ui(shaders_list, parent=None):
+    if shaders_list:
+        ShaderDownloadProgressDialog(parent, shaders_list).exec()

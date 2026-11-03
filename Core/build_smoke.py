@@ -60,6 +60,7 @@ def main(argv=None):
         from Core.local_mods import import_local_mods, copy_local_mod
         check(bool(MCLIB.utils.get_library_version()), 'Не найден MCLIB/version.txt')
         check(Path(certifi.where()).is_file(), 'Не найдены CA-сертификаты')
+        check(Path(resource_path('Network/update_helper.ps1')).is_file(), 'Не найден установщик обновлений')
         report['checks'].append('dependencies')
         expected_proxy_hash = os.getenv('YAMALPIXEL_SMOKE_PROXY_SHA256')
         if expected_proxy_hash:
@@ -89,6 +90,11 @@ def main(argv=None):
         check('Ctrl/Shift' in guide.browser.toPlainText(), 'Не работает поиск в гайде')
         guide.close()
         report['checks'].append('user-guide')
+        from Ui.ShaderManager import ShaderManagerDialog
+        shaders = ShaderManagerDialog()
+        check(shaders.shaders_tree.topLevelItemCount() > 0, 'Не открывается менеджер шейдеров')
+        shaders.close()
+        report['checks'].append('shader-manager')
         dialog = CollectionCreator()
         dialog.mode_combo.setCurrentIndex(1)
         check(dialog.mode_combo.currentData() == 'custom', 'Недоступен режим кастомной сборки')

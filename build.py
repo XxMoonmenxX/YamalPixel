@@ -105,7 +105,7 @@ def build_command(root=ROOT, standalone=False, console=False, output_dir=None, j
     for directory in ('Ui/assets', 'YamalPixelRes'):
         if (root / directory).is_dir():
             command.append(f'--include-data-dir={root / directory}={directory}')
-    for filename in ('icon.ico', 'Comfortaa-VariableFont_wght.ttf'):
+    for filename in ('icon.ico', 'Comfortaa-VariableFont_wght.ttf', 'Network/update_helper.ps1'):
         if (root / filename).is_file():
             command.append(f'--include-data-files={root / filename}={filename}')
     if proxy_settings_path is not None:

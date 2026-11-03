@@ -5,7 +5,7 @@
 import os
 from PyQt6.QtWidgets import QDialog, QMainWindow
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QColor, QPalette
 
 from ConfDir.ScaleRes import (
     find_closest_resolution,
@@ -260,6 +260,23 @@ class BaseDialog(QDialog, BaseWindowMixin):
         super().__init__(parent)
         self.setObjectName("backgroundDialog")
         self.setup_background()
+
+
+class PlainDialog(BaseDialog):
+    """Utility dialogs must not inherit the launcher's wallpaper brush."""
+
+    def setup_background(self):
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor('#102033'))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
+        self.setStyleSheet(self.get_base_stylesheet() + '''
+            QDialog#backgroundDialog { background: #102033; background-image: none; }
+        ''')
+
+    def load_background(self):
+        return False
 
 
 class BaseMainWindow(QMainWindow, BaseWindowMixin):

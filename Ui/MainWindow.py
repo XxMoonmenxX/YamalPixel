@@ -38,11 +38,11 @@ from Core.backup import BackupCancelled, BackupCancelToken, ModsBackupManager
 
 from Network.proxy_status import start_proxy_probe
 from Network.Updates import check_for_updates_local
-from Network.Downloader import download_single_mod_turbo_sync, download_mods_turbo_ui, TurboDownloader, LauncherCache
+from Network.Downloader import download_single_mod_turbo_sync
 from Network.ModrinthLoader import ModrinthAPI
 from Network.CurseForgeLoader import CurseForgeAPI
 
-from Network.shader_manager import show_shader_manager
+from Ui.ShaderManager import show_shader_manager
 from Network.Downloader import download_shaders_turbo_ui
 
 from Ui.DependencyAnalyzer import DependencyAnalyzerUI

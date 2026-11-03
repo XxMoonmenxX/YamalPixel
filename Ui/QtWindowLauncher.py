@@ -22,9 +22,11 @@ class QtWindowLauncher:
     @classmethod
     def show_diagnostic_window(cls, parent=None, selected_version=None):
         from Ui.QtDiagnosticWindow import QtDiagnosticWindow
+        from PyQt6.QtWidgets import QWidget
 
         app = cls.ensure_qt_app()
-        window = QtDiagnosticWindow(selected_version=selected_version)
+        qt_parent = parent if isinstance(parent, QWidget) else None
+        window = QtDiagnosticWindow(parent=qt_parent, selected_version=selected_version)
         window.show()
         app.exec()
 

@@ -4,6 +4,9 @@ import zipfile
 import shutil
 from pathlib import Path
 
+# Large mods such as Create contain more than 13,000 resources/classes.
+MAX_ARCHIVE_ENTRIES = 100_000
+
 
 def safe_filename(name):
     if (not isinstance(name, str) or not name or name in (".", "..")
@@ -42,14 +45,14 @@ def validate_jar_or_zip(path):
     try:
         with zipfile.ZipFile(path) as archive:
             entries = archive.infolist()
-            if (len(entries) > 10000 or
+            if (not entries or len(entries) > MAX_ARCHIVE_ENTRIES or
                     sum(entry.file_size for entry in entries) > 16 * 1024 * 1024 * 1024):
                 return False
             bad = archive.testzip()
             if bad is not None:
                 return False
         return True
-    except (OSError, zipfile.BadZipFile):
+    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError, ValueError):
         return False
 
 def link_or_copy(source: str, destination: str) -> None:

@@ -4,9 +4,10 @@ import os
 import shutil
 import tempfile
 import zipfile
+import re
 from pathlib import Path, PurePosixPath
 
-from Core.mod_transaction import safe_filename
+from Core.mod_transaction import safe_filename, MAX_ARCHIVE_ENTRIES
 
 MAX_MOD_BYTES = 2 * 1024 * 1024 * 1024
 MAX_IMPORT_BYTES = 16 * 1024 * 1024 * 1024
@@ -16,7 +17,7 @@ MAX_ENTRIES = 10000
 def validate_jar(path):
     with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
-        if (len(entries) > MAX_ENTRIES or
+        if (len(entries) > MAX_ARCHIVE_ENTRIES or
                 sum(entry.file_size for entry in entries) > MAX_MOD_BYTES or
                 any(entry.file_size > MAX_MOD_BYTES for entry in entries)):
             raise ValueError(f'Слишком большой JAR: {Path(path).name}')
@@ -101,16 +102,67 @@ def import_local_mods(paths, collections_dir):
     return result
 
 
-def copy_local_mod(mod, collections_dir, destination):
+def _download_community_mod(mod, root, collection_id):
+    from urllib.parse import quote
+    import requests
+    from ConfDir.Configs import CURSEFORGE_CONFIG
+    from Network.proxy_auth import generate_auth_header
+    digest = mod.get('sha256', '')
+    if not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('Неверная контрольная сумма локального мода')
+    store = root / 'local_mods'
+    if store.is_symlink():
+        raise ValueError('Недопустимая папка локальных модов')
+    store.mkdir(parents=True, exist_ok=True)
+    target = store / (digest + '.jar')
+    if target.is_symlink():
+        raise ValueError('Недопустимый путь локального мода')
+    url = (CURSEFORGE_CONFIG['proxy_url'].rstrip('/') + '/api/v1/community/mod/'
+           + quote(str(collection_id), safe='') + '/' + digest)
+    fd, temporary = tempfile.mkstemp(prefix='.community-', dir=store)
+    os.close(fd)
+    try:
+        with requests.get(url, headers=generate_auth_header(), stream=True,
+                          timeout=(10, 120), allow_redirects=False) as response:
+            if response.status_code != 200:
+                raise ValueError(f'Прокси не выдал локальный мод {mod.get("filename", "")}: '
+                                 f'HTTP {response.status_code}. Владельцу сборки нужно импортировать JAR на прокси.')
+            size = 0
+            actual = hashlib.sha256()
+            with open(temporary, 'wb') as output:
+                for chunk in response.iter_content(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_MOD_BYTES:
+                        raise ValueError('Слишком большой локальный мод')
+                    actual.update(chunk)
+                    output.write(chunk)
+        if actual.hexdigest() != digest:
+            raise ValueError('Скачанный мод не соответствует контрольной сумме сборки')
+        validate_jar(temporary)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def copy_local_mod(mod, collections_dir, destination, community_id=None):
     root = Path(collections_dir).resolve()
     relative = PurePosixPath(mod.get('local_file', ''))
     if relative.is_absolute() or len(relative.parts) != 2 or relative.parts[0] != 'local_mods':
         raise ValueError('Неверный путь локального мода')
     source = (root / 'local_mods' / safe_filename(relative.name)).resolve()
+    if not source.is_relative_to(root / 'local_mods'):
+        raise ValueError('Неверный путь локального мода')
+    if community_id and not source.is_file():
+        _download_community_mod(mod, root, community_id)
     if not source.is_relative_to(root / 'local_mods') or not source.is_file():
         raise ValueError(f'Локальный мод отсутствует: {mod.get("filename", "")}')
     with source.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if community_id and digest != mod.get('sha256'):
+        _download_community_mod(mod, root, community_id)
+        with source.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     if digest != mod.get('sha256'):
         raise ValueError(f'Локальный мод изменён или повреждён: {mod.get("filename", "")}')
     validate_jar(source)

@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import requests
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 _LOG = logging.getLogger(__name__)
 CACHE_FILE = Path.home() / '.yamalpixel_cache' / 'versions.json'
 version_configs = {'YamalPixel': ('1.20.1', 'fabric', '0.17.2'),

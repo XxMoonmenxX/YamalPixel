@@ -11,17 +11,9 @@ from urllib.parse import urljoin, urlparse
 from Core.mod_transaction import safe_target, validate_jar_or_zip
 from pathlib import Path
 from Network.proxy_auth import generate_auth_header, ProxyAuthError
-import aiohttp
-from concurrent.futures import ThreadPoolExecutor
+from Network.file_transfer import save_response
 
-# Только PyQt6 импорты
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QPushButton, QProgressBar, QTextEdit, QMessageBox,
-                             QApplication)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor
-
-from ConfDir.Configs import CONFIG, CURSEFORGE_CONFIG
+from ConfDir.Configs import CURSEFORGE_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -65,18 +57,8 @@ class LauncherCache:
         return hashlib.md5(url.encode()).hexdigest()
 
     def download_and_cache(self, url, cache_file):
-        try:
-            response = requests.get(url, timeout=30, stream=True)
-            response.raise_for_status()
-
-            with open(cache_file, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192 * 4):
-                    f.write(chunk)
-
-            logger.info(f"Файл закэширован: {cache_file.name}")
-        except Exception as e:
-            logger.error(f"Ошибка кэширования {url}: {e}")
-            raise
+        if not download_file_sync(url, str(cache_file)):
+            raise RuntimeError(f'Не удалось скачать файл в кэш: {cache_file.name}')
 
     def get_cached_file(self, url, force_refresh=False):
         file_hash = self.get_file_hash(url)
@@ -93,20 +75,11 @@ class LauncherCache:
 class TurboDownloader:
     def __init__(self):
         self.cache = {}
-        self.cache_manager = LauncherCache()
         self._session = None
 
-    @property
-    def session(self):
-        if self._session is None:
-            timeout = aiohttp.ClientTimeout(total=300)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
-
     async def cleanup(self):
-        if self._session:
-            await self._session.close()
-            self._session = None
+        # Async compatibility API; downloads now use the same synchronous transport.
+        pass
 
     async def get_turbo_link(self, public_key):
         cached = self.cache.get(public_key)
@@ -140,9 +113,7 @@ def get_yandex_direct_link_sync(public_key):
 
 
 def download_file_sync(url, filepath, progress_callback=None, url_validator=None, max_bytes=None):
-    temporary = filepath + '.part'
     try:
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         request_url = url
         if url_validator is None:
             response = requests.get(request_url, stream=True, timeout=60,
@@ -162,37 +133,10 @@ def download_file_sync(url, filepath, progress_callback=None, url_validator=None
                 request_url = urljoin(request_url, location)
             else:
                 raise ValueError('Слишком много перенаправлений')
-        with response:
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            # requests decodes HTTP compression; Content-Length describes encoded bytes.
-            if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
-                total_size = 0
-            if max_bytes is not None and total_size > max_bytes:
-                raise ValueError('Файл превышает допустимый размер')
-            downloaded = 0
-            with open(temporary, 'wb') as output:
-                for chunk in response.iter_content(8192):
-                    if chunk:
-                        output.write(chunk)
-                        downloaded += len(chunk)
-                        if max_bytes is not None and downloaded > max_bytes:
-                            raise ValueError('Файл превышает допустимый размер')
-                        if progress_callback and total_size:
-                            progress_callback(downloaded, total_size)
-            if downloaded == 0 or (total_size and downloaded != total_size):
-                raise ValueError('Неполная загрузка')
-        if filepath.lower().endswith(('.jar', '.zip')):
-            if not validate_jar_or_zip(temporary):
-                raise ValueError('Повреждённый архив')
-        os.replace(temporary, filepath)
-        return True
+        return save_response(response, filepath, progress_callback, max_bytes)
     except Exception as exc:
         logger.error('Ошибка скачивания %s: %s', url, exc)
         return False
-    finally:
-        if os.path.exists(temporary):
-            os.remove(temporary)
 
 
 def download_yandex_file_sync(public_url, filepath, source='yandex', progress_callback=None):
@@ -217,7 +161,6 @@ def download_single_mod_turbo_sync(mod_info, minecraft_dir, source="yandex", min
     Синхронная загрузка одного мода
     source: "yandex", "modrinth", "curseforge", "shader", "local"
     """
-    import traceback
     logger.info(f"🚀 download_single_mod_turbo_sync: {mod_info.get('name', 'unknown')}")
     try:
         # Определяем имя файла - пробуем разные ключи
@@ -435,380 +378,16 @@ def download_single_mod_turbo(mod_info, minecraft_dir):
                                           loader=mod_info.get('loader'))
 
 
-class ModDownloadWorker(QThread):
-    """Поток для загрузки модов (PyQt6)"""
-    progress = pyqtSignal(int, int, str)
-    finished = pyqtSignal(int, int)
-    log = pyqtSignal(str)
-
-    def __init__(self, mods_list, minecraft_dir):
-        super().__init__()
-        self.mods_list = mods_list
-        self.minecraft_dir = minecraft_dir
-        self.cancelled = False
-
-    def cancel(self):
-        self.cancelled = True
-
-    def run(self):
-        total = len(self.mods_list)
-        success_count = 0
-
-        for i, mod in enumerate(self.mods_list):
-            if self.cancelled:
-                self.log.emit("❌ Загрузка отменена")
-                break
-
-            self.progress.emit(i, total, mod["file"])
-            self.log.emit(f"⬇️ Загрузка: {mod['file']}")
-
-            try:
-                success = download_single_mod_turbo_sync(mod, self.minecraft_dir)
-                if success:
-                    success_count += 1
-                    self.log.emit(f"✅ Успешно: {mod['file']}")
-                else:
-                    self.log.emit(f"❌ Ошибка: {mod['file']}")
-            except Exception as e:
-                self.log.emit(f"💥 Ошибка {mod['file']}: {str(e)}")
-
-        self.finished.emit(success_count, total)
-
-
 def download_mods_turbo_ui(mods_list, parent=None):
-    """PyQt6 версия загрузки модов с UI"""
-    if not mods_list:
-        return
-
-    class DownloadProgressDialog(QDialog):
-        def __init__(self, parent, mods):
-            super().__init__(parent)
-            self.mods = mods
-            self.setWindowTitle("Загрузка модов")
-            self.setFixedSize(550, 450)
-            self.setModal(True)
-
-            self.setStyleSheet("""
-                QDialog {
-                    background-color: #2b2b2b;
-                    border-radius: 15px;
-                }
-                QLabel {
-                    color: white;
-                    font-family: 'Segoe UI';
-                }
-                QProgressBar {
-                    background-color: #3a3a4a;
-                    border: none;
-                    border-radius: 8px;
-                    height: 20px;
-                    text-align: center;
-                    color: white;
-                }
-                QProgressBar::chunk {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #FF6B6B, stop:1 #4ECDC4);
-                    border-radius: 8px;
-                }
-                QTextEdit {
-                    background-color: #1a1a2a;
-                    color: #e0e0e0;
-                    border: 1px solid #4ECDC4;
-                    border-radius: 8px;
-                    font-family: 'Consolas', monospace;
-                    font-size: 10px;
-                }
-                QPushButton {
-                    background-color: #4a5568;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #5a6b82;
-                }
-            """)
-
-            layout = QVBoxLayout(self)
-            layout.setSpacing(15)
-            layout.setContentsMargins(20, 20, 20, 20)
-
-            title = QLabel("📥 Загрузка модов")
-            title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(title)
-
-            self.info_label = QLabel(f"Всего модов: {len(mods)}")
-            self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self.info_label)
-
-            self.progress_bar = QProgressBar()
-            self.progress_bar.setRange(0, 100)
-            layout.addWidget(self.progress_bar)
-
-            self.current_label = QLabel("Подготовка к загрузке...")
-            self.current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self.current_label)
-
-            log_label = QLabel("📋 Лог загрузки:")
-            log_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
-            layout.addWidget(log_label)
-
-            self.log_text = QTextEdit()
-            self.log_text.setReadOnly(True)
-            self.log_text.setFont(QFont("Consolas", 9))
-            self.log_text.setMinimumHeight(200)
-            layout.addWidget(self.log_text)
-
-            button_layout = QHBoxLayout()
-            self.cancel_btn = QPushButton("Отмена")
-            self.cancel_btn.clicked.connect(self.cancel_download)
-            button_layout.addWidget(self.cancel_btn)
-
-            button_layout.addStretch()
-
-            self.close_btn = QPushButton("Закрыть")
-            self.close_btn.clicked.connect(self.accept)
-            self.close_btn.setEnabled(False)
-            button_layout.addWidget(self.close_btn)
-
-            layout.addLayout(button_layout)
-
-            self.worker = None
-            self.start_download()
-
-        def start_download(self):
-            self.worker = ModDownloadWorker(self.mods, CONFIG["minecraft_dir"])
-            self.worker.progress.connect(self.update_progress)
-            self.worker.finished.connect(self.on_download_finished)
-            self.worker.log.connect(self.add_log)
-            self.worker.start()
-
-        def update_progress(self, current, total, mod_name):
-            percent = int((current + 1) * 100 / total) if total > 0 else 0
-            self.progress_bar.setValue(percent)
-            self.current_label.setText(f"Загрузка: {mod_name} ({current + 1}/{total})")
-
-        def add_log(self, message):
-            self.log_text.append(message)
-            self.log_text.moveCursor(QTextCursor.MoveOperation.End)
-
-        def on_download_finished(self, success_count, total):
-            self.progress_bar.setValue(100)
-            self.cancel_btn.setEnabled(False)
-            self.close_btn.setEnabled(True)
-
-            if success_count == total:
-                self.current_label.setText("✅ Все моды успешно загружены!")
-                self.add_log(f"\n✅ Успешно загружено {success_count} из {total} модов")
-            else:
-                self.current_label.setText(f"⚠️ Загружено {success_count} из {total} модов")
-                self.add_log(f"\n⚠️ Загружено {success_count} из {total} модов")
-
-        def cancel_download(self):
-            if self.worker and self.worker.isRunning():
-                self.worker.cancel()
-                self.worker.wait(5000)
-                self.add_log("❌ Загрузка отменена пользователем")
-                self.current_label.setText("❌ Загрузка отменена")
-                self.cancel_btn.setEnabled(False)
-                self.close_btn.setEnabled(True)
-
-    dialog = DownloadProgressDialog(parent, mods_list)
-    dialog.exec()
+    if mods_list:
+        from Ui.DownloadDialog import DownloadProgressDialog
+        DownloadProgressDialog(parent, mods_list).exec()
 
 
 def download_shaders_turbo_ui(shaders_list, parent=None):
-    """PyQt6 версия загрузки шейдеров с UI"""
-    if not shaders_list:
-        return
-
-    class ShaderDownloadWorker(QThread):
-        progress = pyqtSignal(int, int, str)
-        finished = pyqtSignal(int, int)
-        log = pyqtSignal(str)
-
-        def __init__(self, shaders):
-            super().__init__()
-            self.shaders = shaders
-            self.cancelled = False
-
-        def cancel(self):
-            self.cancelled = True
-
-        def run(self):
-            from Core.instances import ensure_game_directory
-            shaders_dir = os.path.join(ensure_game_directory(), "shaderpacks")
-            os.makedirs(shaders_dir, exist_ok=True)
-
-            total = len(self.shaders)
-            success_count = 0
-
-            for i, shader in enumerate(self.shaders):
-                if self.cancelled:
-                    self.log.emit("❌ Загрузка отменена")
-                    break
-
-                self.progress.emit(i, total, shader["name"])
-                self.log.emit(f"⬇️ Загрузка: {shader['name']}")
-
-                try:
-                    shader_path = safe_target(shaders_dir, shader['file'])
-                    success = download_yandex_file_sync(shader['url'], shader_path, 'shader')
-
-                    if success:
-                        success_count += 1
-                        self.log.emit(f"✅ Успешно: {shader['name']}")
-
-                        # Shader packs are loaded directly from their ZIP files.
-                    else:
-                        self.log.emit(f"❌ Ошибка: {shader['name']}")
-
-                except Exception as e:
-                    self.log.emit(f"💥 Ошибка {shader['name']}: {str(e)}")
-
-            self.finished.emit(success_count, total)
-
-    class ShaderProgressDialog(QDialog):
-        def __init__(self, parent, shaders):
-            super().__init__(parent)
-            self.shaders = shaders
-            self.setWindowTitle("Загрузка шейдеров")
-            self.setFixedSize(550, 450)
-            self.setModal(True)
-
-            self.setStyleSheet("""
-                QDialog {
-                    background-color: #2b2b2b;
-                    border-radius: 15px;
-                }
-                QLabel {
-                    color: white;
-                    font-family: 'Segoe UI';
-                }
-                QProgressBar {
-                    background-color: #3a3a4a;
-                    border: none;
-                    border-radius: 8px;
-                    height: 20px;
-                    text-align: center;
-                    color: white;
-                }
-                QProgressBar::chunk {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #FF6B6B, stop:1 #4ECDC4);
-                    border-radius: 8px;
-                }
-                QTextEdit {
-                    background-color: #1a1a2a;
-                    color: #e0e0e0;
-                    border: 1px solid #4ECDC4;
-                    border-radius: 8px;
-                    font-family: 'Consolas', monospace;
-                    font-size: 10px;
-                }
-                QPushButton {
-                    background-color: #4a5568;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #5a6b82;
-                }
-            """)
-
-            layout = QVBoxLayout(self)
-            layout.setSpacing(15)
-            layout.setContentsMargins(20, 20, 20, 20)
-
-            title = QLabel("📥 Загрузка шейдеров")
-            title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(title)
-
-            self.info_label = QLabel(f"Всего шейдеров: {len(shaders)}")
-            self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self.info_label)
-
-            self.progress_bar = QProgressBar()
-            self.progress_bar.setRange(0, 100)
-            layout.addWidget(self.progress_bar)
-
-            self.current_label = QLabel("Подготовка к загрузке...")
-            self.current_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self.current_label)
-
-            log_label = QLabel("📋 Лог загрузки:")
-            log_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
-            layout.addWidget(log_label)
-
-            self.log_text = QTextEdit()
-            self.log_text.setReadOnly(True)
-            self.log_text.setFont(QFont("Consolas", 9))
-            self.log_text.setMinimumHeight(200)
-            layout.addWidget(self.log_text)
-
-            button_layout = QHBoxLayout()
-            self.cancel_btn = QPushButton("Отмена")
-            self.cancel_btn.clicked.connect(self.cancel_download)
-            button_layout.addWidget(self.cancel_btn)
-
-            button_layout.addStretch()
-
-            self.close_btn = QPushButton("Закрыть")
-            self.close_btn.clicked.connect(self.accept)
-            self.close_btn.setEnabled(False)
-            button_layout.addWidget(self.close_btn)
-
-            layout.addLayout(button_layout)
-
-            self.worker = None
-            self.start_download()
-
-        def start_download(self):
-            self.worker = ShaderDownloadWorker(self.shaders)
-            self.worker.progress.connect(self.update_progress)
-            self.worker.finished.connect(self.on_download_finished)
-            self.worker.log.connect(self.add_log)
-            self.worker.start()
-
-        def update_progress(self, current, total, shader_name):
-            percent = int((current + 1) * 100 / total) if total > 0 else 0
-            self.progress_bar.setValue(percent)
-            self.current_label.setText(f"Загрузка: {shader_name} ({current + 1}/{total})")
-
-        def add_log(self, message):
-            self.log_text.append(message)
-            self.log_text.moveCursor(QTextCursor.MoveOperation.End)
-
-        def on_download_finished(self, success_count, total):
-            self.progress_bar.setValue(100)
-            self.cancel_btn.setEnabled(False)
-            self.close_btn.setEnabled(True)
-
-            if success_count == total:
-                self.current_label.setText("✅ Все шейдеры успешно загружены!")
-                self.add_log(f"\n✅ Успешно загружено {success_count} из {total} шейдеров")
-            else:
-                self.current_label.setText(f"⚠️ Загружено {success_count} из {total} шейдеров")
-                self.add_log(f"\n⚠️ Загружено {success_count} из {total} шейдеров")
-
-        def cancel_download(self):
-            if self.worker and self.worker.isRunning():
-                self.worker.cancel()
-                self.worker.wait(5000)
-                self.add_log("❌ Загрузка отменена пользователем")
-                self.current_label.setText("❌ Загрузка отменена")
-                self.cancel_btn.setEnabled(False)
-                self.close_btn.setEnabled(True)
-
-    dialog = ShaderProgressDialog(parent, shaders_list)
-    dialog.exec()
+    if shaders_list:
+        from Ui.DownloadDialog import DownloadProgressDialog
+        DownloadProgressDialog(parent, shaders_list, kind='shaders').exec()
 
 
 def download_through_proxy(url: str, filepath: str, source: str = "unknown", progress_callback=None) -> bool:
@@ -819,10 +398,6 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown", pro
     if not proxy_available():
         return False
     try:
-        from ConfDir.Configs import CURSEFORGE_CONFIG
-        import requests
-        import os
-
         proxy_url = CURSEFORGE_CONFIG.get("proxy_url", "http://90.151.59.120:8000")
         proxy_endpoint = f"{proxy_url}/api/v1/mirror/download"
 
@@ -832,17 +407,6 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown", pro
             "source": source,
             "file_type": "shader" if source == "shader" else "mod"
         }
-
-        # Для Modrinth добавляем дополнительную информацию
-        if source == "modrinth":
-            # Из URL можно извлечь project_id и version_id
-            # https://cdn.modrinth.com/data/.../versions/.../file.jar
-            pass
-
-        # Для CurseForge добавляем ID
-        if source == "curseforge":
-            # Прокси сам разберётся
-            pass
 
         _safe_print(f"🌐 Прокси: загрузка {os.path.basename(filepath)} через {source}")
 
@@ -856,38 +420,7 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown", pro
         )
 
         if response.status_code == 200:
-            temporary = filepath + '.proxy.part'
-            try:
-                if response.headers.get('Content-Type', '').lower().startswith(('text/html', 'application/json')):
-                    raise ValueError('Прокси вернул страницу ошибки вместо файла')
-                Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-                with open(temporary, 'wb') as stream:
-                    total = int(response.headers.get('Content-Length') or 0)
-                    written = 0
-                    for chunk in response.iter_content(chunk_size=1024 * 1024):
-                        if not chunk:
-                            continue
-                        written += len(chunk)
-                        if written > 4 * 1024 * 1024 * 1024:
-                            raise ValueError('Файл прокси слишком большой')
-                        stream.write(chunk)
-                        if progress_callback:
-                            progress_callback(written, total)
-                    if not written:
-                        raise ValueError('Прокси вернул пустой файл')
-                if filepath.lower().endswith(('.jar', '.zip')):
-                    with zipfile.ZipFile(temporary) as archive:
-                        entries = archive.infolist()
-                        if (len(entries) > 10000 or
-                                sum(entry.file_size for entry in entries) > 16 * 1024 * 1024 * 1024 or
-                                archive.testzip() is not None):
-                            raise ValueError('Прокси вернул повреждённый архив')
-                os.replace(temporary, filepath)
-                return True
-            finally:
-                response.close()
-                if os.path.exists(temporary):
-                    os.remove(temporary)
+            return save_response(response, filepath, progress_callback)
 
         response.close()
         if response.status_code >= 500:
@@ -907,3 +440,10 @@ def download_through_proxy(url: str, filepath: str, source: str = "unknown", pro
     except Exception as e:
         _safe_print(f"❌ Прокси: ошибка - {e}")
         return False
+
+
+def __getattr__(name):
+    if name == 'ModDownloadWorker':
+        from Ui.DownloadDialog import ModDownloadWorker
+        return ModDownloadWorker
+    raise AttributeError(name)

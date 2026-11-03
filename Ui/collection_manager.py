@@ -22,7 +22,7 @@ from ConfDir.Configs import CURSEFORGE_CONFIG
 from Network.proxy_auth import generate_auth_header
 from ConfDir.Versions import CURRENT_VERSION, all_versions
 
-from Ui.BaseWindow import BaseDialog
+from Ui.BaseWindow import BaseDialog, PlainDialog
 
 # Конфигурация сервера сообщества
 COMMUNITY_SERVER_URL = CURSEFORGE_CONFIG.get("proxy_url", "").rstrip("/")
@@ -291,7 +291,8 @@ class CommunityCollectionsTab(QWidget):
     def _display_upload_result(self, result, name):
         self.upload_btn.setEnabled(True)
         if result.get('success'):
-            QMessageBox.information(self, 'Сборка опубликована', f'Сборка «{name}» загружена в сообщество.')
+            QMessageBox.information(self, 'Сборка отправлена' if result.get('pending_review') else 'Сборка опубликована',
+                                    result.get('message') or f'Сборка «{name}» загружена в сообщество.')
             self.load_collections(1)
         else:
             QMessageBox.warning(self, 'Ошибка загрузки', result.get('error', 'Сервер не принял сборку'))
@@ -609,14 +610,15 @@ class CommunityCollectionDetailsDialog(BaseDialog):
         """Скачать и импортировать сборку"""
         # Показываем диалог прогресса
         self.progress_dialog = ImportProgressDialog(self, self.collection_id, self.collection_data, self.api)
-        self.progress_dialog.finished.connect(self.on_import_finished)
-        self.progress_dialog.exec()
+        if self.progress_dialog.exec() == QDialog.DialogCode.Accepted:
+            self.on_import_finished()
 
     def on_import_finished(self):
         """Обработка завершения импорта"""
-        self.collection_imported.emit()
-        QMessageBox.information(self, "Успех", f"Сборка '{self.collection_data['name']}' успешно импортирована!")
         self.accept()
+        self.collection_imported.emit()
+        QMessageBox.information(self.parentWidget(), "Успех",
+                                f"Сборка '{self.collection_data['name']}' успешно импортирована!")
 
     def check_compatibility(self):
         from ConfDir.Versions import all_versions
@@ -693,6 +695,9 @@ class CommunityImportWorker(QThread):
                        for field in ('name', 'minecraft_version', 'loader')):
                 raise ValueError('В сборке отсутствуют обязательные поля')
             collection = dict(collection)
+            manifest = collection.get('data')
+            if isinstance(manifest, dict) and manifest.get('archive_url'):
+                collection.setdefault('archive_url', manifest['archive_url'])
             collection.update(source='community', original_id=self.collection_id,
                               imported_date=datetime.now().isoformat())
             base_name = collection['name']
@@ -720,8 +725,7 @@ class CommunityImportWorker(QThread):
             self.failed.emit(str(exc))
 
 
-class ImportProgressDialog(BaseDialog):
-    finished = pyqtSignal()
+class ImportProgressDialog(PlainDialog):
 
     def __init__(self, parent, collection_id, collection_data, api):
         super().__init__(parent)
@@ -753,7 +757,6 @@ class ImportProgressDialog(BaseDialog):
 
     def _on_finished(self):
         if self._result == 'success':
-            self.finished.emit()
             self.accept()
         elif self._result == 'cancelled':
             self.reject()
@@ -1180,6 +1183,7 @@ class CollectionInstallWorker(QThread):
         self.collection_data = collection_data
         self._cancelled = False
         self.cancel_event = threading.Event()
+        self.error_message = ''
         print(f"collection_data name: {collection_data.get('name', 'Unknown')}")
         sys.stdout.flush() if sys.stdout is not None else None
 
@@ -1225,7 +1229,8 @@ class CollectionInstallWorker(QThread):
                 success = True
             else:
                 success = install_collection(self.collection_data, callback, create_backup=True,
-                                             cancel_event=self.cancel_event, minecraft_dir=directory)
+                                             cancel_event=self.cancel_event, minecraft_dir=directory,
+                                             raise_on_error=True)
 
             print(f"install_collection returned: {success}")
             print(f"Installed mods count: {len(installed_mods)}")
@@ -1240,11 +1245,13 @@ class CollectionInstallWorker(QThread):
             self.finished.emit(success, success_count, total)
 
         except Exception as e:
+            self.error_message = str(e)
+            self.log.emit(f'❌ {e}')
             print(f"ERROR in CollectionInstallWorker.run: {e}")
             import traceback
             traceback.print_exc()
             sys.stdout.flush() if sys.stdout is not None else None
-            self.finished.emit(False, 0, 0)
+            self.finished.emit(False, 0, len(self.collection_data.get('mods', [])))
 
 class CollectionInstallProgress(QDialog):
     """Диалог прогресса установки сборки"""
@@ -1417,7 +1424,8 @@ class CollectionInstallProgress(QDialog):
                 self,
                 "Ошибка",
                 f"❌ Не удалось установить сборку '{self.collection_data['name']}'\n\n"
-                f"Успешно установлено: {success_count} из {total} модов"
+                f"Успешно установлено: {success_count} из {total} модов\n\n"
+                f"{self.worker.error_message}"
             )
 
         self.cancel_btn.setText("Закрыть")

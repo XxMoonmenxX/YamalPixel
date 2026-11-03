@@ -44,7 +44,9 @@ class DiagnosticWorker(QThread):
 
             # Проверка папок
             for folder in ["mods", "versions", "config", "shaderpacks"]:
-                path = os.path.join(minecraft_dir, folder)
+                # Minecraft versions are shared; mods/config live in the instance.
+                root = CONFIG['minecraft_dir'] if folder == 'versions' else minecraft_dir
+                path = os.path.join(root, folder)
                 if os.path.exists(path):
                     self.result_added.emit(f"✅ Папка {folder} найдена", "green")
                 else:
@@ -466,23 +468,13 @@ class QtDiagnosticWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Полная переустановка",
-            "⚠️ ВНИМАНИЕ! Это удалит ВСЕ файлы игры и настроек.\n\n"
-            "Будет выполнено:\n"
-            "• Удаление папки YamalPixel\n"
-            "• Удаление всех модов и конфигов\n"
-            "• Удаление миров и сохранений\n"
-            "• Создание чистых бэкапов\n\n"
-            "Продолжить?",
+            f"Проверить файлы и восстановить сборку «{self.selected_version}»?\n\n"
+            "Миры, настройки и другие сборки сохранятся.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            main_window = self._find_main_window()
-            if main_window and hasattr(main_window, 'complete_reinstall'):
-                self.close()
-                main_window.complete_reinstall()
-            else:
-                QMessageBox.warning(self, "Ошибка", "Не удалось найти главное окно")
+            self._repair_selected_instance()
 
     def auto_repair(self):
         """Автопочинка"""
@@ -500,15 +492,17 @@ class QtDiagnosticWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Находим главное окно
-            main_window = self._find_main_window()
-            if main_window and hasattr(main_window, 'old_repair_with_ui'):
-                # Закрываем диагностику ПЕРЕД запуском автопочинки
-                self.close()
-                # Запускаем автопочинку
-                main_window.old_repair_with_ui()
-            else:
-                QMessageBox.warning(self, "Ошибка", "Не удалось найти главное окно")
+            self._repair_selected_instance()
+
+    def _repair_selected_instance(self):
+        from Core.run import is_game_running
+        main_window = self._find_main_window()
+        launch_worker = getattr(main_window, 'launch_worker', None)
+        if is_game_running() or (launch_worker and launch_worker.isRunning()):
+            QMessageBox.warning(self, 'Восстановление', 'Сначала закройте игру и дождитесь подготовки.')
+            return
+        from Ui.InstanceRepair import InstanceRepairDialog
+        InstanceRepairDialog(self.selected_version, self).exec()
 
     def create_report(self):
         """Создает отчет"""

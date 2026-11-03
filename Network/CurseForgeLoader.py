@@ -4,7 +4,7 @@ from Network.proxy_status import proxy_available, mark_proxy_unavailable
 import json
 import os
 from Core.mod_transaction import safe_target
-from Core.mod_transaction import validate_jar_or_zip
+from Network.file_transfer import save_response
 import threading
 import urllib.parse
 from typing import List, Dict, Optional, Any
@@ -342,32 +342,14 @@ class CurseForgeAPI:
         return f"https://media.forgecdn.net/files/{file_id}/{filename}"
 
     def _download_direct(self, url: str, filename: str, destination_dir: str) -> bool:
-        """Прямое скачивание с источника"""
         try:
-            direct_session = requests.Session()
-            direct_session.headers.update({'User-Agent': 'YamalPixelLauncher/1.0'})
-
-            response = direct_session.get(url, stream=True, timeout=self.direct_timeout)
-
-            if response.status_code == 200:
-                os.makedirs(destination_dir, exist_ok=True)
-                filepath = safe_target(destination_dir, filename)
-
-                with open(filepath, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-
-                if os.path.exists(filepath) and os.path.getsize(filepath) > 1000 and validate_jar_or_zip(filepath):
-                    return True
-
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-
-            return False
-
-        except Exception as e:
-            logger.debug(f"Ошибка прямого скачивания: {e}")
+            filepath = safe_target(destination_dir, filename)
+            with requests.Session() as direct_session:
+                direct_session.headers.update({'User-Agent': 'YamalPixelLauncher'})
+                response = direct_session.get(url, stream=True, timeout=self.direct_timeout)
+                return save_response(response, filepath)
+        except Exception as exc:
+            logger.debug('Direct download failed for %s: %s', filename, exc)
             return False
 
     def _notify_proxy_to_cache(self, mod_id: str, file_id: str, filename: str, source_url: str):
@@ -423,12 +405,7 @@ class CurseForgeAPI:
             file_response.raise_for_status()
 
             destination_path = safe_target(destination_dir, filename)
-            with open(destination_path, 'wb') as f:
-                for chunk in file_response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-            return os.path.exists(destination_path) and os.path.getsize(destination_path) > 1000
+            return save_response(file_response, destination_path)
 
         except ProxyAuthError:
             raise

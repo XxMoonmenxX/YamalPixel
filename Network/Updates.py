@@ -11,6 +11,7 @@ import stat
 import webbrowser
 import hashlib
 import uuid
+import json
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -26,8 +27,79 @@ from launcher_paths import launcher_executable
 
 logger = logging.getLogger("YamalPixel.Updates")
 
+def select_update_asset(assets):
+    executables = [asset for asset in assets if isinstance(asset, dict)
+                   and str(asset.get('name', '')).lower().endswith('.exe')]
+    for asset in executables:
+        if asset['name'].lower() == 'yamalpixellauncher.exe':
+            return asset
+    launchers = [asset for asset in executables if 'launcher' in asset['name'].lower()]
+    if len(launchers) == 1:
+        return launchers[0]
+    if len(executables) == 1 and 'proxy' not in executables[0]['name'].lower():
+        return executables[0]
+    return None
+
+
+def valid_update_executable(path):
+    try:
+        path = Path(path)
+        if path.is_symlink() or path.stat().st_size < 1024 * 1024:
+            return False
+        with path.open('rb') as stream:
+            return stream.read(2) == b'MZ'
+    except OSError:
+        return False
+
+
+def start_update_helper(executable=None):
+    """An independent Windows process replaces and restarts the closed EXE."""
+    if os.name != 'nt':
+        raise OSError('Автоматическая замена EXE поддерживается только в Windows')
+    current = Path(executable or launcher_executable()).resolve()
+    staged = Path(str(current) + '.new')
+    if not valid_update_executable(staged):
+        raise ValueError('Файл обновления отсутствует, неполный или не является EXE')
+    with staged.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    helper_dir = Path(tempfile.mkdtemp(prefix='yamalpixel-update-'))
+    script = helper_dir / 'update.ps1'
+    config = helper_dir / 'update.json'
+    try:
+        shutil.copyfile(resource_path('Network/update_helper.ps1'), script)
+        config.write_text(json.dumps({
+            'current': str(current), 'staged': str(staged), 'pid': os.getpid(),
+            'sha256': digest,
+            'backup': str(current.with_name(current.stem + '_Backup_' + uuid.uuid4().hex + current.suffix)),
+        }), encoding='utf-8')
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = subprocess.SW_HIDE
+        powershell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+        subprocess.Popen([str(powershell), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                          '-WindowStyle', 'Hidden', '-File', str(script), '-ConfigPath', str(config)],
+                         cwd=tempfile.gettempdir(), startupinfo=startup,
+                         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         close_fds=True)
+    except BaseException:
+        for path in (script, config):
+            path.unlink(missing_ok=True)
+        helper_dir.rmdir()
+        raise
+    return True
+
+
+def handoff_staged_update(executable=None):
+    """Recover a .new left by older versions before opening the old UI."""
+    current = Path(executable or launcher_executable())
+    if not valid_update_executable(str(current) + '.new'):
+        return False
+    return start_update_helper(current)
+
+
 def apply_staged_update(executable=None):
-    """Replace the launcher with a validated .new file at next startup."""
+    """Offline replacement utility; a running Windows EXE uses handoff instead."""
     current = Path(executable or launcher_executable())
     staged = Path(str(current) + '.new')
     if not staged.is_file(): return False
@@ -121,6 +193,10 @@ class UpdateDownloadWorker(QThread):
                                 self.progress.emit(percent)
             if self.expected_sha256 and digest.hexdigest().lower() != self.expected_sha256:
                 raise ValueError('SHA256 скачанного EXE не совпал с GitHub')
+            if total_size and downloaded != total_size:
+                raise ValueError('Обновление скачано не полностью')
+            if downloaded < 1024 * 1024:
+                raise ValueError('Скачанный EXE слишком мал или повреждён')
             with open(self.temp_exe, 'rb') as check:
                 if check.read(2) != b'MZ':
                     raise ValueError('GitHub вернул не Windows EXE')
@@ -341,18 +417,14 @@ class UpdateDialog(QDialog):
     def install_update(self):
         """Начинает установку обновления"""
         # Ищем EXE-файл в ассетах
-        update_asset = None
-        for asset in self.release_data.get("assets", []):
-            if asset["name"].lower().endswith(".exe"):
-                update_asset = asset
-                break
+        update_asset = select_update_asset(self.release_data.get('assets', []))
 
         if not update_asset:
             available = "\n".join([f"• {a['name']}" for a in self.release_data.get("assets", [])])
             QMessageBox.warning(
                 self,
                 "Файл не найден",
-                f"EXE-файл не найден в релизе.\n\nДоступные файлы:\n{available}"
+                f"Не удалось однозначно выбрать EXE лаунчера в релизе.\n\nДоступные файлы:\n{available}"
             )
             return
 
@@ -499,7 +571,12 @@ class UpdateProgressDialog(QDialog):
                 os.remove(temporary)
 
         # Закрываем текущий лаунчер
-        QMessageBox.information(self, 'Обновление', 'Обновление подготовлено и будет применено при следующем запуске лаунчера.')
+        try:
+            start_update_helper(current_exe)
+        except (OSError, ValueError) as exc:
+            self.on_download_error('Не удалось запустить установку: ' + str(exc))
+            return
+        self.status_label.setText('Перезапуск лаунчера для установки обновления…')
         QApplication.quit()
 
     def show_manual_update(self):
